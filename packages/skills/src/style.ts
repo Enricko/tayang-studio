@@ -141,15 +141,17 @@ export function parseTopicIdeas(agentText: string): { title: string; kind: Video
 export function buildStudyStylePrompt(url: string, outDir: string): string {
   // Paths are in backticks and quoted for the shell: the folder can contain spaces.
   const sep = outDir.includes('\\') && !outDir.includes('/') ? '\\' : '/';
-  const stylePath = `${outDir.replace(/[\\/]+$/, '')}${sep}style.json`;
+  const base = outDir.replace(/[\\/]+$/, '');
+  const stylePath = `${base}${sep}style.json`;
+  const sourceTemplate = `${base}${sep}source.%(ext)s`;
   return [
     `Study the visual style of this video: ${url}`,
-    `1. Download it with \`yt-dlp\` into the folder \`"${outDir}"\`.`,
+    `1. Download it with \`yt-dlp\` into the folder \`"${outDir}"\`: \`yt-dlp -f "bv*[height<=1080]+ba/b[height<=1080]/b" -o "${sourceTemplate}" <the link>\`.`,
     '2. With ffmpeg, sample about 48 frames: use scene detection plus a regular interval, so you cover cuts and steady moments.',
     '3. Look at the frames and describe the camera, pacing, type, color, captions and transitions.',
     `4. Write \`"${stylePath}"\` as: { "name": string, "notes": { "camera": string, "pacing": string, "type": string, "color": string, "captions": string, "transitions": string }, "prompt": string }.`,
     '   "name" is a short style name. "prompt" is a few short lines of direct instructions another agent can follow to recreate the look with HyperFrames.',
-    '5. Delete the downloaded video and the frames. Keep only style.json.',
+    '5. Delete the frames. Leave source.* in place; Tayang makes a short preview from it and then deletes it.',
     'Copy the look, never the footage: no text, logos, music or clips from the source in the prompt.',
   ].join('\n');
 }

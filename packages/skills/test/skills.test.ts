@@ -154,6 +154,15 @@ describe('style', () => {
     expect(p).toContain('yt-dlp');
     expect(p).toContain('`"/out/style.json"`');
   });
+  it('study prompt downloads to a source.* file and leaves it for Tayang', () => {
+    const p = buildStudyStylePrompt('https://v', '/Users/a b/x');
+    expect(p).toContain('-o "/Users/a b/x/source.%(ext)s"');
+    expect(p).toContain('-f "bv*[height<=1080]+ba/b[height<=1080]/b"');
+    expect(p).toContain('Delete the frames. Leave source.* in place; Tayang makes a short preview from it and then deletes it.');
+    expect(p).not.toContain('Delete the downloaded video');
+    expect(p).toContain('Copy the look, never the footage');
+    expect(buildStudyStylePrompt('https://v', 'C:\\Users\\a b\\x')).toContain('-o "C:\\Users\\a b\\x\\source.%(ext)s"');
+  });
   it('study prompt quotes folders with spaces', () => {
     const p = buildStudyStylePrompt('https://v', '/Users/a b/Tayang/.tayang/style-study/x');
     expect(p).toContain('into the folder `"/Users/a b/Tayang/.tayang/style-study/x"`');
