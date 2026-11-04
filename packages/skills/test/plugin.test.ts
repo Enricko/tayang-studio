@@ -59,6 +59,8 @@ describe('agent plugin', () => {
       'ChoicePicker',
       'maxAllowedSelections',
       'sourceComponentId',
+      // A card that is answered stays as it was: a new card needs a new id.
+      'Give every new card its own new `surfaceId`',
     ]) {
       expect(t).toContain(s);
     }

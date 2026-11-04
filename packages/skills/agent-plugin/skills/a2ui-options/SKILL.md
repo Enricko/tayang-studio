@@ -18,7 +18,7 @@ Write a fenced block with the language `a2ui`. One JSON message per line. Every 
 
 Messages:
 
-- `createSurface {surfaceId, catalogId}`: starts a surface. Use the catalog URL above.
+- `createSurface {surfaceId, catalogId}`: starts a surface. Use the catalog URL above. Give every new card its own new `surfaceId` (such as `pick-voice-2`), never one you used before in this chat: a card the user answered stays as it was. The ids in the examples below are only examples.
 - `updateComponents {surfaceId, components:[{id, component, ...props}]}`: the components. One must have `"id":"root"`.
 - `updateDataModel {surfaceId, path, value}`: sets data. `path` is a JSON Pointer such as `/topic`.
 - `deleteSurface {surfaceId}`: removes the surface.
