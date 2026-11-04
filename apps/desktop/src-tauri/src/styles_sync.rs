@@ -138,10 +138,10 @@ pub async fn install_template<F: Fetcher>(
         .map_err(|e| e.to_string())?
         .ok_or("That project no longer exists")?;
     let Some(style_id) = project.style_id else { return Ok(false) };
-    let Some(template) = db.get_style(&style_id).map_err(|e| e.to_string())?.and_then(|s| s.template)
-    else {
-        return Ok(false);
-    };
+    let Some(style) = db.get_style(&style_id).map_err(|e| e.to_string())? else { return Ok(false) };
+    let Some(template) = style.template else { return Ok(false) };
+    // A clone has no template of its own: it downloads the original's.
+    let template_id = style.based_on.unwrap_or(style_id);
     let folder = PathBuf::from(&project.folder);
     std::fs::create_dir_all(&folder).map_err(|e| e.to_string())?;
     if !is_fresh_folder(&folder) {
@@ -155,7 +155,7 @@ pub async fn install_template<F: Fetcher>(
     let bytes = match std::fs::read(&cached) {
         Ok(b) if sha256_hex(&b) == want => b,
         _ => {
-            let url = endpoint(api_url, &format!("/v1/styles/{}/template", urlencode(&style_id)));
+            let url = endpoint(api_url, &format!("/v1/styles/{}/template", urlencode(&template_id)));
             let limit = (template.size + 1024 * 1024).min(MAX_TEMPLATE);
             let res = fetcher.get(&url, limit).await?;
             if !(200..300).contains(&res.status) {
@@ -321,6 +321,7 @@ mod tests {
             created_at: "2026-11-04T00:00:00Z".into(),
             engine: Some(StyleEngine::Remotion),
             preview_url: None,
+            based_on: None,
             preview_video_url: Some(format!("https://api.test/v1/styles/{id}/preview-video")),
             template: template.map(|(b, v)| StyleTemplate {
                 sha256: sha256_hex(b),
@@ -464,6 +465,19 @@ mod tests {
         assert!(install_template(&s.db, &f, "https://api.test", &s.templates, "p1").await.unwrap());
         assert_eq!(f.calls.lock().unwrap().len(), calls_before);
         let _ = &s.tmp;
+    }
+
+    #[tokio::test]
+    async fn a_clone_installs_through_the_original_templates_url() {
+        let z = zip_bytes(&[("tayang.json", b"{}"), ("src/index.ts", b"export {}")]);
+        let (s, f) = setup(&z, &z);
+        let original = s.db.get_style("atlas").unwrap().unwrap();
+        let clone = Style { id: "mine-9".into(), source: StyleSource::Mine, based_on: Some("atlas".into()), ..original };
+        s.db.save_style(&clone).unwrap();
+        s.db.update_project("p1", serde_json::json!({"styleId": "mine-9"})).unwrap();
+        assert!(install_template(&s.db, &f, "https://api.test", &s.templates, "p1").await.unwrap());
+        assert_eq!(f.calls.lock().unwrap().as_slice(), ["https://api.test/v1/styles/atlas/template"]);
+        assert!(s.folder.join("src").join("index.ts").exists());
     }
 
     #[tokio::test]

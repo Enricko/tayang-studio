@@ -51,7 +51,7 @@ CREATE INDEX IF NOT EXISTS messages_chat ON messages(chat_id);
 CREATE TABLE IF NOT EXISTS styles (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, source TEXT NOT NULL, source_url TEXT,
   notes TEXT NOT NULL, prompt TEXT NOT NULL, created_at TEXT NOT NULL,
-  engine TEXT, preview_url TEXT, preview_video_url TEXT, template TEXT, version INTEGER
+  engine TEXT, preview_url TEXT, preview_video_url TEXT, template TEXT, version INTEGER, based_on TEXT
 );
 CREATE TABLE IF NOT EXISTS jobs (
   id TEXT PRIMARY KEY, kind TEXT NOT NULL, title TEXT NOT NULL, project_id TEXT, chat_id TEXT,
@@ -426,6 +426,7 @@ impl Db {
             ("preview_video_url", "TEXT"),
             ("template", "TEXT"),
             ("version", "INTEGER"),
+            ("based_on", "TEXT"),
         ] {
             if !have.iter().any(|c| c == col) {
                 conn.execute_batch(&format!("ALTER TABLE styles ADD COLUMN {col} {ty}"))?;
@@ -500,7 +501,7 @@ impl Db {
         let conn = self.conn();
         let mut stmt = conn.prepare(
             "SELECT id, name, source, source_url AS sourceUrl, notes, prompt, created_at AS createdAt, \
-             engine, preview_url AS previewUrl, preview_video_url AS previewVideoUrl, template, version FROM styles \
+             engine, preview_url AS previewUrl, preview_video_url AS previewVideoUrl, template, version, based_on AS basedOn FROM styles \
              ORDER BY CASE source WHEN 'builtin' THEN 0 ELSE 1 END, \
              CASE source WHEN 'builtin' THEN rowid END, created_at, rowid",
         )?;
@@ -532,11 +533,22 @@ impl Db {
             return Err(DbError("built-in styles cannot be changed".into()));
         }
         let source = serde_json::to_value(s.source)?;
+        let engine = match s.engine {
+            Some(e) => serde_json::to_value(e)?.as_str().map(str::to_string),
+            None => None,
+        };
+        let template = match &s.template {
+            Some(t) => Some(serde_json::to_string(t)?),
+            None => None,
+        };
         conn.execute(
-            "INSERT INTO styles (id, name, source, source_url, notes, prompt, created_at) \
-             VALUES (?1,?2,?3,?4,?5,?6,?7) ON CONFLICT(id) DO UPDATE SET name=excluded.name, \
+            "INSERT INTO styles (id, name, source, source_url, notes, prompt, created_at, engine, preview_url, \
+             preview_video_url, template, version, based_on) \
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13) ON CONFLICT(id) DO UPDATE SET name=excluded.name, \
              source=excluded.source, source_url=excluded.source_url, notes=excluded.notes, \
-             prompt=excluded.prompt, created_at=excluded.created_at",
+             prompt=excluded.prompt, created_at=excluded.created_at, engine=excluded.engine, \
+             preview_url=excluded.preview_url, preview_video_url=excluded.preview_video_url, \
+             template=excluded.template, version=excluded.version, based_on=excluded.based_on",
             rusqlite::params![
                 s.id,
                 s.name,
@@ -544,7 +556,13 @@ impl Db {
                 s.source_url,
                 serde_json::to_string(&s.notes)?,
                 s.prompt,
-                s.created_at
+                s.created_at,
+                engine,
+                s.preview_url,
+                s.preview_video_url,
+                template,
+                s.version,
+                s.based_on
             ],
         )?;
         Ok(())
@@ -741,6 +759,7 @@ mod tests {
             engine: Some(StyleEngine::Remotion),
             preview_url: Some(format!("https://api/v1/styles/{id}/preview")),
             preview_video_url: Some(format!("https://api/v1/styles/{id}/preview-video")),
+            based_on: None,
             template: template
                 .then(|| StyleTemplate { sha256: "ab".repeat(32), size: 10, version: 2 }),
             version: Some(2),
@@ -757,6 +776,7 @@ mod tests {
             preview_url: None,
             preview_video_url: None,
             template: None,
+            based_on: None,
             version: None,
             ..builtin("s1", false)
         };
@@ -786,6 +806,27 @@ mod tests {
     }
 
     #[test]
+    fn a_clone_keeps_template_previews_and_based_on_and_survives_sync() {
+        let db = db();
+        db.replace_builtin_styles(&[builtin("atlas", true)]).unwrap();
+        let clone = Style {
+            id: "mine-1".into(),
+            name: "atlas (copy)".into(),
+            source: StyleSource::Mine,
+            based_on: Some("atlas".into()),
+            ..builtin("atlas", true)
+        };
+        db.save_style(&clone).unwrap();
+        assert_eq!(db.get_style("mine-1").unwrap().unwrap(), clone);
+        // Editing keeps every field; a later sync neither touches nor deletes it.
+        let edited = Style { name: "Mine".into(), ..clone.clone() };
+        db.save_style(&edited).unwrap();
+        db.replace_builtin_styles(&[]).unwrap();
+        assert_eq!(db.get_style("mine-1").unwrap().unwrap(), edited);
+        assert!(db.get_style("atlas").unwrap().is_none());
+    }
+
+    #[test]
     fn migration_adds_columns_and_drops_legacy_builtins() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("tayang.db");
@@ -805,6 +846,7 @@ mod tests {
         assert_eq!(styles[0].id, "keep");
         assert_eq!(styles[0].template, None);
         assert_eq!(styles[0].preview_video_url, None);
+        assert_eq!(styles[0].based_on, None);
         drop(db);
         assert_eq!(Db::open(&path).unwrap().list_styles().unwrap().len(), 1);
     }
