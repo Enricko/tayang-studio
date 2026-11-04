@@ -132,10 +132,10 @@ fn render_dirs(folder: &Path) -> Vec<PathBuf> {
     dirs
 }
 
-/// The newest `*.mp4` directly in the render folders (see `render_dirs`), inside `folder`; on the same
-/// time the earlier folder wins. Empty files only with `empty`: a render that just started.
-fn newest_render(folder: &Path, empty: bool) -> Option<(PathBuf, std::fs::Metadata)> {
-    let mut best: Option<(std::time::SystemTime, PathBuf, std::fs::Metadata)> = None;
+/// The `*.mp4` files directly in the render folders (see `render_dirs`), inside `folder`, newest first; on
+/// the same time the earlier folder comes first. Empty files only with `empty`: a render that just started.
+fn render_candidates(folder: &Path, empty: bool) -> Vec<(PathBuf, std::fs::Metadata)> {
+    let mut found: Vec<(std::time::SystemTime, PathBuf, std::fs::Metadata)> = Vec::new();
     for dir in render_dirs(folder) {
         let Ok(entries) = std::fs::read_dir(&dir) else { continue };
         for entry in entries.flatten() {
@@ -150,12 +150,18 @@ fn newest_render(folder: &Path, empty: bool) -> Option<(PathBuf, std::fs::Metada
                 continue;
             }
             let Ok(m) = meta.modified() else { continue };
-            if best.as_ref().is_none_or(|b| m > b.0) && crate::projects::ensure_inside(folder, &path) {
-                best = Some((m, path, meta));
+            if crate::projects::ensure_inside(folder, &path) {
+                found.push((m, path, meta));
             }
         }
     }
-    best.map(|(_, p, meta)| (p, meta))
+    // A stable sort: the folder order decides between equal times.
+    found.sort_by_key(|f| std::cmp::Reverse(f.0));
+    found.into_iter().map(|(_, p, meta)| (p, meta)).collect()
+}
+
+fn newest_render(folder: &Path, empty: bool) -> Option<(PathBuf, std::fs::Metadata)> {
+    render_candidates(folder, empty).into_iter().next()
 }
 
 /// The project's newest non-empty render: `renders/`, the root, `out/` or a pipeline's `runs/<run>/out/`.
@@ -410,6 +416,30 @@ fn thumb_time(duration: Option<f64>) -> f64 {
     }
 }
 
+/// A temp file name no other lookup uses, even for the same project and render at the same time.
+fn thumb_temp_name(project_id: &str, ms: i64) -> String {
+    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    format!(".{project_id}-{ms}.{}-{n}.tmp.jpg", std::process::id())
+}
+
+/// A render last written this recently may still be being written.
+const SETTLED: std::time::Duration = std::time::Duration::from_secs(3);
+/// How many renders, newest first, are checked for a complete one.
+const THUMB_CANDIDATES: usize = 5;
+
+/// The length of `video` when it is a complete render (Rust's take on the UI's stable check): last written
+/// at least 3 s ago, ffprobe reads a video with a length, and the file is the same after the probe.
+fn complete_render(tools: &MediaTools, video: &Path, meta: &std::fs::Metadata, limit: std::time::Duration) -> Option<f64> {
+    let written = meta.modified().ok()?;
+    if written.elapsed().map_or(true, |age| age < SETTLED) {
+        return None;
+    }
+    let info = probe_within(tools, video, Some(limit)).ok()?;
+    let after = std::fs::symlink_metadata(video).ok()?;
+    (info.duration_sec > 0.0 && after.len() == meta.len() && after.modified().ok() == Some(written)).then_some(info.duration_sec)
+}
+
 /// `<project_id>-<render ms>` with its extension, when `name` is one of this project's cached files.
 fn thumb_stamp<'a>(name: &'a str, project_id: &str) -> Option<&'a str> {
     let stem = name.strip_suffix(".jpg").or_else(|| name.strip_suffix(".txt"))?;
@@ -417,10 +447,11 @@ fn thumb_stamp<'a>(name: &'a str, project_id: &str) -> Option<&'a str> {
     (id == project_id && !ms.is_empty() && ms.bytes().all(|b| b.is_ascii_digit())).then_some(ms)
 }
 
-/// A JPEG of the project's newest finished render (`latest_render`), 360 px wide, cached as
-/// `<thumbs>/<project_id>-<render ms>.jpg` (its length beside it in a `.txt`) and reused while the render's
-/// time is the same; older ones of the project are deleted. None without a render, or when ffmpeg can't
-/// make one within `limit`.
+/// A JPEG of the project's newest complete render (see `complete_render`; of the 5 newest), 360 px wide,
+/// cached as `<thumbs>/<project_id>-<render ms>.jpg` (its length beside it in a `.txt`) and reused while that
+/// render's time is the same; older ones of the project are deleted. Only when no render is complete is the
+/// newest file used, so a render being written never replaces a finished one as the poster. None without a
+/// render, or when ffmpeg can't make one within `limit`.
 pub fn video_thumbnail(
     tools: &MediaTools,
     folder: &Path,
@@ -431,21 +462,51 @@ pub fn video_thumbnail(
     if !valid_style_id(project_id) {
         return None;
     }
-    let video = latest_render(folder)?;
-    let modified: chrono::DateTime<chrono::Utc> = video.metadata().ok()?.modified().ok()?.into();
-    let ms = modified.timestamp_millis();
-    let modified_at = modified.to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
-    let jpg = thumbs.join(format!("{project_id}-{ms}.jpg"));
-    let txt = thumbs.join(format!("{project_id}-{ms}.txt"));
-    let thumb = |duration_sec| VideoThumb { path: jpg.to_string_lossy().into_owned(), modified_at: modified_at.clone(), duration_sec };
-    if jpg.metadata().is_ok_and(|m| m.is_file() && m.len() > 0) {
-        let duration = std::fs::read_to_string(&txt).ok().and_then(|s| s.trim().parse::<f64>().ok());
-        return Some(thumb(duration));
+    let candidates = render_candidates(folder, false);
+    for (video, meta) in candidates.iter().take(THUMB_CANDIDATES) {
+        if let Some(hit) = cached_thumb(thumbs, project_id, meta) {
+            return Some(hit);
+        }
+        if let Some(duration) = complete_render(tools, video, meta, limit) {
+            return make_thumb(tools, video, meta, Some(duration), thumbs, project_id, limit);
+        }
     }
+    let (video, meta) = candidates.first()?;
+    let duration = probe_within(tools, video, Some(limit)).ok().map(|i| i.duration_sec);
+    make_thumb(tools, video, meta, duration, thumbs, project_id, limit)
+}
+
+/// The cache files for the render with this metadata.
+fn thumb_files(thumbs: &Path, project_id: &str, meta: &std::fs::Metadata) -> Option<(i64, String, PathBuf, PathBuf)> {
+    let modified: chrono::DateTime<chrono::Utc> = meta.modified().ok()?.into();
+    let ms = modified.timestamp_millis();
+    let at = modified.to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+    Some((ms, at, thumbs.join(format!("{project_id}-{ms}.jpg")), thumbs.join(format!("{project_id}-{ms}.txt"))))
+}
+
+/// The cached thumbnail of the render with this metadata, if there is one.
+fn cached_thumb(thumbs: &Path, project_id: &str, meta: &std::fs::Metadata) -> Option<VideoThumb> {
+    let (_, modified_at, jpg, txt) = thumb_files(thumbs, project_id, meta)?;
+    if !jpg.metadata().is_ok_and(|m| m.is_file() && m.len() > 0) {
+        return None;
+    }
+    let duration_sec = std::fs::read_to_string(&txt).ok().and_then(|s| s.trim().parse::<f64>().ok());
+    Some(VideoThumb { path: jpg.to_string_lossy().into_owned(), modified_at, duration_sec })
+}
+
+fn make_thumb(
+    tools: &MediaTools,
+    video: &Path,
+    meta: &std::fs::Metadata,
+    duration: Option<f64>,
+    thumbs: &Path,
+    project_id: &str,
+    limit: std::time::Duration,
+) -> Option<VideoThumb> {
+    let (ms, modified_at, jpg, txt) = thumb_files(thumbs, project_id, meta)?;
     std::fs::create_dir_all(thumbs).ok()?;
-    let duration = probe_within(tools, &video, Some(limit)).ok().map(|i| i.duration_sec);
     // Written next to it and renamed, so a half-written frame is never shown.
-    let tmp = thumbs.join(format!(".{project_id}-{ms}.tmp.jpg"));
+    let tmp = thumbs.join(thumb_temp_name(project_id, ms));
     let os = |s: &str| std::ffi::OsString::from(s);
     let args = vec![
         os("-ss"),
@@ -477,7 +538,7 @@ pub fn video_thumbnail(
             }
         }
     }
-    Some(thumb(duration))
+    Some(VideoThumb { path: jpg.to_string_lossy().into_owned(), modified_at, duration_sec: duration })
 }
 
 // ---- style previews (styles copied from a video) ----
@@ -1471,8 +1532,9 @@ mod tests {
         MediaTools { ffmpeg: PathBuf::from("/nonexistent/ffmpeg"), ffprobe: PathBuf::from("/nonexistent/ffprobe") }
     }
 
+    /// Times in the past (2023): a complete render was last written a while ago.
     fn set_mtime(p: &Path, secs: u64) {
-        let t = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_800_000_000 + secs);
+        let t = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000 + secs);
         std::fs::File::options().write(true).open(p).unwrap().set_modified(t).unwrap();
     }
 
@@ -1521,8 +1583,8 @@ mod tests {
 
         // Miss: one ffmpeg run, 360 px wide, JPEG q 4.
         let first = video_thumbnail(&tools, &project, &thumbs, "p1", THUMB_LIMIT).unwrap();
-        assert!(first.path.ends_with("p1-1800000000000.jpg"), "{}", first.path);
-        assert_eq!(first.modified_at, "2027-01-15T08:00:00.000Z");
+        assert!(first.path.ends_with("p1-1700000000000.jpg"), "{}", first.path);
+        assert_eq!(first.modified_at, "2023-11-14T22:13:20.000Z");
         assert_eq!(first.duration_sec, None, "this ffprobe can't read it");
         let args = std::fs::read_to_string(&log).unwrap();
         assert_eq!(args.lines().count(), 1);
@@ -1536,8 +1598,70 @@ mod tests {
         // A new render: a new thumbnail, the old one for this project gone, other projects' kept.
         set_mtime(&video, 60);
         let next = video_thumbnail(&tools, &project, &thumbs, "p1", THUMB_LIMIT).unwrap();
-        assert!(next.path.ends_with("p1-1800000060000.jpg"));
-        assert_eq!(thumb_names(&thumbs), ["other-1800000000000.jpg", "p1-1800000060000.jpg"]);
+        assert!(next.path.ends_with("p1-1700000060000.jpg"));
+        assert_eq!(thumb_names(&thumbs), ["other-1800000000000.jpg", "p1-1700000060000.jpg"]);
+    }
+
+    /// Like `fake_thumb_tools`, with an ffprobe that reads every video but those named `partial`.
+    #[cfg(unix)]
+    fn fake_probing_tools(dir: &Path) -> (MediaTools, PathBuf) {
+        let (mut tools, log) = fake_thumb_tools(dir);
+        let json = r#"{"streams":[{"width":360,"height":640,"r_frame_rate":"30/1","nb_frames":"150"}],"format":{"duration":"5.0"}}"#;
+        tools.ffprobe = script_tool(dir, "probe-ok.sh", &format!("case \"$*\" in *partial*) exit 1;; esac\necho '{json}'"));
+        (tools, log)
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_thumbnail_comes_from_the_newest_complete_render_never_one_being_written() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (tools, log) = fake_probing_tools(tmp.path());
+        let project = tmp.path().join("p");
+        let thumbs = tmp.path().join("thumbs");
+        let w = |rel: &str, secs: Option<u64>| {
+            let p = project.join(rel);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(&p, b"x").unwrap();
+            if let Some(s) = secs {
+                set_mtime(&p, s);
+            }
+        };
+        w("renders/good.mp4", Some(0));
+        // Newer, but ffprobe can't read it yet.
+        w("runs/a/out/partial.mp4", Some(30));
+        // Newest and readable, but written just now: still being written.
+        w("out/fresh.mp4", None);
+        let t = video_thumbnail(&tools, &project, &thumbs, "p1", THUMB_LIMIT).unwrap();
+        assert!(t.path.ends_with("p1-1700000000000.jpg"), "{}", t.path);
+        assert_eq!(t.duration_sec, Some(5.0));
+        assert!(std::fs::read_to_string(&log).unwrap().contains("renders/good.mp4"));
+        // Once it is done, it is the poster.
+        set_mtime(&project.join("out/fresh.mp4"), 60);
+        assert!(video_thumbnail(&tools, &project, &thumbs, "p1", THUMB_LIMIT).unwrap().path.ends_with("p1-1700000060000.jpg"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn without_a_complete_render_the_newest_file_is_used() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (tools, log) = fake_probing_tools(tmp.path());
+        let project = tmp.path().join("p");
+        std::fs::create_dir_all(project.join("renders")).unwrap();
+        std::fs::write(project.join("renders/partial-1.mp4"), b"x").unwrap();
+        set_mtime(&project.join("renders/partial-1.mp4"), 0);
+        std::fs::write(project.join("renders/partial-2.mp4"), b"x").unwrap();
+        set_mtime(&project.join("renders/partial-2.mp4"), 10);
+        let t = video_thumbnail(&tools, &project, &tmp.path().join("thumbs"), "p1", THUMB_LIMIT).unwrap();
+        assert!(t.path.ends_with("p1-1700000010000.jpg"));
+        assert_eq!(t.duration_sec, None);
+        assert!(std::fs::read_to_string(&log).unwrap().contains("partial-2.mp4"));
+    }
+
+    #[test]
+    fn two_lookups_at_once_never_share_a_temp_file() {
+        assert_ne!(thumb_temp_name("p1", 5), thumb_temp_name("p1", 5));
+        assert!(thumb_temp_name("p1", 5).starts_with(".p1-5."));
+        assert!(thumb_temp_name("p1", 5).ends_with(".tmp.jpg"));
     }
 
     #[cfg(unix)]
