@@ -214,6 +214,17 @@ export const useChat = create<ChatState>((set, get) => {
     for (const req of open) void agentRespondPermission(req.requestId, null).catch(() => {});
   };
 
+  /** The turn is over: a tool the agent never finished must not look like it is still running. */
+  const settleTools = (chatId: string, status: 'done' | 'failed') => {
+    const last = (get().messages[chatId] ?? []).at(-1);
+    if (!last || last.role !== 'agent') return;
+    if (!last.parts.some((p) => p.type === 'tool' && (p.status === 'pending' || p.status === 'running'))) return;
+    replaceLast(chatId, (m) => ({
+      ...m,
+      parts: m.parts.map((p) => (p.type === 'tool' && (p.status === 'pending' || p.status === 'running') ? { ...p, status } : p)),
+    }));
+  };
+
   const onUpdate = (chatId: string, u: AgentUpdate) => {
     if (!tracked.has(chatId)) return;
     if (u.kind === 'text' || u.kind === 'thought' || u.kind === 'tool') {
@@ -247,12 +258,14 @@ export const useChat = create<ChatState>((set, get) => {
     }
     if (u.kind === 'done') {
       writeJob(chatId, 'done');
+      settleTools(chatId, u.stopReason === 'cancelled' ? 'failed' : 'done');
       finish(chatId);
       const last = (get().messages[chatId] ?? []).at(-1);
       if (last && last.role === 'agent' && isLocal(last)) void persist(chatId, last);
       return;
     }
     // error: the session is gone, so the next send must start a new one
+    settleTools(chatId, 'failed');
     finish(chatId);
     set((s) => ({ started: { ...s.started, [chatId]: false } }));
     const text = agentErrorText(u.message, chatAgent.get(chatId) ?? 'claude');

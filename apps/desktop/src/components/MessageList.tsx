@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useRef } from 'react';
 import { File as FileIcon } from 'lucide-react';
 import { formatTimecode, type ChatMessage, type MessagePart } from '@tayang/shared';
 import { Oyen } from '@/components/Oyen';
+import { STICK_EVENT } from '@/components/ScrollToBottom';
 import { ActivityGroup, isHiddenTool, WorkingLine, type ActivityItem } from '@/components/Activity';
 import { useApp } from '@/state/app';
 import { messageKey, useChat, type SendOpts } from '@/state/chat';
@@ -221,8 +222,16 @@ export function MessageList({
     const onScroll = () => {
       stick.current = box.scrollHeight - box.scrollTop - box.clientHeight <= 80;
     };
+    // The scroll-to-bottom pill asks to follow the conversation again.
+    const onStick = () => {
+      stick.current = true;
+    };
     box.addEventListener('scroll', onScroll, { passive: true });
-    return () => box.removeEventListener('scroll', onScroll);
+    box.addEventListener(STICK_EVENT, onStick);
+    return () => {
+      box.removeEventListener('scroll', onScroll);
+      box.removeEventListener(STICK_EVENT, onStick);
+    };
   }, [scrollRef]);
   useEffect(() => {
     const last = messages[messages.length - 1];
@@ -275,7 +284,13 @@ export function MessageList({
         }
         const working = streaming && i === messages.length - 1;
         // An agent message that only updated an earlier surface has nothing of its own to show.
-        if (!working && m.parts.length > 0 && m.parts.every((p) => p.type === 'text' && isUpdateOnly(p.text, m.id, a2ui))) {
+        if (
+          !working &&
+          m.parts.every(
+            (p) =>
+              (p.type === 'text' && isUpdateOnly(p.text, m.id, a2ui)) || (p.type === 'tool' && isHiddenTool(p)),
+          )
+        ) {
           return null;
         }
         return (
