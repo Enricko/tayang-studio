@@ -400,3 +400,38 @@ mod tests {
         assert_eq!(np.style_id, None);
     }
 }
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageWindow {
+    pub used_percent: f64,
+    pub resets_at: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelUsage {
+    pub label: String,
+    pub window: UsageWindow,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum UsageStatus {
+    Ok,
+    SignedOut,
+    Unavailable,
+    Error,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentUsage {
+    pub agent_id: AgentId,
+    pub status: UsageStatus,
+    pub session: Option<UsageWindow>,
+    pub weekly: Option<UsageWindow>,
+    pub model_weekly: Option<ModelUsage>,
+    pub updated_at: String,
+    pub message: Option<String>,
+}

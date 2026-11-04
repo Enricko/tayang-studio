@@ -5,6 +5,7 @@ pub mod media;
 pub mod projects;
 pub mod system;
 pub mod types;
+pub mod usage;
 
 use commands::AppState;
 use tauri::Manager;
