@@ -129,7 +129,13 @@ impl RealExec {
 impl Exec for RealExec {
     fn run(&self, program: &str, args: &[&str]) -> Option<String> {
         let resolved = self.which(program).unwrap_or_else(|| PathBuf::from(program));
-        let mut child = std::process::Command::new(resolved)
+        let mut cmd = std::process::Command::new(resolved);
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+        }
+        let mut child = cmd
             .args(args)
             .env("PATH", augmented_path())
             .stdin(std::process::Stdio::null())
@@ -168,15 +174,31 @@ impl Exec for RealExec {
     }
 
     fn which(&self, program: &str) -> Option<PathBuf> {
-        let exts: Vec<String> = if cfg!(windows) {
-            let pathext = std::env::var("PATHEXT").unwrap_or_else(|_| ".EXE;.CMD;.BAT".into());
-            std::iter::once(String::new())
-                .chain(pathext.split(';').map(|e| e.to_ascii_lowercase()))
-                .collect()
-        } else {
-            vec![String::new()]
-        };
+        let pathext = std::env::var("PATHEXT").ok();
+        let exts = candidate_exts(program, pathext.as_deref(), cfg!(windows));
         find_in(&Self::search_dirs(), program, &exts)
+    }
+}
+
+/// Suffixes `which` tries, in order. On Windows the PATHEXT extensions come first: npm
+/// ships an extension-less `npx` shell script next to `npx.cmd`, and CreateProcess can't
+/// run the script (error 193). The bare name is tried last, or first when `program`
+/// already ends with one of the extensions.
+pub fn candidate_exts(program: &str, pathext: Option<&str>, windows: bool) -> Vec<String> {
+    if !windows {
+        return vec![String::new()];
+    }
+    let exts: Vec<String> = pathext
+        .unwrap_or(".COM;.EXE;.BAT;.CMD")
+        .split(';')
+        .map(|e| e.trim().to_ascii_lowercase())
+        .filter(|e| e.starts_with('.') && e.len() > 1)
+        .collect();
+    let lower = program.to_ascii_lowercase();
+    if exts.iter().any(|e| lower.ends_with(e.as_str())) {
+        std::iter::once(String::new()).chain(exts).collect()
+    } else {
+        exts.into_iter().chain(std::iter::once(String::new())).collect()
     }
 }
 
@@ -485,6 +507,34 @@ mod path_tests {
             assert!(path.contains(d), "{d:?} missing from PATH");
         }
         assert_eq!(find_in(&dirs, "npx", &[String::new()]), Some(h.join(".volta/bin/npx")));
+    }
+
+    #[test]
+    fn windows_tries_pathext_before_the_bare_name() {
+        let exts = candidate_exts("npx", Some(".EXE;.CMD;.BAT"), true);
+        assert_eq!(exts, [".exe", ".cmd", ".bat", ""]);
+        assert_eq!(candidate_exts("npx.cmd", Some(".EXE;.CMD"), true), ["", ".exe", ".cmd"]);
+        assert_eq!(candidate_exts("npx", None, true).last().map(String::as_str), Some(""));
+        assert_eq!(candidate_exts("npx", Some(".EXE"), false), [""]);
+
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("npx"), "#!/bin/sh").unwrap();
+        std::fs::write(tmp.path().join("npx.cmd"), "@echo off").unwrap();
+        let dirs = [tmp.path().to_path_buf()];
+        assert_eq!(find_in(&dirs, "npx", &exts), Some(tmp.path().join("npx.cmd")));
+        assert_eq!(find_in(&dirs, "npx", &candidate_exts("npx", None, false)), Some(tmp.path().join("npx")));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn real_which_prefers_npx_cmd() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("npx"), "#!/bin/sh").unwrap();
+        std::fs::write(tmp.path().join("npx.cmd"), "@echo off").unwrap();
+        let pathext = std::env::var("PATHEXT").ok();
+        let exts = candidate_exts("npx", pathext.as_deref(), true);
+        let found = find_in(&[tmp.path().to_path_buf()], "npx", &exts).unwrap();
+        assert!(found.to_string_lossy().to_ascii_lowercase().ends_with("npx.cmd"));
     }
 
     #[test]
