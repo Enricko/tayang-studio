@@ -184,6 +184,9 @@ export const id: Translations = {
     backgroundHint: 'Menutup jendela menyembunyikan Tayang ke menu bar atau tray, jadi pengingat dan autopilot tetap jalan. Keluar lewat menunya',
     openAtLogin: 'Buka saat login',
     openAtLoginHint: 'Menjalankan Tayang saat kamu masuk ke komputer ini. Perlu opsi latar belakang',
+    testNotification: 'Kirim notifikasi percobaan',
+    testSent: 'Notifikasi percobaan terkirim. Kalau tidak muncul, cek pengaturan notifikasi Tayang di komputer ini',
+    testFailed: 'Tidak bisa mengirimnya: {{message}}',
     backgroundError: 'Tidak bisa mengubahnya: {{message}}',
     videoLanguage: 'Bahasa di video',
     format: 'Format',
@@ -373,6 +376,8 @@ export const id: Translations = {
     title: 'Tayang Studio',
     review: 'Cek {{title}} sebelum jatuh tempo',
     post: 'Waktunya posting {{title}}',
+    reviewLate: '{{title}} sudah jatuh tempo dan masih menunggu pengecekanmu',
+    test: 'Ini notifikasi percobaan. Kalau kamu bisa membacanya, pengingat akan sampai ke kamu.',
     blocked: 'Pengingat tidak bisa muncul karena notifikasi untuk Tayang mati. Nyalakan di pengaturan sistemmu.',
   },
   calendar: {

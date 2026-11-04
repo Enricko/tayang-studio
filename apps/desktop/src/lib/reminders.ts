@@ -9,6 +9,8 @@ export interface Reminder {
   project: Project;
   /** `review`: still waiting for approval, due soon. `post`: time to post it. */
   kind: 'review' | 'post';
+  /** A review reminder after the due time: the video is overdue and still waiting. */
+  late: boolean;
   /** The project field to stamp once the reminder was shown, so it fires only once. */
   stamp: 'reviewRemindedAt' | 'remindedAt';
 }
@@ -28,10 +30,10 @@ export function dueReminders(projects: Project[], now: Date): Reminder[] {
     if (Number.isNaN(due) || t > due + MISSED_WINDOW_MS) continue;
     if (project.reviewState === 'pending') {
       if (t >= due - REVIEW_LEAD_MS && !project.reviewRemindedAt) {
-        found.push({ due, reminder: { project, kind: 'review', stamp: 'reviewRemindedAt' } });
+        found.push({ due, reminder: { project, kind: 'review', late: t >= due, stamp: 'reviewRemindedAt' } });
       }
     } else if (t >= due && !project.remindedAt) {
-      found.push({ due, reminder: { project, kind: 'post', stamp: 'remindedAt' } });
+      found.push({ due, reminder: { project, kind: 'post', late: false, stamp: 'remindedAt' } });
     }
   }
   return found.sort((a, b) => a.due - b.due).map((f) => f.reminder);

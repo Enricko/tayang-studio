@@ -38,6 +38,12 @@ describe('dueReminders', () => {
     expect(kinds([approved], at(0))).toEqual(['p:post']);
   });
 
+  it('marks a review reminder as late once the time has passed', () => {
+    const pending = p({ reviewState: 'pending' });
+    expect(dueReminders([pending], at(-H))[0]!.late).toBe(false);
+    expect(dueReminders([pending], at(0))[0]!.late).toBe(true);
+  });
+
   it('fires each reminder once', () => {
     expect(kinds([p({ remindedAt: '2026-11-05T10:00:30Z' })], at(H))).toEqual([]);
     expect(kinds([p({ reviewState: 'pending', reviewRemindedAt: '2026-11-05T08:00:30Z' })], at(H))).toEqual([]);

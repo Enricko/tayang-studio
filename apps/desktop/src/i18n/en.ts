@@ -182,6 +182,9 @@ export const en = {
     backgroundHint: 'Closing the window hides Tayang to the menu bar or tray, so reminders and autopilots keep running. Quit from its menu',
     openAtLogin: 'Open at login',
     openAtLoginHint: 'Starts Tayang when you sign in to this computer. Needs the background option',
+    testNotification: 'Send a test notification',
+    testSent: "Test notification sent. If you don't see it, check the notification settings for Tayang on this computer",
+    testFailed: "Couldn't send it: {{message}}",
     backgroundError: "Couldn't change that: {{message}}",
     videoLanguage: 'Language in videos',
     format: 'Format',
@@ -378,6 +381,8 @@ export const en = {
     title: 'Tayang Studio',
     review: "Review {{title}} before it's due",
     post: 'Time to post {{title}}',
+    reviewLate: '{{title}} is due and still waiting for your review',
+    test: "This is a test notification. If you can read it, reminders will reach you.",
     blocked: "Reminders can't show because notifications are off for Tayang. Turn them on in your system settings.",
   },
   calendar: {
