@@ -229,23 +229,147 @@ impl Db {
         Ok(())
     }
 
-    // ---- projects, chats, messages, styles, jobs: implemented in later commits ----
-    #[allow(unused_variables)]
-    pub fn list_projects(&self) -> Result<Vec<Project>> { todo!() }
-    #[allow(unused_variables)]
-    pub fn insert_project(&self, p: &Project) -> Result<()> { todo!() }
-    #[allow(unused_variables)]
-    pub fn update_project(&self, id: &str, patch: Value) -> Result<Project> { todo!() }
-    #[allow(unused_variables)]
-    pub fn get_project(&self, id: &str) -> Result<Option<Project>> { todo!() }
-    #[allow(unused_variables)]
-    pub fn create_chat(&self, project_id: Option<&str>, agent: AgentId, title: &str) -> Result<Chat> { todo!() }
-    #[allow(unused_variables)]
-    pub fn list_chats(&self, project_id: Option<&str>) -> Result<Vec<Chat>> { todo!() }
-    #[allow(unused_variables)]
-    pub fn add_message(&self, chat_id: &str, role: MessageRole, parts: &[MessagePart]) -> Result<ChatMessage> { todo!() }
-    #[allow(unused_variables)]
-    pub fn list_messages(&self, chat_id: &str) -> Result<Vec<ChatMessage>> { todo!() }
+
+    // ---- projects ----
+
+    pub fn list_projects(&self) -> Result<Vec<Project>> {
+        let sql = format!("{PROJECT_SELECT} ORDER BY updated_at DESC, rowid DESC");
+        query_as(&self.conn(), &sql, &[])
+    }
+
+    pub fn insert_project(&self, p: &Project) -> Result<()> {
+        let vals = bind_values(p, &PROJECT_KEYS)?;
+        self.conn().execute(
+            "INSERT INTO projects (id, title, slug, folder, kind, format, language, status, \
+             style_id, scheduled_at, duration_sec, created_at, updated_at) \
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)",
+            params_from_iter(vals),
+        )?;
+        Ok(())
+    }
+
+    pub fn get_project(&self, id: &str) -> Result<Option<Project>> {
+        let sql = format!("{PROJECT_SELECT} WHERE id = ?1");
+        Ok(query_as::<Project>(&self.conn(), &sql, &[&id])?.into_iter().next())
+    }
+
+    /// Shallow-merges `patch` over the stored project. `id` cannot change; `updatedAt`
+    /// is bumped unless the patch sets it.
+    pub fn update_project(&self, id: &str, patch: Value) -> Result<Project> {
+        if let Some(new_id) = patch.get("id") {
+            if new_id != &json!(id) {
+                return Err(DbError("project id cannot be changed".into()));
+            }
+        }
+        let current = self
+            .get_project(id)?
+            .ok_or_else(|| DbError(format!("project not found: {id}")))?;
+        let mut merged = serde_json::to_value(&current)?;
+        if patch.get("updatedAt").is_none() {
+            merged["updatedAt"] = json!(now());
+        }
+        merge_patch(&mut merged, &patch);
+        let updated: Project = serde_json::from_value(merged)?;
+        let mut vals = bind_values(&updated, &PROJECT_KEYS)?;
+        let id_val = vals.remove(0);
+        vals.push(id_val);
+        self.conn().execute(
+            "UPDATE projects SET title=?1, slug=?2, folder=?3, kind=?4, format=?5, language=?6, \
+             status=?7, style_id=?8, scheduled_at=?9, duration_sec=?10, created_at=?11, \
+             updated_at=?12 WHERE id=?13",
+            params_from_iter(vals),
+        )?;
+        Ok(updated)
+    }
+
+    // ---- chats and messages ----
+
+    pub fn create_chat(&self, project_id: Option<&str>, agent: AgentId, title: &str) -> Result<Chat> {
+        let chat = Chat {
+            id: new_id(),
+            project_id: project_id.map(str::to_string),
+            agent_id: agent,
+            title: title.to_string(),
+            created_at: now(),
+        };
+        let vals = bind_values(&chat, &["id", "projectId", "agentId", "title", "createdAt"])?;
+        self.conn().execute(
+            "INSERT INTO chats (id, project_id, agent_id, title, created_at) VALUES (?1,?2,?3,?4,?5)",
+            params_from_iter(vals),
+        )?;
+        Ok(chat)
+    }
+
+    /// `Some(id)` lists that project's chats; `None` lists chats not tied to a project.
+    pub fn list_chats(&self, project_id: Option<&str>) -> Result<Vec<Chat>> {
+        let conn = self.conn();
+        match project_id {
+            Some(p) => query_as(
+                &conn,
+                &format!("{CHAT_SELECT} WHERE project_id = ?1 ORDER BY created_at DESC, rowid DESC"),
+                &[&p],
+            ),
+            None => query_as(
+                &conn,
+                &format!("{CHAT_SELECT} WHERE project_id IS NULL ORDER BY created_at DESC, rowid DESC"),
+                &[],
+            ),
+        }
+    }
+
+    pub fn add_message(
+        &self,
+        chat_id: &str,
+        role: MessageRole,
+        parts: &[MessagePart],
+    ) -> Result<ChatMessage> {
+        let msg = ChatMessage {
+            id: new_id(),
+            chat_id: chat_id.to_string(),
+            role,
+            parts: parts.to_vec(),
+            created_at: now(),
+        };
+        let role_s = serde_json::to_value(role)?;
+        self.conn().execute(
+            "INSERT INTO messages (id, chat_id, role, parts, created_at) VALUES (?1,?2,?3,?4,?5)",
+            rusqlite::params![
+                msg.id,
+                msg.chat_id,
+                role_s.as_str().unwrap_or_default(),
+                serde_json::to_string(&msg.parts)?,
+                msg.created_at
+            ],
+        )?;
+        Ok(msg)
+    }
+
+    pub fn list_messages(&self, chat_id: &str) -> Result<Vec<ChatMessage>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT id, chat_id AS chatId, role, parts, created_at AS createdAt \
+             FROM messages WHERE chat_id = ?1 ORDER BY rowid",
+        )?;
+        let rows = stmt.query_map([chat_id], |r| {
+            Ok(json!({
+                "id": r.get::<_, String>(0)?,
+                "chatId": r.get::<_, String>(1)?,
+                "role": r.get::<_, String>(2)?,
+                "parts": r.get::<_, String>(3)?,
+                "createdAt": r.get::<_, String>(4)?,
+            }))
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            let mut v = row?;
+            let parts: Value = serde_json::from_str(v["parts"].as_str().unwrap_or("[]"))?;
+            v["parts"] = parts;
+            out.push(serde_json::from_value(v)?);
+        }
+        Ok(out)
+    }
+
+    // ---- styles, jobs: implemented in the next commit ----
     #[allow(unused_variables)]
     pub fn list_styles(&self) -> Result<Vec<Style>> { todo!() }
     #[allow(unused_variables)]
