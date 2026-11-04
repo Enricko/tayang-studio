@@ -61,7 +61,7 @@ function JobCard({ job, project, onDismiss }: { job: Job; project: string; onDis
           {working ? t('agents.workingAgo', { ago: ago(job.updatedAt) }) : ago(job.updatedAt)}
         </span>
       </div>
-      <span className="text-sm leading-[1.4] font-medium">{localized(job.title)}</span>
+      <span className="text-sm leading-[1.4] font-medium">{job.kind === 'study-style' ? localized(job.title) : job.title}</span>
       <span className="text-xs text-text-3">{project}</span>
       {job.progress != null && (
         <div className="flex flex-col gap-2">

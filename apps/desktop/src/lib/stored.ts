@@ -38,6 +38,8 @@ export function stored(key: StoredKey, params?: Params): string {
   return say(key, { ...params, lng: 'en' });
 }
 
+const NESTED = new Set(['problem', 'reason']);
+
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 let compiled: { key: StoredKey; re: RegExp }[] | null = null;
@@ -62,8 +64,11 @@ export function localized(text: string): string {
   for (const { key, re } of patterns()) {
     const m = re.exec(text);
     if (!m) continue;
-    // Parameters can be saved text too (a template problem is one of ours).
-    const params = Object.fromEntries(Object.entries(m.groups ?? {}).map(([k, v]) => [k, localized(v)]));
+    // Only these parameters can themselves be saved text (a template problem is one of ours); the rest
+    // are names, commands and agent messages, which are never rewritten.
+    const params = Object.fromEntries(
+      Object.entries(m.groups ?? {}).map(([k, v]) => [k, NESTED.has(k) ? localized(v) : v]),
+    );
     return say(key, params);
   }
   return text;

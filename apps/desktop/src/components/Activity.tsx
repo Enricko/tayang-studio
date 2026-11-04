@@ -49,7 +49,7 @@ export function summarize(items: ActivityItem[]): { segments: string[]; failed: 
   }
   const segments: string[] = [];
   const t = i18n.t;
-  if (n.thought) segments.push(t('activity.thought', { count: n.thought }));
+  if (n.thought) segments.push(n.thought === 1 ? t('activity.thoughtProcess') : t('activity.thought', { count: n.thought }));
   if (n.execute) segments.push(t('activity.ran', { count: n.execute }));
   if (n.edit) segments.push(t('activity.edited', { count: n.edit }));
   if (n.read) segments.push(t('activity.read', { count: n.read }));
@@ -100,27 +100,27 @@ function rowOf(p: ToolPart): Row {
     const cmd = command(p);
     return {
       Icon: SquareTerminal,
-      verb: i18n.t('activity.run'),
+      verb: i18n.t('activity.verb.run'),
       detail: (
         <span title={cmd} className="min-w-0 truncate font-mono text-[12px]">
           {cmd}
         </span>
       ),
-      label: `${i18n.t('activity.run')} ${cmd}`,
+      label: `${i18n.t('activity.verb.run')} ${cmd}`,
     };
   }
   if (kind === 'edit' || kind === 'delete' || kind === 'move') {
-    const verb = i18n.t(kind === 'edit' ? 'activity.edit' : kind === 'delete' ? 'activity.delete' : 'activity.move');
+    const verb = i18n.t(kind === 'edit' ? 'activity.verb.edit' : kind === 'delete' ? 'activity.verb.delete' : 'activity.verb.move');
     return { Icon: Pencil, verb, detail: <FileChip name={fileName(p)} />, label: `${verb} ${fileName(p)}` };
   }
-  if (kind === 'read') return { Icon: FileText, verb: i18n.t('activity.read'), detail: <FileChip name={fileName(p)} />, label: `${i18n.t('activity.read')} ${fileName(p)}` };
+  if (kind === 'read') return { Icon: FileText, verb: i18n.t('activity.verb.read'), detail: <FileChip name={fileName(p)} />, label: `${i18n.t('activity.verb.read')} ${fileName(p)}` };
   if (kind === 'search') {
     const q = p.title.replace(/^\s*search(ing)?\s*(for)?\s*/i, '').trim() || p.title;
-    return { Icon: Search, verb: i18n.t('activity.search'), detail: <span className="min-w-0 truncate">{q}</span>, label: `${i18n.t('activity.search')} ${q}` };
+    return { Icon: Search, verb: i18n.t('activity.verb.search'), detail: <span className="min-w-0 truncate">{q}</span>, label: `${i18n.t('activity.verb.search')} ${q}` };
   }
   if (kind === 'fetch') {
     const t = p.title.replace(/^\s*fetch(ing)?\s*/i, '').trim() || p.title;
-    return { Icon: Globe, verb: i18n.t('activity.fetch'), detail: <span className="min-w-0 truncate">{t}</span>, label: `${i18n.t('activity.fetch')} ${t}` };
+    return { Icon: Globe, verb: i18n.t('activity.verb.fetch'), detail: <span className="min-w-0 truncate">{t}</span>, label: `${i18n.t('activity.verb.fetch')} ${t}` };
   }
   return { Icon: Wrench, verb: p.title, detail: null, label: p.title };
 }

@@ -192,6 +192,12 @@ describe('saved text', () => {
     expect(localized('Couldn’t reach the agent (code 7)')).toBe('Couldn’t reach the agent (code 7)');
   });
 
+  it('only rewrites parameters that can be saved text', () => {
+    setUiLanguage('id');
+    expect(localized(stored('chat.settingTemplate', { name: 'Cancelled' }))).toBe('Menyiapkan template Cancelled…');
+    expect(localized(stored('chat.ranWithoutAsking', { what: 'Cancelled' }))).toBe('Dijalankan tanpa minta izin: Cancelled');
+  });
+
   it('keeps English as it is when the interface is English', () => {
     expect(i18n.language).toBe('en');
     expect(localized(CLOSED_NOTE)).toBe(CLOSED_NOTE);

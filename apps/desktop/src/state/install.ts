@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { AgentId, AgentUpdate, PermissionRequest, SystemInfo, ToolId, ToolStatus } from '@tayang/shared';
-import { buildInstallPrompt } from '@tayang/skills';
+import { buildInstallPrompt, languageHint } from '@tayang/skills';
+import { uiLanguage } from '@/i18n';
 import { agentCancel, agentPrompt, agentRespondPermission, agentStart, checkTools } from '@/lib/ipc';
 import { i18n } from '@/i18n';
 import { agentErrorText } from '@/lib/agents';
@@ -151,7 +152,8 @@ export const useInstall = create<InstallState>((set, get) => {
       patch(tool, { status: 'confirm', log: [], error: undefined, reply: undefined });
       try {
         await agentStart(SETUP_CHAT, opts.agent);
-        const text = buildInstallPrompt(tool, opts.sys, opts.agent, { elevenLabsKey: opts.elevenLabsKey });
+        // The agent's failure text reaches the user, so it follows their language too.
+        const text = [buildInstallPrompt(tool, opts.sys, opts.agent, { elevenLabsKey: opts.elevenLabsKey }), languageHint(uiLanguage())].filter(Boolean).join('\n\n');
         await agentPrompt(SETUP_CHAT, [{ type: 'text', text }]);
       } catch (e) {
         if (get().active === tool) fail(tool, agentErrorText(e instanceof Error ? e.message : String(e), opts.agent));

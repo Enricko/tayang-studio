@@ -47,11 +47,13 @@ export function TurnRail({
   /** Where the rail sits horizontally inside its positioned parent. */
   className?: string;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n: inst } = useTranslation();
   const turns = useMemo(
     () =>
       messages.flatMap((m, i) => (m.role === 'user' ? [{ index: i, text: turnText(m) }] : [])),
-    [messages],
+    // the fallback labels ("Message", "Frame at …") are in the language of the moment
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [messages, inst.language],
   );
   const indexes = useMemo(() => turns.map((t) => t.index), [turns]);
   // The listener and observer are made once per container; they read the turns through this ref.

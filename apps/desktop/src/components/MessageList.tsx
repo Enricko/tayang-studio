@@ -212,7 +212,7 @@ export function MessageList({
   /** Extra blocks under the conversation (permission card, idea cards). */
   children?: React.ReactNode;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n: inst } = useTranslation();
   const end = useRef<HTMLDivElement>(null);
   // Follow the conversation only while the reader is at the bottom (or just sent something), so jumping
   // to an earlier turn while the agent streams stays put.
@@ -243,7 +243,9 @@ export function MessageList({
     if (stick.current) end.current?.scrollIntoView?.({ block: 'end' });
   }, [messages, streaming]);
 
-  const a2ui = useMemo(() => deriveA2ui(messages), [messages]);
+  const a2ui = useMemo(() => deriveA2ui(messages), // the version note is in the language of the moment
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [messages, inst.language]);
   const actions = useMemo(
     () => ({ handle: onA2uiAction, locked: streaming || busy, sendOptions }),
     [onA2uiAction, streaming, busy, sendOptions],

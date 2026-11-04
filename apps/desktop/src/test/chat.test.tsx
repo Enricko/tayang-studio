@@ -624,6 +624,23 @@ describe('ChatProject', () => {
     expect(JSON.stringify(vi.mocked(ipc.agentPrompt).mock.calls[1]![1])).not.toContain('The user reads Indonesian');
   });
 
+  it('keeps the hint out of the saved message, and sends it again for a new session', async () => {
+    const user = userEvent.setup();
+    useApp.setState({ settings: { ...settings, uiLanguage: 'id' } });
+    setUiLanguage('id');
+    render(<ChatProject chatId="c1" />);
+    await user.type(await screen.findByRole('textbox', { name: 'Pesan' }), 'satu');
+    await user.click(screen.getByRole('button', { name: 'Kirim' }));
+    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(ipc.addMessage).mock.calls.every((c) => !JSON.stringify(c[2]).includes('The user reads'))).toBe(true);
+    await emit('c1', { kind: 'done', stopReason: 'end_turn' });
+    await useChat.getState().stop('c1');
+    await user.type(screen.getByRole('textbox', { name: 'Pesan' }), 'dua');
+    await user.click(screen.getByRole('button', { name: 'Kirim' }));
+    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalledTimes(2));
+    expect(JSON.stringify(vi.mocked(ipc.agentPrompt).mock.calls[1]![1])).toContain('The user reads Indonesian');
+  });
+
   it('does not add the hint for English', async () => {
     const user = userEvent.setup();
     render(<ChatProject chatId="c1" />);
