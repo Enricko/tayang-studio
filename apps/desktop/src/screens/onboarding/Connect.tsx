@@ -19,6 +19,7 @@ const ROWS: { id: AgentId; name: string; installUrl?: string }[] = [
 
 export function Connect() {
   const { navigate, settings, setSettings } = useApp();
+  const [error, setError] = useState<string | null>(null);
   const [agents, setAgents] = useState<AgentInfo[] | null>(null);
 
   useEffect(() => {
@@ -32,8 +33,12 @@ export function Connect() {
   }, []);
 
   const connect = async (id: AgentId) => {
-    const next = await updateSettings({ defaultAgent: id });
-    setSettings(next);
+    setError(null);
+    try {
+      setSettings(await updateSettings({ defaultAgent: id }));
+    } catch {
+      setError("Couldn't save your choice. Try again");
+    }
   };
 
   const info = (id: AgentId) => agents?.find((a) => a.id === id);
@@ -98,6 +103,8 @@ export function Connect() {
             );
           })}
         </ul>
+
+        {error && <p role="alert" className="m-0 text-[13px] text-orange-light">{error}</p>}
 
         <div className="flex items-center gap-4 px-1">
           <img src={defaultOyen} alt="" aria-hidden="true" className="size-10 shrink-0" />

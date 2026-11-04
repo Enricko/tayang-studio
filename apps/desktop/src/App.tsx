@@ -1,4 +1,5 @@
-import { useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { Button } from '@/components/Button';
 import { Sidebar, type SidebarKey } from '@/components/Sidebar';
 import { getSettings } from '@/lib/ipc';
 import { Connect } from '@/screens/onboarding/Connect';
@@ -49,22 +50,37 @@ export default function App() {
   const route = useApp((s) => s.route);
   const settings = useApp((s) => s.settings);
 
+  const [loadError, setLoadError] = useState(false);
+
   // First launch decides where to start: onboarded users go straight to a new chat.
-  useEffect(() => {
-    let live = true;
+  const load = useCallback(() => {
+    setLoadError(false);
     getSettings()
       .then((st) => {
-        if (!live) return;
         useApp.getState().setSettings(st);
         if (st.onboarded) useApp.getState().navigate({ name: 'chat-new' });
       })
-      .catch(() => {});
-    return () => {
-      live = false;
-    };
+      .catch(() => setLoadError(true));
   }, []);
 
-  if (!settings) return <div data-tauri-drag-region className="h-full bg-background" />;
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  if (!settings) {
+    return (
+      <div data-tauri-drag-region className="flex h-full flex-col items-center justify-center gap-4 bg-background">
+        {loadError && (
+          <>
+            <p className="m-0 text-sm text-text-2">Tayang couldn't load your settings.</p>
+            <Button variant="secondary" onClick={load}>
+              Try again
+            </Button>
+          </>
+        )}
+      </div>
+    );
+  }
 
   if (ONBOARDING.has(route.name)) {
     return (

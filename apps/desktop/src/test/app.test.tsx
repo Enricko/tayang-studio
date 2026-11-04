@@ -35,3 +35,14 @@ describe('App start', () => {
     expect(useApp.getState().route.name).toBe('chat-new');
   });
 });
+
+describe('App settings failure', () => {
+  it('shows an error with Try again instead of a blank window', async () => {
+    useApp.setState({ route: { name: 'welcome' }, settings: null });
+    vi.mocked(getSettings).mockRejectedValueOnce(new Error('boom')).mockResolvedValueOnce(base);
+    render(<App />);
+    const retry = await screen.findByRole('button', { name: 'Try again' });
+    retry.click();
+    expect(await screen.findByText('Get started')).toBeInTheDocument();
+  });
+});
