@@ -102,6 +102,15 @@ export interface ChatMessage {
 
 export type StyleAspect = 'camera' | 'pacing' | 'type' | 'color' | 'captions' | 'transitions';
 
+export type StyleEngine = 'hyperframes' | 'remotion';
+
+/** A built-in style's starter project, served by the API as a zip. */
+export interface StyleTemplate {
+  sha256: string;
+  size: number;
+  version: number;
+}
+
 export interface Style {
   id: string;
   name: string;
@@ -110,6 +119,10 @@ export interface Style {
   notes: Partial<Record<StyleAspect, string>>;
   prompt: string;
   createdAt: string;
+  engine?: StyleEngine;
+  previewUrl?: string | null;
+  template?: StyleTemplate | null;
+  version?: number;
 }
 
 export type JobKind = 'build' | 'render' | 'install' | 'study-style' | 'script';
