@@ -131,7 +131,8 @@ describe('Preview layout', () => {
     expect(time.className).toMatch(/tabular-nums/);
     expect(time.className).toMatch(/font-mono/);
     // the frame number is in the timecode's tooltip, and a chip from 320 px up
-    expect(time).toHaveAttribute('title', 'Frame 330');
+    expect(time).toHaveAttribute('title', '0:11.00 / 0:34.00 · Frame 330');
+    expect(time.className).toMatch(/min-w-0/); // a long timecode truncates instead of overflowing
     const chip = within(row).getByText('#330');
     expect(chip.className).toMatch(/hidden/);
     expect(chip.className).toMatch(/@min-\[320px\]:inline-flex/);
@@ -157,7 +158,7 @@ describe('Preview layout', () => {
     await screen.findByRole('slider');
     const hints = screen.getByTestId('key-hints');
     expect(hints.className).toMatch(/hidden/);
-    expect(hints.className).toMatch(/@min-\[300px\]:flex/);
+    expect(hints.className).toMatch(/@min-\[296px\]:flex/);
     expect(hints.querySelectorAll('kbd').length).toBeGreaterThanOrEqual(3);
     expect(hints).toHaveTextContent('← → frame · Shift+← → 1 s');
     expect(screen.getByRole('button', { name: 'Previous frame' })).toHaveAttribute('title', expect.stringContaining('Shift+←'));
@@ -170,9 +171,9 @@ describe('Preview layout', () => {
     const next = screen.getByRole('button', { name: 'Next frame' });
     next.focus();
     await userEvent.keyboard('{ArrowRight}');
-    expect(screen.getByTestId('timecode')).toHaveAttribute('title', 'Frame 1');
+    expect(screen.getByTestId('timecode')).toHaveAttribute('title', expect.stringMatching(/· Frame 1$/));
     await userEvent.keyboard('{Shift>}{ArrowRight}{/Shift}');
-    expect(screen.getByTestId('timecode')).toHaveAttribute('title', 'Frame 31');
+    expect(screen.getByTestId('timecode')).toHaveAttribute('title', expect.stringMatching(/· Frame 31$/));
   });
 
   it('sizes the frame box from the measured stage, keeping the video shape, so marks land on the picture', async () => {

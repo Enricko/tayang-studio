@@ -318,8 +318,8 @@ export function Preview({
           </Button>
           <span
             data-testid="timecode"
-            title={t('preview.frame', { n: frame })}
-            className="ml-1 shrink-0 font-mono text-xs whitespace-nowrap tabular-nums text-foreground"
+            title={`${current} / ${length} · ${t('preview.frame', { n: frame })}`}
+            className="ml-1 min-w-0 truncate font-mono text-xs whitespace-nowrap tabular-nums text-foreground"
           >
             {current}
             <span className="text-text-3"> / {length}</span>
@@ -367,7 +367,7 @@ export function Preview({
           </p>
         )}
 
-        <p data-testid="key-hints" className="m-0 hidden items-center gap-1 text-[11px] leading-4 text-text-3 @min-[300px]:flex">
+        <p data-testid="key-hints" className="m-0 hidden items-center gap-1 text-[11px] leading-4 text-text-3 @min-[296px]:flex">
           <Kbd>←</Kbd> <Kbd>→</Kbd> <span>{t('preview.keysFrame')}</span> <span aria-hidden="true">·</span>{' '}
           <span className="inline-flex items-center gap-0.5">
             <Kbd>Shift</Kbd>+<Kbd>←</Kbd> <Kbd>→</Kbd>
