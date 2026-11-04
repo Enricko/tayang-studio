@@ -13,6 +13,11 @@ export const isWorkTool = (p: MessagePart) => p.type === 'tool' && p.status === 
 
 /** The status each project is known to have in this app session; a move to it or behind it asks nothing. */
 const known = new Map<string, ProjectStatus>();
+/** Remembers a status, never lower than one already known (a live move may land while the backfill runs). */
+const remember = (id: string, status: ProjectStatus) => {
+  const at = known.get(id);
+  if (!at || RANK[status] > RANK[at]) known.set(id, status);
+};
 const moving = new Map<string, Promise<void>>();
 
 /**
@@ -28,7 +33,7 @@ export function advanceProject(projectId: string, status: 'building' | 'rendered
   const run = (async () => {
     try {
       const project = await setProjectStatus(projectId, status);
-      known.set(projectId, project.status);
+      remember(projectId, project.status);
       useApp.getState().bumpProjects();
     } catch {
       /* the step bar is best effort: a chat or a job never breaks over it */
@@ -73,7 +78,7 @@ async function backfill(): Promise<void> {
         return null;
       }),
     );
-    for (const p of moved) if (p) known.set(p.id, p.status);
+    for (const p of moved) if (p) remember(p.id, p.status);
     await updateSettings({ projectStatusChecked: true });
     if (moved.some(Boolean)) useApp.getState().bumpProjects();
   } catch {
