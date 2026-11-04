@@ -33,7 +33,8 @@ export function Composer({
   mentionSignal = 0,
 }: {
   chatId: string | null;
-  onSend(parts: MessagePart[]): void;
+  /** Resolve to false when sending failed: the draft is then kept. */
+  onSend(parts: MessagePart[]): void | boolean | Promise<void | boolean>;
   disabled?: boolean;
   /** Videos the @ menu can list. Omit to turn the menu off. */
   projects?: Project[];
@@ -73,13 +74,23 @@ export function Composer({
   };
 
   const canSend = !disabled && (text.trim().length > 0 || !!mention);
-  const send = () => {
-    if (!canSend) return;
+  const sending = useRef(false);
+  const send = async () => {
+    if (!canSend || sending.current) return;
     const parts: MessagePart[] = [];
     if (text.trim()) parts.push({ type: 'text', text: text.trim() });
     if (mention) parts.push({ type: 'mention', ...mention });
-    onSend(parts);
+    sending.current = true;
+    const draft = text;
     setText('');
+    try {
+      // The prompt may run for the whole turn, so clear now and give the draft back on failure.
+      if ((await onSend(parts)) === false) setText((t) => t || draft);
+    } catch {
+      setText((t) => t || draft);
+    } finally {
+      sending.current = false;
+    }
   };
 
   const onKeyDown = (e: React.KeyboardEvent) => {
@@ -104,7 +115,8 @@ export function Composer({
     }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      send();
+      if (open) setDismissed(text);
+      else void send();
     }
   };
 
@@ -117,7 +129,7 @@ export function Composer({
               key={q}
               type="button"
               disabled={disabled}
-              onClick={() => onSend([{ type: 'text', text: q }])}
+              onClick={() => void onSend([{ type: 'text', text: q }])}
               className="h-8 cursor-pointer rounded-full border border-hairline bg-transparent px-3 text-[13px] text-text-2 transition-colors hover:bg-raised hover:text-foreground disabled:cursor-default disabled:opacity-50"
             >
               {q}
@@ -205,7 +217,7 @@ export function Composer({
                 type="button"
                 aria-label="Send"
                 disabled={!canSend}
-                onClick={send}
+                onClick={() => void send()}
                 className="ml-auto inline-flex size-8 cursor-pointer items-center justify-center rounded-md border-none bg-primary text-primary-foreground transition-colors hover:bg-accent-hover disabled:cursor-default disabled:opacity-50"
               >
                 <ArrowUp size={16} strokeWidth={2} aria-hidden="true" />

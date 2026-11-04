@@ -29,6 +29,7 @@ export function ChatNew() {
   const [ideas, setIdeas] = useState<Idea[]>([]);
   const [signal, setSignal] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const topicPending = useRef(false);
 
   const messages = useChat((s) => (chatId ? s.messages[chatId] : undefined)) ?? NO_MESSAGES;
@@ -51,6 +52,7 @@ export function ChatNew() {
   useEffect(() => {
     if (!chatId || streaming || !topicPending.current) return;
     const last = messages[messages.length - 1];
+    if (last?.role === 'system') topicPending.current = false; // the turn failed
     if (last?.role !== 'agent') return;
     topicPending.current = false;
     setIdeas(parseTopicIdeas(agentText(last.parts)));
@@ -79,14 +81,26 @@ export function ChatNew() {
     return out;
   };
 
-  const onSend = async (parts: MessagePart[]) => {
-    const text = parts.find((p) => p.type === 'text');
-    const id = await ensureChat(text?.type === 'text' ? text.text.slice(0, 48) : 'New chat');
-    const ctx = await context(parts);
-    const ids = parts.flatMap((p) => (p.type === 'mention' ? [p.projectId] : []));
-    setSeen((s) => [...new Set([...s, ...ids])]);
+  const onSend = async (parts: MessagePart[]): Promise<boolean> => {
+    setError(null);
+    const sentMention = mention;
     setMention(null);
-    void useChat.getState().send(id, parts, ctx.length ? { promptParts: [...ctx, ...parts] } : undefined);
+    try {
+      const text = parts.find((p) => p.type === 'text');
+      const id = await ensureChat(text?.type === 'text' ? text.text.slice(0, 48) : 'New chat');
+      const ctx = await context(parts);
+      const failure = await useChat
+        .getState()
+        .send(id, parts, ctx.length ? { promptParts: [...ctx, ...parts] } : undefined);
+      if (failure) throw new Error(failure);
+      const ids = parts.flatMap((p) => (p.type === 'mention' ? [p.projectId] : []));
+      setSeen((s) => [...new Set([...s, ...ids])]);
+      return true;
+    } catch (e) {
+      setMention(sentMention);
+      setError(`Couldn't start the chat: ${e instanceof Error ? e.message : String(e)}`);
+      return false;
+    }
   };
 
   const askTopics = async () => {
@@ -195,7 +209,7 @@ export function ChatNew() {
         <div className="w-full max-w-[720px] pb-6 pt-4">
           <Composer
             chatId={chatId}
-            onSend={(p) => void onSend(p)}
+            onSend={onSend}
             disabled={streaming}
             projects={projects}
             mention={mention}
@@ -203,6 +217,11 @@ export function ChatNew() {
             mentionSignal={signal}
             placeholder="Describe the video you want, or type @ to start from one you made"
           />
+          {error && (
+            <p role="alert" className="m-0 mt-2 text-xs text-orange-light">
+              {error}
+            </p>
+          )}
           <p className="m-0 mt-2 text-xs text-text-3">
             A new chat doesn't see any of your videos until you mention one with @
           </p>
