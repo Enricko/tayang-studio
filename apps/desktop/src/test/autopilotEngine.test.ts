@@ -262,8 +262,23 @@ describe('slot upkeep', () => {
   it('fails slots still making from an earlier run, once, with the closed note', async () => {
     db.slots.push({ id: 'm', autopilotId: 'a1', dueAt: at(4, 7), status: 'making', projectId: 'p0', error: null });
     respond = () => ({ hang: true });
+    vi.mocked(ipc.listJobs).mockResolvedValueOnce([
+      { id: 'build-chat-p0', kind: 'build', title: 'T', projectId: 'p0', chatId: 'chat-p0', agentId: 'claude', status: 'working', progress: null, note: null, sourceUrl: null, updatedAt: 'x' },
+    ]);
     await pass(NOW);
     expect(slot('m')).toMatchObject({ status: 'failed', error: 'Tayang was closed while this was running', projectId: 'p0' });
+    // Its build job leaves Working too (a reload skips Rust's start-up check).
+    expect(ipc.upsertJob).toHaveBeenCalledWith(expect.objectContaining({ id: 'build-chat-p0', status: 'failed', note: 'Tayang was closed while this was running' }));
+  });
+
+  it('reads every older slot on the first pass only, then just the last day', async () => {
+    respond = () => ({ hang: true });
+    await pass(NOW);
+    expect(vi.mocked(ipc.listSlots).mock.calls.some(([from]) => from === '1970-01-01T00:00:00Z')).toBe(true);
+    vi.mocked(ipc.listSlots).mockClear();
+    await pass(new Date(NOW.getTime() + 30_000));
+    const froms = vi.mocked(ipc.listSlots).mock.calls.map(([from]) => from);
+    expect(froms).toContain(new Date(NOW.getTime() + 30_000 - 24 * 60 * 60_000).toISOString());
   });
 
   it('tells the Calendar when something changed', async () => {

@@ -19,6 +19,7 @@ import {
   getSettings,
   listAutopilots,
   listChats,
+  listJobs,
   listProjects,
   listSlots,
   listStyles,
@@ -28,13 +29,14 @@ import {
   setSchedule,
   updateProject,
   updateSlot,
+  upsertJob,
   upsertSlot,
 } from '@/lib/ipc';
 import { onTick } from '@/lib/scheduler';
 import { stored } from '@/lib/stored';
 import { createTopicProject } from '@/lib/topics';
 import { useApp } from '@/state/app';
-import { failChatJob, isBusyRefusal, useChat, type SendOpts } from '@/state/chat';
+import { buildJobId, failChatJob, isBusyRefusal, useChat, type SendOpts } from '@/state/chat';
 
 /**
  * The autopilot engine. It runs in the app (also while it is hidden in the tray), on every scheduler
@@ -313,12 +315,20 @@ async function produce(run: Run): Promise<void> {
  */
 async function recover(): Promise<boolean> {
   let changed = false;
+  const jobs = await listJobs().catch(() => []);
   for (const s of await listSlots(EPOCH, FOREVER)) {
     if (s.status !== 'making' || s.id === running?.slot.id) continue;
     await agentStop(topicChatId(s.autopilotId)).catch(() => {});
     if (s.projectId) {
       const chats = await listChats(s.projectId).catch(() => []);
-      for (const c of chats) await agentStop(c.id).catch(() => {});
+      for (const c of chats) {
+        await agentStop(c.id).catch(() => {});
+        // After a reload of the window Rust's start-up check never ran: the board would say Working forever.
+        const job = jobs.find((j) => j.id === buildJobId(c.id) && j.status === 'working');
+        if (job) {
+          await upsertJob({ ...job, status: 'failed', note: stored('agents.closedNote'), updatedAt: new Date().toISOString() }).catch(() => {});
+        }
+      }
     }
     await updateSlot(s.id, { status: 'failed', error: stored('agents.closedNote') });
     changed = true;
@@ -333,12 +343,16 @@ export async function pass(now: Date = new Date()): Promise<void> {
     // Backup for the turn timer, which a hidden window may throttle: the tick still arrives.
     const r = running;
     if (r?.turnStartedAt != null && now.getTime() - r.turnStartedAt >= TURN_TIMEOUT_MS) await r.timeOut?.();
+    // The first pass looks at every older slot (the app may have been closed for days); later ones only
+    // at the last day, so the read stays small however long the autopilots run.
+    const first = !recovered;
     if (!recovered) {
       changed = (await recover()) || changed;
       recovered = true;
     }
     const active = (await listAutopilots()).filter((a) => a.status === 'active');
-    const slots = await listSlots(EPOCH, new Date(now.getTime() + (PLAN_DAYS + 1) * 24 * 60 * 60_000).toISOString());
+    const from = first ? EPOCH : new Date(now.getTime() - 24 * 60 * 60_000).toISOString();
+    const slots = await listSlots(from, new Date(now.getTime() + (PLAN_DAYS + 1) * 24 * 60 * 60_000).toISOString());
 
     // Due times are compared as instants: Rust returns `...:00Z`, JS `...:00.000Z`.
     const have = new Set(slots.map((s) => `${s.autopilotId}|${Date.parse(s.dueAt)}`));
