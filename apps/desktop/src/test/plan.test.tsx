@@ -66,6 +66,14 @@ describe('plan card', () => {
     expect(screen.getByText('Enough to generate up to 165 images, or up to 23 minutes of AI voice')).toBeInTheDocument();
   });
 
+  it('a hand-granted Pro (no end) has nothing to renew or upgrade (review2 n3)', async () => {
+    vi.mocked(billing.billingStatus).mockResolvedValue({ ...creator, plan: 'pro', lastPlan: null, currentPeriodEnd: null });
+    render(<PlanCard />);
+    expect(await screen.findByText('Pro')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Renew' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Upgrade' })).toBeNull();
+  });
+
   it('ended: the lapsed plan, Ended, and Renew', async () => {
     vi.mocked(billing.billingStatus).mockResolvedValue({ ...creator, plan: 'free', active: false });
     render(<PlanCard />);

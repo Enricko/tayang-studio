@@ -168,9 +168,12 @@ export function PlanCard() {
             {t('billing.changePlan')}
           </Button>
         )}
-        <Button variant="secondary" onClick={() => choose(paidPlan ?? undefined)}>
-          {paidPlan ? t('billing.renew') : t('billing.upgrade')}
-        </Button>
+        {/* A hand-granted Pro has no end: nothing to renew, nothing above it. */}
+        {!(state === 'active' && !end) && (
+          <Button variant="secondary" onClick={() => choose(paidPlan ?? undefined)}>
+            {paidPlan ? t('billing.renew') : t('billing.upgrade')}
+          </Button>
+        )}
       </div>
     </div>
   );
