@@ -95,6 +95,23 @@ describe('the plans flow', () => {
     expect(billing.billingCheckout).not.toHaveBeenCalled();
   });
 
+  it('never resumes a pending link for a plan below the one running (review3 I-2)', async () => {
+    vi.mocked(billing.billingStatus).mockResolvedValue({
+      ...creator,
+      pending: { orderId: 'TYG-L', plan: 'lite', paymentLinkUrl: checkout.paymentLinkUrl, expiresAt: checkout.expiresAt },
+    });
+    await useBilling.getState().enter();
+    expect(useBilling.getState().flow).toEqual({ phase: 'picking' });
+  });
+
+  it('done names the plan in effect and the end as read back, not the plan paid for (review3 I-2)', async () => {
+    vi.mocked(billing.billingStatus).mockResolvedValue(creator);
+    await useBilling.getState().pay('lite');
+    vi.mocked(billing.billingStatus).mockResolvedValue({ ...creator, currentPeriodEnd: '2026-12-13T12:00:00.000Z', lastPaidOrderId: 'TYG-A' });
+    await vi.advanceTimersByTimeAsync(POLL_MS);
+    expect(useBilling.getState().flow).toEqual({ phase: 'done', plan: 'creator', currentPeriodEnd: '2026-12-13T12:00:00.000Z' });
+  });
+
   it('entering with nothing pending starts at picking', async () => {
     await useBilling.getState().enter();
     expect(useBilling.getState().flow).toEqual({ phase: 'picking' });

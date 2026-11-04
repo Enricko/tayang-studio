@@ -329,6 +329,7 @@ export const en = {
       summary: '{{plan}} plan',
       activeFor: 'Active for 30 days from when the payment arrives',
       renewUntil: 'Extended until {{date}}',
+      convertedDays: 'This payment becomes +{{extra}} days on {{current}}, active until {{date}}',
       upgradeCredit: '{{days}} days left of {{old}} become +{{extra}} days on {{plan}}. Active until {{date}}.',
       open: 'Open the QRIS page',
       openAgain: 'Open again',

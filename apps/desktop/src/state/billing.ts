@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { useAuth } from '@/state/auth';
-import { findPlan, type BillingStatus, type CheckoutResponse, type PaidPlanId } from '@tayang/shared';
+import { findPlan, isLowerPlan, type BillingStatus, type CheckoutResponse, type PaidPlanId } from '@tayang/shared';
 import { POLL_LIMIT_MS, POLL_MS, billingCheckout, billingErrorCode, billingStatus, isPaymentLink, type BillingErrorCode } from '@/lib/billing';
 
 /** The plans screen: 1 pick, 2 review and pay (starting / waiting / expired / failed), 3 done.
@@ -75,7 +75,8 @@ export const useBilling = create<BillingStore>((set, get) => {
       const s = await get().refresh();
       if (get().attempt !== attempt) return;
       if (s && paid(s, checkout.orderId, endBefore)) {
-        set({ flow: { phase: 'done', plan, currentPeriodEnd: s.currentPeriodEnd } });
+        // What is in effect now, as read back: a late lower-plan payment only added days to the current plan.
+        set({ flow: { phase: 'done', plan: s.plan !== 'free' ? s.plan : plan, currentPeriodEnd: s.currentPeriodEnd } });
         return;
       }
       if (Date.now() >= until) {
@@ -130,6 +131,8 @@ export const useBilling = create<BillingStore>((set, get) => {
       if (get().attempt !== attempt || !p || !isPaymentLink(p.paymentLinkUrl)) return;
       const plan = findPlan(p.plan);
       if (!plan) return;
+      // The API doesn't offer a link below the running plan; don't resume one either.
+      if (s?.active && isLowerPlan(plan.id, s.plan)) return;
       const checkout = { orderId: p.orderId, paymentLinkUrl: p.paymentLinkUrl, expiresAt: p.expiresAt, amount: plan.price };
       wait(attempt, plan.id, s?.currentPeriodEnd ?? null, checkout);
     },

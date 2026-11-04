@@ -118,35 +118,41 @@ function PlanCards({ chosen, onChoose, current }: { chosen: PaidPlanId; onChoose
   );
 }
 
-/** Step 2's summary: what is being paid for and until when it will run, as the API will compute it. */
-function Summary({ plan }: { plan: Plan }) {
+/** Step 2's summary: what is being paid for and until when it will run, by the API's own rules
+ * (the shared `nextPeriod`), from the status as last read. */
+function Summary({ plan, expiresAt }: { plan: Plan; expiresAt?: string }) {
   const { t } = useTranslation();
   const lang = uiLanguage();
   const status = useBilling((s) => s.status);
   const running = status?.active && status.plan !== 'free' && status.currentPeriodEnd ? { plan: status.plan, end: status.currentPeriodEnd } : null;
   const now = new Date();
   const next = nextPeriod(running, plan.id, now);
-  // Paying later shrinks the days left; if the credit could drop a day while the link is open, say "≈".
-  const later = nextPeriod(running, plan.id, new Date(now.getTime() + LINK_HOURS * 3_600_000));
-  const approx = next.kind === 'upgrade' && later.extraDays !== next.extraDays ? '≈ ' : '';
+  // The server applies the rules when the payment arrives, at the latest when the link expires
+  // (before there is a link: an hour from now). "≈" only when the credit or the date can still change by then.
+  const last = expiresAt ? new Date(Math.max(now.getTime(), Date.parse(expiresAt))) : new Date(now.getTime() + LINK_HOURS * 3_600_000);
+  const atLast = nextPeriod(running, plan.id, last);
+  const approx =
+    next.kind === 'upgrade' && (atLast.extraDays !== next.extraDays || formatDay(atLast.end, lang) !== formatDay(next.end, lang)) ? '≈ ' : '';
+  const current = running ? (findPlan(running.plan)?.name ?? '') : '';
+  // Days left as the credit counts them (fractional), cut to one decimal so it never overstates.
+  const daysLeft = running
+    ? new Intl.NumberFormat(lang === 'id' ? 'id-ID' : 'en-US', { maximumFractionDigits: 1 }).format(
+        Math.floor(((Date.parse(running.end) - now.getTime()) / DAY_MS) * 10) / 10,
+      )
+    : '';
   const line =
     next.kind === 'renew'
       ? t('plans.pay.renewUntil', { date: formatDay(next.end, lang) })
-      : next.kind === 'upgrade' && running
-        ? approx +
-          t('plans.pay.upgradeCredit', {
-            days: Math.floor((Date.parse(running.end) - now.getTime()) / DAY_MS),
-            old: findPlan(running.plan)?.name ?? '',
-            extra: next.extraDays,
-            plan: plan.name,
-            date: formatDay(next.end, lang),
-          })
-        : null;
+      : next.kind === 'upgrade'
+        ? approx + t('plans.pay.upgradeCredit', { days: daysLeft, old: current, extra: next.extraDays, plan: plan.name, date: formatDay(next.end, lang) })
+        : next.kind === 'converted'
+          ? t('plans.pay.convertedDays', { extra: next.extraDays, current, date: formatDay(next.end, lang) })
+          : null;
   return (
     <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-border bg-card p-5">
       <div className="flex flex-col gap-1">
         <span className="text-base font-semibold">{t('plans.pay.summary', { plan: plan.name })}</span>
-        <span className="text-[13px] text-text-2">{t('plans.pay.activeFor')}</span>
+        {next.kind === 'new' && <span className="text-[13px] text-text-2">{t('plans.pay.activeFor')}</span>}
         {line && <span className="text-[13px] text-orange-light">{line}</span>}
       </div>
       <div className="flex items-baseline gap-1">
@@ -183,7 +189,7 @@ function PayStep({ flow, onLeave }: { flow: Exclude<PayFlow, { phase: 'closed' |
 
   return (
     <div className="flex flex-col gap-5">
-      <Summary plan={plan} />
+      <Summary plan={plan} expiresAt={flow.phase === 'waiting' || flow.phase === 'expired' ? flow.checkout.expiresAt : undefined} />
       {flow.phase === 'waiting' && (
         <div className="flex flex-col items-center gap-3 rounded-xl border border-border bg-background px-6 py-8 text-center">
           <span aria-hidden="true" className="relative flex size-16 items-center justify-center rounded-xl bg-raised">

@@ -248,6 +248,19 @@ describe('plans screen: pay', () => {
     await screen.findByText('Your plan');
     await u.click(screen.getByRole('button', { name: 'Renew' }));
     expect(await screen.findByText('Extended until Jan 3, 2027')).toBeInTheDocument();
+    // The 30 days go on top of the current end, so "30 days from the payment" would contradict it (review3 m-3).
+    expect(screen.queryByText('Active for 30 days from when the payment arrives')).toBeNull();
+  });
+
+  it('a lower-plan link being paid is described as the days it becomes (review3 I-2)', async () => {
+    vi.mocked(billing.billingStatus).mockResolvedValue(creator);
+    render(<Plans from="settings" />);
+    await screen.findByText('Your plan');
+    act(() =>
+      useBilling.setState({ flow: { phase: 'waiting', plan: 'lite', checkout: { ...checkout, amount: 15000 }, endBefore: creator.currentPeriodEnd, startedAt: Date.now() } }),
+    );
+    // floor(30 × 15000 / 50000) = 9 days on Creator.
+    expect(await screen.findByText('This payment becomes +9 days on Creator, active until Dec 13, 2026')).toBeInTheDocument();
   });
 
   it('upgrading shows the credit for the days left, as the API computes it (B3)', async () => {
@@ -258,7 +271,8 @@ describe('plans screen: pay', () => {
     await screen.findByText('Your plan');
     await u.click(screen.getByRole('radio', { name: 'Creator' }));
     await u.click(screen.getByRole('button', { name: 'Upgrade' }));
-    expect(await screen.findByText('10 days left of Lite become +3 days on Creator. Active until Dec 7, 2026.')).toBeInTheDocument();
+    // (The test clock creeps a little, so 10.5 may already read 10.4.)
+    expect(await screen.findByText(/^10\.[45] days left of Lite become \+3 days on Creator\. Active until Dec 7, 2026\.$/)).toBeInTheDocument();
   });
 
   it('marks the upgrade summary ≈ when an hour of waiting could change the credit', async () => {
@@ -270,6 +284,17 @@ describe('plans screen: pay', () => {
     await u.click(screen.getByRole('radio', { name: 'Creator' }));
     await u.click(screen.getByRole('button', { name: 'Upgrade' }));
     expect(await screen.findByText(/^≈ 10 days left of Lite become \+3 days on Creator/)).toBeInTheDocument();
+  });
+
+  it('no ≈ when the credit and the date are the same however long the link stays open', async () => {
+    // 10.5 days of Lite → Creator: 3.15 now, 3.14 at the link's expiry; the date doesn't move either (before midnight).
+    vi.mocked(billing.billingStatus).mockResolvedValue({ ...creator, plan: 'lite', lastPlan: 'lite', currentPeriodEnd: '2026-11-15T00:00:00.000Z' });
+    const u = user();
+    render(<Plans from="settings" />);
+    await screen.findByText('Your plan');
+    await u.click(screen.getByRole('radio', { name: 'Creator' }));
+    await u.click(screen.getByRole('button', { name: 'Upgrade' }));
+    expect(await screen.findByText(/^10\.[45] days left/)).toBeInTheDocument();
   });
 
   it('Change plan goes back to step 1', async () => {

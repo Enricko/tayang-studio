@@ -330,6 +330,7 @@ export const id: Translations = {
       summary: 'Paket {{plan}}',
       activeFor: 'Aktif 30 hari sejak pembayaran masuk',
       renewUntil: 'Diperpanjang sampai {{date}}',
+      convertedDays: 'Pembayaran ini jadi +{{extra}} hari di paket {{current}}, aktif sampai {{date}}',
       upgradeCredit: 'Sisa {{days}} hari paket {{old}} jadi +{{extra}} hari di {{plan}}. Aktif sampai {{date}}.',
       open: 'Buka halaman QRIS',
       openAgain: 'Buka lagi',
