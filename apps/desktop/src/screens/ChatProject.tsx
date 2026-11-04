@@ -6,7 +6,7 @@ import { MessageList } from '@/components/MessageList';
 import { PermissionCard } from '@/components/PermissionCard';
 import { Preview } from '@/screens/preview/Preview';
 import { StepBar } from '@/components/StepBar';
-import { listChats, listProjects } from '@/lib/ipc';
+import { getChat, listProjects } from '@/lib/ipc';
 import { useApp } from '@/state/app';
 import { useChat } from '@/state/chat';
 
@@ -32,9 +32,8 @@ export function ChatProject({ chatId }: { chatId: string }) {
     useChat.getState().listen();
     void useChat.getState().load(chatId);
     let alive = true;
-    Promise.all([listChats(), listProjects()])
-      .then(([chats, projects]) => {
-        const chat: Chat | undefined = chats.find((c) => c.id === chatId);
+    Promise.all([getChat(chatId), listProjects()])
+      .then(([chat, projects]: [Chat | null, Project[]]) => {
         if (alive) setProject(projects.find((p) => p.id === chat?.projectId) ?? null);
       })
       .catch(() => {});

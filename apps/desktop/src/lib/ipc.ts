@@ -34,6 +34,7 @@ export const updateProject = (id: string, patch: Partial<Project>) =>
 // ---- chats ----
 export const listChats = (projectId?: string) =>
   invoke<Chat[]>('list_chats', { projectId: projectId ?? null });
+export const getChat = (chatId: string) => invoke<Chat | null>('get_chat', { chatId });
 export const createChat = (projectId: string | null, agentId: AgentId, title: string) =>
   invoke<Chat>('create_chat', { projectId, agentId, title });
 export const listMessages = (chatId: string) => invoke<ChatMessage[]>('list_messages', { chatId });

@@ -152,6 +152,16 @@ pub fn list_chats(state: State<'_, AppState>, project_id: Option<String>) -> Cmd
     state.db.list_chats(project_id.as_deref()).map_err(err)
 }
 
+/// One chat by id, whether or not it belongs to a project.
+pub fn lookup_chat(db: &Db, chat_id: &str) -> CmdResult<Option<Chat>> {
+    db.get_chat(chat_id).map_err(err)
+}
+
+#[tauri::command]
+pub fn get_chat(state: State<'_, AppState>, chat_id: String) -> CmdResult<Option<Chat>> {
+    lookup_chat(&state.db, &chat_id)
+}
+
 #[tauri::command]
 pub fn create_chat(
     state: State<'_, AppState>,
@@ -556,6 +566,18 @@ mod tests {
         assert!(check_frame_images(&w, &[frame(w.join("a/f.png"))]).is_ok());
         assert!(check_frame_images(&w, &[frame(tmp.path().join("secret.png"))]).is_err());
         assert!(check_frame_images(&w, &[frame(w.join("../secret.png"))]).is_err());
+    }
+
+    #[test]
+    fn lookup_chat_finds_project_chats() {
+        let db = Db::open_in_memory().unwrap();
+        let chat = db.create_chat(Some("p1"), AgentId::Gemini, "Intro").unwrap();
+        let loose = db.create_chat(None, AgentId::Claude, "Loose").unwrap();
+        // The unfiltered list only has chats without a project, so lookups must go by id.
+        assert!(!db.list_chats(None).unwrap().contains(&chat));
+        assert_eq!(lookup_chat(&db, &chat.id).unwrap(), Some(chat));
+        assert_eq!(lookup_chat(&db, &loose.id).unwrap(), Some(loose));
+        assert_eq!(lookup_chat(&db, "missing").unwrap(), None);
     }
 
     #[test]

@@ -8,6 +8,7 @@ vi.mock('@/lib/ipc', () => ({
   createProject: vi.fn(),
   updateProject: vi.fn(),
   listChats: vi.fn(),
+  getChat: vi.fn(),
   createChat: vi.fn(),
   listMessages: vi.fn(),
   addMessage: vi.fn(),
@@ -93,7 +94,12 @@ beforeEach(() => {
   useApp.setState({ settings, route: { name: 'chat-new' } });
   vi.mocked(ipc.listProjects).mockResolvedValue(projects);
   vi.mocked(ipc.listStyles).mockResolvedValue([]);
-  vi.mocked(ipc.listChats).mockResolvedValue([chat('c1', 'p1')]);
+  // Same filter as Rust: a project id lists that project's chats, none lists chats without one.
+  const allChats = [chat('c1', 'p1'), chat('c0', null)];
+  vi.mocked(ipc.listChats).mockImplementation(async (projectId) =>
+    allChats.filter((c) => c.projectId === (projectId ?? null)),
+  );
+  vi.mocked(ipc.getChat).mockImplementation(async (id) => allChats.find((c) => c.id === id) ?? null);
   vi.mocked(ipc.listMessages).mockResolvedValue([]);
   vi.mocked(ipc.createChat).mockResolvedValue(chat('c-new', null));
   vi.mocked(ipc.addMessage).mockImplementation(async (chatId, role, parts) => ({

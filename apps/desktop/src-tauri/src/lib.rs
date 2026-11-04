@@ -41,6 +41,7 @@ pub fn run() {
             commands::create_project,
             commands::update_project,
             commands::list_chats,
+            commands::get_chat,
             commands::create_chat,
             commands::list_messages,
             commands::add_message,

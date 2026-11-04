@@ -37,4 +37,14 @@ describe('ipc', () => {
     expect(await ipc.mediaExtractFrame('p1', 1.5)).toBe('/x.png');
     expect(calls[0]).toEqual({ cmd: 'media_extract_frame', args: { projectId: 'p1', timeSec: 1.5 } });
   });
+
+  it('getChat sends chatId', async () => {
+    const calls: { cmd: string; args: unknown }[] = [];
+    mockIPC((cmd, args) => {
+      calls.push({ cmd, args });
+      return null;
+    });
+    expect(await ipc.getChat('c1')).toBeNull();
+    expect(calls).toEqual([{ cmd: 'get_chat', args: { chatId: 'c1' } }]);
+  });
 });
