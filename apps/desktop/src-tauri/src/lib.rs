@@ -16,17 +16,18 @@ use tauri::Manager;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
+        // First, so a second launch is caught before anything else starts: it shows the running window and exits.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| scheduler::show_main(app)))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         // Launch at login is switched on and off from Settings (the JS plugin API), only while background mode is on.
-        .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None))
+        .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec![scheduler::HIDDEN_ARG])))
         .on_window_event(|window, event| {
             let app = window.app_handle();
-            if let Some(state) = app.try_state::<AppState>() {
-                let background = state.db.get_settings(&state.home).background_mode;
-                scheduler::on_window_event(window, event, background);
-            }
+            scheduler::on_window_event(window, event, || {
+                app.try_state::<AppState>().is_some_and(|s| s.db.get_settings(&s.home).background_mode)
+            });
         })
         .setup(|app| {
             let home = app.path().home_dir()?;
@@ -49,7 +50,14 @@ pub fn run() {
                 home,
                 study_working: Default::default(),
             });
-            scheduler::build_tray(app.handle(), &settings)?;
+            scheduler::sync_tray(app.handle(), &settings);
+            // A login launch starts in the tray, when there is one.
+            let args: Vec<String> = std::env::args().collect();
+            if scheduler::launched_hidden(&args) && scheduler::has_tray(app.handle()) {
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.hide();
+                }
+            }
             scheduler::start_ticker(app.handle());
             // Anonymous install ping, in the background; never blocks the UI, failures are ignored.
             let handle = app.handle().clone();

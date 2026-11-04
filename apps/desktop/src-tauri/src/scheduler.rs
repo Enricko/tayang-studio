@@ -15,7 +15,14 @@ pub const TICK_EVENT: &str = "scheduler://tick";
 pub const PAUSE_ALL_EVENT: &str = "autopilot://pause-all";
 pub const TICK_SECS: u64 = 30;
 const TRAY_ID: &str = "tayang";
+/// Black template silhouette: macOS tints it for light and dark menu bars.
+#[cfg(target_os = "macos")]
 const TRAY_ICON: &[u8] = include_bytes!("../icons/tray.png");
+/// Windows and Linux panels are often dark, so they get the colour icon.
+#[cfg(not(target_os = "macos"))]
+const TRAY_ICON: &[u8] = include_bytes!("../icons/32x32.png");
+/// Passed by "Open at login" so a login launch starts in the tray instead of showing the window.
+pub const HIDDEN_ARG: &str = "--hidden";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CloseAction {
@@ -25,8 +32,9 @@ pub enum CloseAction {
     Quit,
 }
 
-pub fn close_action(background_mode: bool) -> CloseAction {
-    if background_mode {
+/// Hides only when there is a tray icon to bring the window back; otherwise closing quits as usual.
+pub fn close_action(background_mode: bool, has_tray: bool) -> CloseAction {
+    if background_mode && has_tray {
         CloseAction::Hide
     } else {
         CloseAction::Quit
@@ -68,6 +76,14 @@ pub fn start_ticker<R: Runtime>(app: &AppHandle<R>) {
     });
 }
 
+pub fn launched_hidden(args: &[String]) -> bool {
+    args.iter().any(|a| a == HIDDEN_ARG)
+}
+
+pub fn has_tray<R: Runtime>(app: &AppHandle<R>) -> bool {
+    app.tray_by_id(TRAY_ID).is_some()
+}
+
 pub fn show_main<R: Runtime>(app: &AppHandle<R>) {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.show();
@@ -85,9 +101,9 @@ fn tray_menu<R: Runtime>(app: &AppHandle<R>, lang: Option<UiLanguage>) -> tauri:
     Menu::with_items(app, &[&open, &pause, &PredefinedMenuItem::separator(app)?, &quit])
 }
 
-/// Makes the tray icon (a template image on macOS) with its menu; hidden until background mode is on.
+/// Makes the tray icon (a template image on macOS) with its menu.
 pub fn build_tray<R: Runtime>(app: &AppHandle<R>, settings: &Settings) -> tauri::Result<TrayIcon<R>> {
-    let tray = TrayIconBuilder::with_id(TRAY_ID)
+    TrayIconBuilder::with_id(TRAY_ID)
         .icon(tauri::image::Image::from_bytes(TRAY_ICON)?)
         .icon_as_template(true)
         .menu(&tray_menu(app, settings.ui_language)?)
@@ -101,26 +117,30 @@ pub fn build_tray<R: Runtime>(app: &AppHandle<R>, settings: &Settings) -> tauri:
             "quit" => app.exit(0),
             _ => {}
         })
-        .build(app)?;
-    tray.set_visible(settings.background_mode)?;
-    Ok(tray)
+        .build(app)
 }
 
-/// Brings the tray in line with the settings (visibility and menu language).
+/// The tray exists only while background mode is on: made when it is turned on (and kept in the
+/// menu language), removed when it is turned off. A failure is logged, never fatal; without a tray
+/// the window just closes normally (see `close_action`).
 pub fn sync_tray<R: Runtime>(app: &AppHandle<R>, settings: &Settings) {
-    if let Some(tray) = app.tray_by_id(TRAY_ID) {
-        let _ = tray.set_visible(settings.background_mode);
+    if !settings.background_mode {
+        let _ = app.remove_tray_by_id(TRAY_ID);
+    } else if let Some(tray) = app.tray_by_id(TRAY_ID) {
         if let Ok(menu) = tray_menu(app, settings.ui_language) {
             let _ = tray.set_menu(Some(menu));
         }
+    } else if let Err(e) = build_tray(app, settings) {
+        eprintln!("Tayang: couldn't create the tray icon, closing the window will quit: {e}");
     }
 }
 
-/// Window close: hides instead of closing while background mode is on. Quitting (Cmd+Q, the tray's
-/// Quit) goes through `app.exit` / `ExitRequested`, not through here, so it is unaffected.
-pub fn on_window_event<R: Runtime>(window: &tauri::Window<R>, event: &WindowEvent, background_mode: bool) {
+/// Window close: hides instead of closing while background mode is on and the tray exists. The
+/// setting is read only for a close request, and live. Quitting (Cmd+Q, the tray's Quit) goes
+/// through `app.exit` / `ExitRequested`, not through here, so it is unaffected.
+pub fn on_window_event<R: Runtime>(window: &tauri::Window<R>, event: &WindowEvent, background_mode: impl FnOnce() -> bool) {
     if let WindowEvent::CloseRequested { api, .. } = event {
-        if window.label() == "main" && close_action(background_mode) == CloseAction::Hide {
+        if window.label() == "main" && close_action(background_mode(), has_tray(window.app_handle())) == CloseAction::Hide {
             api.prevent_close();
             let _ = window.hide();
         }
@@ -151,8 +171,28 @@ mod tests {
 
     #[test]
     fn closing_hides_only_in_background_mode() {
-        assert_eq!(close_action(true), CloseAction::Hide);
-        assert_eq!(close_action(false), CloseAction::Quit);
+        assert_eq!(close_action(true, true), CloseAction::Hide);
+        assert_eq!(close_action(false, true), CloseAction::Quit);
+        // No tray icon means nothing could bring a hidden window back.
+        assert_eq!(close_action(true, false), CloseAction::Quit);
+        assert_eq!(close_action(false, false), CloseAction::Quit);
+    }
+
+    #[test]
+    fn the_linux_deb_depends_on_appindicator_and_autostart_passes_the_hidden_flag() {
+        let conf: serde_json::Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let depends = conf["bundle"]["linux"]["deb"]["depends"].as_array().unwrap();
+        assert!(depends.iter().any(|d| d == "libayatana-appindicator3-1"));
+        let caps = include_str!("../capabilities/default.json");
+        assert!(!caps.contains("allow-is-enabled"), "unused permission");
+        assert_eq!(HIDDEN_ARG, "--hidden");
+    }
+
+    #[test]
+    fn a_hidden_launch_is_recognised() {
+        let args = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert!(launched_hidden(&args(&["tayang", "--hidden"])));
+        assert!(!launched_hidden(&args(&["tayang"])));
     }
 
     #[test]
