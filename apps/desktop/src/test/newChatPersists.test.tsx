@@ -355,6 +355,20 @@ describe('a new chat never disappears', () => {
     await waitFor(() => expect(screen.getByTestId('a2ui-surface')).toHaveAttribute('data-answered', 'true'));
   });
 
+  it('the template chip stays put when New chat becomes the chat', async () => {
+    const user = userEvent.setup();
+    let reads = 0;
+    const tmpl = { id: 'tmpl', name: 'Atlas', source: 'builtin', sourceUrl: null, notes: {}, prompt: 'p', createdAt: '', template: { sha256: 'a', size: 1, version: 1 } } as const;
+    // New chat reads the styles; any later read hangs.
+    vi.mocked(ipc.listStyles).mockImplementation(() => (++reads <= 1 ? Promise.resolve([tmpl]) : new Promise(() => {})));
+    useApp.setState({ route: { name: 'chat-new', styleId: 'tmpl' } });
+    render(<Shell />);
+    expect(await screen.findByText('Starting from the Atlas template')).toBeInTheDocument();
+    await user.type(screen.getByRole('textbox', { name: 'Message' }), 'halo{Enter}');
+    await waitFor(() => expect(useApp.getState().route).toMatchObject({ name: 'chat', chatId: 'c-new' }));
+    expect(within(main()).getByText('Starting from the Atlas template')).toBeInTheDocument();
+  });
+
   it('an unsent draft on New chat survives going elsewhere and back', async () => {
     const user = userEvent.setup();
     render(<Shell />);
@@ -472,6 +486,17 @@ describe('Recent in the sidebar', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Obrolan 11' }));
     expect(useApp.getState().route).toEqual({ name: 'chat', chatId: 'n10' });
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('See all with no chats says there are none yet, not that none match', async () => {
+    const user = userEvent.setup();
+    vi.mocked(ipc.listRecentChats).mockImplementation(async (limit) =>
+      limit ? Array.from({ length: 11 }, (_, i) => recent(`n${i}`, null, `Obrolan ${i + 1}`)) : [],
+    );
+    render(<Sidebar active="chat" />);
+    await user.click(await screen.findByRole('button', { name: 'See all' }));
+    const dialog = await screen.findByRole('dialog', { name: 'All chats' });
+    expect(await within(dialog).findByText('No chats yet')).toBeInTheDocument();
   });
 
   it('speaks Indonesian', async () => {

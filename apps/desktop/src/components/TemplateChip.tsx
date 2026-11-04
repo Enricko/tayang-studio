@@ -5,20 +5,18 @@ import type { MessagePart, Style } from '@tayang/shared';
 import { listStyles } from '@/lib/ipc';
 import { useChat } from '@/state/chat';
 
-/** The styles the @ menu lists, the Style screen's list. Best effort: none when they can't be read. */
+/**
+ * The styles the @ menu lists, the Style screen's list, read again on each mount. Kept in the chat store,
+ * so the next chat screen starts with the last list (no template chip blinking). Best effort.
+ */
 export function useStyles(): Style[] {
-  const [styles, setStyles] = useState<Style[]>([]);
   useEffect(() => {
-    let alive = true;
     void Promise.resolve()
       .then(() => listStyles())
-      .then((all) => alive && setStyles(all))
+      .then((styles) => useChat.setState({ styles }))
       .catch(() => {});
-    return () => {
-      alive = false;
-    };
   }, []);
-  return styles;
+  return useChat((s) => s.styles);
 }
 
 /** The styles a message's context is built from: the loaded ones, or a fresh read when a restored chip is sent before they load. */
@@ -42,12 +40,14 @@ export const useChipTemplate = (draftKey: string, styles: Style[]): string | nul
   );
 
 /** The template picked on the Style screen, above the composer until a topic starts a project or the user removes it. */
-export function TemplateChip({ styleId, onRemove }: { styleId: string | null; onRemove(): void }) {
+export function TemplateChip({ styleId, onRemove, styles }: { styleId: string | null; onRemove(): void; styles?: Style[] }) {
   const { t } = useTranslation();
-  const [style, setStyle] = useState<Style | null>(null);
+  const [read, setStyle] = useState<Style | null>(null);
+  // The screen's styles when it has them; else a read of its own.
+  const style = styles ? (styles.find((s) => s.id === styleId) ?? null) : read;
 
   useEffect(() => {
-    if (!styleId) return;
+    if (!styleId || styles) return;
     let alive = true;
     listStyles()
       .then((all) => alive && setStyle(all.find((s) => s.id === styleId) ?? null))
@@ -55,7 +55,7 @@ export function TemplateChip({ styleId, onRemove }: { styleId: string | null; on
     return () => {
       alive = false;
     };
-  }, [styleId]);
+  }, [styleId, styles]);
 
   if (!styleId || !style?.template) return null;
   return (

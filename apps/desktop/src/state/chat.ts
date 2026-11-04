@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { FOREGROUND_RULE, RENDERS_RULE, buildSessionPreamble, languageHint, sessionFacts, stripFramesToken } from '@tayang/skills';
-import type { AgentId, AgentUpdate, Chat, ChatMessage, FileInfo, JobStatus, MessagePart, PermissionRequest } from '@tayang/shared';
+import type { AgentId, AgentUpdate, Chat, ChatMessage, Style, FileInfo, JobStatus, MessagePart, PermissionRequest } from '@tayang/shared';
 import {
   addMessage,
   agentCancel,
@@ -74,6 +74,8 @@ interface ChatState {
   rows: Record<string, Chat>;
   /** Unsent composer text and style chip per chat; `new` is the New chat screen's, which has no chat yet. */
   drafts: Record<string, Draft>;
+  /** The style library as the chat screens last read it, for the @ menu and style context. */
+  styles: Style[];
 
   /** Turns auto mode on or off; a running session switches right away. */
   setAuto(chatId: string | null, on: boolean): Promise<void>;
@@ -632,6 +634,7 @@ export const useChat = create<ChatState>((set, get) => {
     autoBusy: {},
     rows: {},
     drafts: {},
+    styles: [],
 
     rememberChat: (chat) => set((s) => ({ rows: { ...s.rows, [chat.id]: chat } })),
 
@@ -864,7 +867,7 @@ export const useChat = create<ChatState>((set, get) => {
       resetProjectStatus();
       stopAllWatches();
       useRender.setState({ runs: {} });
-      set({ messages: {}, streaming: {}, turnStartedAt: {}, permissions: {}, attachments: {}, started: {}, auto: {}, pendingAuto: null, autoBusy: {}, rows: {}, drafts: {} });
+      set({ messages: {}, streaming: {}, turnStartedAt: {}, permissions: {}, attachments: {}, started: {}, auto: {}, pendingAuto: null, autoBusy: {}, rows: {}, drafts: {}, styles: [] });
     },
   };
 });

@@ -45,7 +45,7 @@ export function AllChats({ open, onOpenChange, onPick }: { open: boolean; onOpen
               {c.projectTitle ?? c.title}
             </button>
           ))}
-          {shown.length === 0 && <p className="m-0 px-3 py-2 text-[13px] text-text-3">{t('sidebar.noChats')}</p>}
+          {shown.length === 0 && <p className="m-0 px-3 py-2 text-[13px] text-text-3">{q ? t('sidebar.noChats') : t('sidebar.noChatsYet')}</p>}
         </div>
       </DialogContent>
     </Dialog>

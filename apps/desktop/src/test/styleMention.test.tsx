@@ -120,6 +120,15 @@ describe('the @ menu with styles', () => {
     expect(within(within(list).getByRole('option', { name: /Mine/ })).getByTestId('style-swatch')).toBeInTheDocument();
   });
 
+  it('the footer says pick, which fits a video and a style alike', async () => {
+    const user = userEvent.setup();
+    setup();
+    await user.type(screen.getByRole('textbox', { name: 'Message' }), '@');
+    await screen.findByRole('listbox');
+    expect(screen.getByText('pick')).toBeInTheDocument();
+    expect(screen.queryByText('attach')).not.toBeInTheDocument();
+  });
+
   it('filters both groups by the query', async () => {
     const user = userEvent.setup();
     setup();

@@ -204,7 +204,7 @@ export function ChatThread({ chatId, draft, styleId: routeStyleId }: { chatId: s
         </div>
 
         <div className="w-full max-w-[720px] pb-6 pt-4">
-          <TemplateChip styleId={chipTemplate ? null : styleId} onRemove={() => setStyleId(null)} />
+          <TemplateChip styleId={chipTemplate ? null : styleId} onRemove={() => setStyleId(null)} styles={styles} />
           <Composer
             chatId={chatId}
             draftKey={chatId}

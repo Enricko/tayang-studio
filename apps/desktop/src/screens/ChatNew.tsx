@@ -175,7 +175,7 @@ export function ChatNew() {
         </div>
 
         <div className="w-full max-w-[720px] pb-6 pt-4">
-          <TemplateChip styleId={chipTemplate ? null : styleId} onRemove={() => setStyleId(null)} />
+          <TemplateChip styleId={chipTemplate ? null : styleId} onRemove={() => setStyleId(null)} styles={styles} />
           <Composer
             chatId={null}
             draftKey={NEW_CHAT_DRAFT}
