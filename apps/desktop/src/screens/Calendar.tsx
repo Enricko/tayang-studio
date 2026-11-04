@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import type { MessagePart, Project, VideoKind } from '@tayang/shared';
@@ -6,6 +7,7 @@ import { buildTopicIdeasPrompt } from '@tayang/skills';
 import { Button } from '@/components/Button';
 import { Oyen } from '@/components/Oyen';
 import { PermissionCard } from '@/components/PermissionCard';
+import { locale } from '@/i18n';
 import { listProjects, listStyles } from '@/lib/ipc';
 import { ideasFromReply, startTopic, type TopicIdea } from '@/lib/topics';
 import { cn } from '@/lib/utils';
@@ -13,11 +15,15 @@ import { useApp } from '@/state/app';
 import { headPermission, useChat } from '@/state/chat';
 
 const KINDS: VideoKind[] = ['explainer', 'promo', 'quote', 'news', 'tutorial', 'data', 'event'];
-const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const NO_MESSAGES: never[] = [];
 
 type Idea = TopicIdea;
+
+/** Mon..Sun in the active language; 2024-01-01 is a Monday. */
+const weekdays = () =>
+  Array.from({ length: 7 }, (_, i) => new Intl.DateTimeFormat(locale(), { weekday: 'short' }).format(new Date(2024, 0, 1 + i)));
+
+const monthName = (month: number) => new Intl.DateTimeFormat(locale(), { month: 'long' }).format(new Date(2024, month, 1));
 
 const pad = (n: number) => String(n).padStart(2, '0');
 export const dateKey = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -54,6 +60,7 @@ function agentText(parts: MessagePart[]) {
 }
 
 export function Calendar({ today: todayProp }: { today?: Date } = {}) {
+  const { t } = useTranslation();
   const today = useMemo(() => todayProp ?? new Date(), [todayProp]);
   const settings = useApp((s) => s.settings);
   const [cursor, setCursor] = useState({ y: today.getFullYear(), m: today.getMonth() });
@@ -91,7 +98,7 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
     if (last?.role === 'system') {
       pending.current = false;
       setAsking(false);
-      setError("Couldn't get ideas. Try again");
+      setError(t('calendar.noIdeas'));
       return;
     }
     if (last?.role !== 'agent') return;
@@ -99,7 +106,7 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
     setAsking(false);
     const found = ideasFromReply(agentText(last.parts));
     if (!found.length) {
-      setError("Couldn't get ideas. Try again");
+      setError(t('calendar.noIdeas'));
       return;
     }
     setIdeas(found);
@@ -117,7 +124,7 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
     try {
       await startTopic(idea, { settings, agent: settings.defaultAgent });
     } catch {
-      setError("Couldn't start this video. Try again");
+      setError(t('calendar.cantStart'));
       makingRef.current = false;
       setMaking(false);
     }
@@ -132,14 +139,14 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
       const id = ideasChatId(today);
       setChatId(id);
       pending.current = true;
-      const err = await useChat.getState().send(id, [{ type: 'text', text: 'Suggest video topics for this week' }], {
+      const err = await useChat.getState().send(id, [{ type: 'text', text: t('calendar.suggest') }], {
         promptParts: [{ type: 'text', text: buildTopicIdeasPrompt(KINDS, settings.language, styles.map((s) => ({ id: s.id, name: s.name }))) }],
       });
       if (err) throw new Error(err);
     } catch (e) {
       pending.current = false;
       setAsking(false);
-      setError(`Couldn't get ideas: ${e instanceof Error ? e.message : String(e)}`);
+      setError(t('calendar.noIdeasWhy', { message: e instanceof Error ? e.message : String(e) }));
     }
   };
 
@@ -168,32 +175,32 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
       <div className="flex min-w-0 flex-[999_1_520px] flex-col gap-4">
         <div data-tauri-drag-region className="flex flex-wrap items-center gap-2">
           <h1 className="m-0 mr-auto text-[28px] font-semibold tracking-[-0.01em]">
-            {MONTHS[cursor.m]} {cursor.y}
+            {monthName(cursor.m)} {cursor.y}
           </h1>
-          <Button variant="secondary" aria-label="Previous month" className="size-9 px-0 text-text-2" onClick={() => go(-1)}>
+          <Button variant="secondary" aria-label={t('calendar.previous')} className="size-9 px-0 text-text-2" onClick={() => go(-1)}>
             <ChevronLeft size={16} strokeWidth={1.5} aria-hidden="true" />
           </Button>
           <Button variant="secondary" className="h-9 px-3 text-[13px]" onClick={() => setCursor({ y: today.getFullYear(), m: today.getMonth() })}>
-            Today
+            {t('calendar.today')}
           </Button>
-          <Button variant="secondary" aria-label="Next month" className="size-9 px-0 text-text-2" onClick={() => go(1)}>
+          <Button variant="secondary" aria-label={t('calendar.next')} className="size-9 px-0 text-text-2" onClick={() => go(1)}>
             <ChevronRight size={16} strokeWidth={1.5} aria-hidden="true" />
           </Button>
         </div>
         <div className="flex flex-wrap gap-4 text-xs text-text-2">
           <span className="inline-flex items-center gap-2">
             <span aria-hidden="true" className="size-1.5 rounded-full bg-primary" />
-            Ready to post
+            {t('calendar.ready')}
           </span>
           <span className="inline-flex items-center gap-2">
             <span aria-hidden="true" className="size-1.5 rounded-full border border-text-3" />
-            Planned, not made yet
+            {t('calendar.planned')}
           </span>
         </div>
 
         <div className="overflow-hidden rounded-xl border border-border bg-[#101010]">
           <div className="grid grid-cols-7 border-b border-border">
-            {DOW.map((d) => (
+            {weekdays().map((d) => (
               <span key={d} className="p-2 text-xs text-text-3">
                 {d}
               </span>
@@ -252,19 +259,19 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
       <aside className="flex max-w-[300px] flex-[1_1_260px] flex-col gap-4">
         <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4">
           <div className="flex flex-col gap-1">
-            <span className="text-sm font-medium">Ideas for this week</span>
-            <span className="text-xs text-text-3">From what you make: explainers, promos</span>
+            <span className="text-sm font-medium">{t('calendar.ideasTitle')}</span>
+            <span className="text-xs text-text-3">{t('calendar.ideasHint')}</span>
           </div>
           {ideas.map((i) => (
             <div key={i.title} className="flex items-center gap-2 rounded-md bg-[#222] p-2">
               <div className="mr-auto flex min-w-0 flex-col gap-1">
                 <span className="text-[13px] leading-[1.3] font-medium">{i.title}</span>
                 <span className="text-xs text-text-3">
-                  {i.kind[0]!.toUpperCase() + i.kind.slice(1)} · {i.lengthSec}s
+                  {t(`kinds.${i.kind}`)} · {t('chat.seconds', { n: i.lengthSec })}
                 </span>
               </div>
               <Button variant="secondary" className="h-7 shrink-0 rounded-sm px-2 text-xs" disabled={making} onClick={() => void makeIdea(i)}>
-                Make it
+                {t('calendar.makeIt')}
               </Button>
             </div>
           ))}
@@ -272,7 +279,7 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
             <PermissionCard
               request={permission}
               agentId={settings?.defaultAgent ?? 'claude'}
-              allowLabel="Allow"
+              allowLabel={t('permission.allow')}
               onRespond={(o) => void useChat.getState().respondPermission(chatId, o)}
             />
           )}
@@ -282,7 +289,7 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
             </p>
           )}
           <Button variant="secondary" className="h-9 self-start px-3 text-[13px]" disabled={asking} onClick={() => void getIdeas()}>
-            {asking ? 'Asking your agent' : ideas.length ? 'Get new ideas' : 'Get ideas'}
+            {asking ? t('calendar.asking') : ideas.length ? t('calendar.getNew') : t('calendar.get')}
           </Button>
         </div>
 
@@ -290,16 +297,15 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
           <div className="flex items-center gap-3">
             <Oyen mood="wink" size={40} />
             <div className="flex flex-col gap-1">
-              <span className="font-mono text-[11px] font-medium tracking-[0.12em] text-primary">TAYANG AUTOPILOT</span>
-              <span className="text-[15px] font-semibold">Biar Tayang yang tayangin</span>
+              <span className="font-mono text-[11px] font-medium tracking-[0.12em] text-primary">{t('calendar.autopilot')}</span>
+              <span className="text-[15px] font-semibold">{t('calendar.tagline')}</span>
             </div>
           </div>
           <span className="text-[13px] leading-[1.6] text-text-2">
-            For now Tayang reminds you when it's time to post. With a tayang.app plan, it posts to TikTok, Reels and
-            Shorts on schedule.
+            {t('calendar.autopilotText')}
           </span>
           <Button className="h-9 self-start px-4 text-[13px]" onClick={() => void openUrl('https://tayang.app')}>
-            See plans
+            {t('calendar.plans')}
           </Button>
         </div>
       </aside>
