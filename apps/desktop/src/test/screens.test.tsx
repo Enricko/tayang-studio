@@ -1414,6 +1414,49 @@ describe('Calendar scheduling', () => {
     expect(ipc.setSchedule).not.toHaveBeenCalled();
   });
 
+  it('keeps the typed date when a video is picked', async () => {
+    vi.mocked(ipc.listProjects).mockResolvedValue([project('u', 'Unplanned', 'rendered')]);
+    render(<Calendar today={today} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Schedule a video' }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.change(within(dialog).getByLabelText('Date'), { target: { value: '2026-11-20' } });
+    await userEvent.selectOptions(within(dialog).getByLabelText('Video'), 'u');
+    expect(within(dialog).getByLabelText('Date')).toHaveValue('2026-11-20');
+  });
+
+  it('ignores a drop when no entry is being dragged, and after dragend', async () => {
+    const p = project('a', 'Alpha', 'rendered', at(9, 30));
+    vi.mocked(ipc.listProjects).mockResolvedValue([p]);
+    vi.mocked(ipc.setSchedule).mockImplementation(async (_id, when) => ({ ...p, scheduledAt: when }));
+    render(<Calendar today={today} />);
+    const entry = await screen.findByRole('button', { name: /^Alpha,/ });
+    const target = screen.getAllByTestId('cal-cell').find((c) => c.getAttribute('data-date') === '2026-11-17')!;
+    const stray = { getData: () => 'a' };
+    fireEvent.drop(target, { dataTransfer: stray });
+    expect(ipc.setSchedule).not.toHaveBeenCalled();
+    const dataTransfer = { setData: () => {}, getData: () => '' };
+    fireEvent.dragStart(entry, { dataTransfer });
+    fireEvent.dragEnd(entry, { dataTransfer });
+    fireEvent.drop(target, { dataTransfer: stray });
+    expect(ipc.setSchedule).not.toHaveBeenCalled();
+    // A drop carrying a different id than the current drag is ignored too.
+    fireEvent.dragStart(entry, { dataTransfer });
+    fireEvent.drop(target, { dataTransfer: { getData: () => 'other' } });
+    expect(ipc.setSchedule).not.toHaveBeenCalled();
+  });
+
+  it('shows a failed update under the month header', async () => {
+    const p = project('a', 'Alpha', 'rendered', at(9));
+    vi.mocked(ipc.listProjects).mockResolvedValue([p]);
+    vi.mocked(ipc.setPosted).mockRejectedValue(new Error('x'));
+    render(<Calendar today={today} />);
+    await userEvent.click(await screen.findByRole('button', { name: /^Alpha,/ }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Mark as posted' }));
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent("Couldn't update the video");
+    expect(alert.closest('aside')).toBeNull();
+  });
+
   it('no longer claims Tayang reminds you', async () => {
     render(<Calendar today={today} />);
     expect(screen.queryByText(/reminds you/i)).not.toBeInTheDocument();
@@ -1422,6 +1465,19 @@ describe('Calendar scheduling', () => {
 });
 
 describe('Videos schedule action', () => {
+  it('the Scheduled tab lists scheduled, unposted videos', async () => {
+    vi.mocked(ipc.listProjects).mockResolvedValue([
+      project('a', 'Alpha', 'rendered', '2026-11-12T02:00:00Z'),
+      project('b', 'Beta', 'rendered', '2026-11-12T02:00:00Z', { postedAt: '2026-11-12T03:00:00Z' }),
+      project('c', 'Gamma', 'rendered'),
+    ]);
+    render(<Videos />);
+    await userEvent.click(await screen.findByRole('tab', { name: /Scheduled/ }));
+    expect(screen.getByRole('button', { name: 'Schedule Alpha' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Schedule Beta' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Schedule Gamma' })).not.toBeInTheDocument();
+  });
+
   it('opens the dialog for that card and saves', async () => {
     const p = project('a', 'Alpha', 'rendered');
     vi.mocked(ipc.listProjects).mockResolvedValue([p]);
