@@ -12,6 +12,8 @@ import {
   needsSudo,
   parseStyleResult,
   parseTopicIdeas,
+  topicIdeaFromAction,
+  splitTopicJson,
 } from '../src/index';
 
 const mac: SystemInfo = { os: 'macos', osVersion: '26', packageManager: 'brew' };
@@ -87,10 +89,40 @@ describe('topics', () => {
     expect(parseTopicIdeas('nothing')).toEqual([]);
     expect(parseTopicIdeas('```json\n{bad\n```')).toEqual([]);
   });
-  it('prompt asks for 3', () => {
+  it('prompt asks for 3 as an a2ui surface with the motion-only rules', () => {
     const p = buildTopicIdeasPrompt(['promo'], 'id');
-    expect(p).toContain('```json');
     expect(p).toContain('exactly 3');
+    expect(p).toContain('```a2ui');
+    expect(p).toContain('pick_topic');
+    expect(p).toContain('lengthSec');
+    expect(p).toContain('styleId');
+    expect(p).toMatch(/one short, friendly sentence in Indonesian/);
+    expect(p).toMatch(/Never suggest anything that needs filming/);
+    expect(p).toMatch(/never show raw JSON/i);
+    expect(p).not.toContain('```json');
+  });
+  it('prompt lists the given styles, or the three defaults', () => {
+    const p = buildTopicIdeasPrompt(['promo'], 'en', [{ id: 'x-style', name: 'X style' }]);
+    expect(p).toContain('x-style');
+    expect(p).toContain('X style');
+    expect(p).toContain('English');
+    const d = buildTopicIdeasPrompt(['promo'], 'en');
+    expect(d).toContain('atlas-journey');
+    expect(d).toContain('Cartoon 3D what-if');
+    expect(buildTopicIdeasPrompt(['promo'], 'en', [])).toContain('cartoon-3d-world');
+  });
+  it('topicIdeaFromAction reads a pick_topic context', () => {
+    expect(topicIdeaFromAction({ title: 'T', kind: 'explainer', lengthSec: 30, styleId: 'atlas-journey' })).toEqual({
+      title: 'T', kind: 'explainer', lengthSec: 30, styleId: 'atlas-journey',
+    });
+    expect(topicIdeaFromAction({ title: 'T', kind: 'nope' })).toMatchObject({ kind: 'explainer', lengthSec: 30 });
+    expect(topicIdeaFromAction({ kind: 'promo' })).toBeNull();
+  });
+  it('splitTopicJson hides a json block that parses as topic ideas', () => {
+    const j = '```json\n[{"title":"A","kind":"promo","lengthSec":30}]\n```';
+    expect(splitTopicJson(`Halo\n${j}`)).toEqual({ text: 'Halo', ideas: [{ title: 'A', kind: 'promo', lengthSec: 30 }] });
+    const other = 'x\n```json\n{"a":1}\n```';
+    expect(splitTopicJson(other)).toEqual({ text: other, ideas: [] });
   });
 });
 
