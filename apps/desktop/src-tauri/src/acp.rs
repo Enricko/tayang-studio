@@ -242,6 +242,9 @@ fn spawn_agent(command: &[String], cwd: &Path) -> Result<Child> {
 // ---------------------------------------------------------------------------
 
 const PROTOCOL_VERSION: u64 = 1;
+const CRASH_MESSAGE: &str = "The agent stopped unexpectedly";
+/// How long a stopped agent gets to exit after SIGTERM before SIGKILL.
+const KILL_GRACE: Duration = Duration::from_millis(1500);
 const START_TIMEOUT: Duration = Duration::from_secs(120);
 /// After the process exits, how long to keep reading output it already wrote.
 const DRAIN_GRACE: Duration = Duration::from_secs(2);
@@ -572,7 +575,13 @@ impl SessionCore {
                     .unwrap_or("end_turn")
                     .to_string(),
             },
-            Err(e) if e.is_closed() => AgentUpdate::Done { stop_reason: "cancelled".into() },
+            Err(e) if e.is_closed() => {
+                if self.stopping.load(Ordering::SeqCst) {
+                    AgentUpdate::Done { stop_reason: "cancelled".into() }
+                } else {
+                    AgentUpdate::Error { message: CRASH_MESSAGE.into() }
+                }
+            }
             Err(e) => AgentUpdate::Error { message: e.message },
         };
         self.emit(update);
@@ -656,10 +665,35 @@ async fn supervise(
         _ = kill_rx => true,
     };
     if stop_requested {
-        let _ = child.kill().await;
+        terminate(&mut child).await;
     }
     let _ = tokio::time::timeout(DRAIN_GRACE, reader).await;
     core.on_closed();
+}
+
+/// Stops the agent and everything it started (its process group on Unix,
+/// its process tree on Windows).
+async fn terminate(child: &mut Child) {
+    #[cfg(unix)]
+    if let Some(pid) = child.id().and_then(|p| libc::pid_t::try_from(p).ok()) {
+        // SAFETY: kill(2) has no memory-safety preconditions; the negative pid
+        // targets the process group created for this agent in `spawn_agent`.
+        unsafe { libc::kill(-pid, libc::SIGTERM) };
+        let _ = tokio::time::timeout(KILL_GRACE, child.wait()).await;
+        // SAFETY: as above; reaches helpers that ignored SIGTERM.
+        unsafe { libc::kill(-pid, libc::SIGKILL) };
+    }
+    #[cfg(windows)]
+    if let Some(pid) = child.id() {
+        let _ = Command::new("taskkill")
+            .args(["/T", "/F", "/PID", &pid.to_string()])
+            .creation_flags(CREATE_NO_WINDOW)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .await;
+    }
+    let _ = child.kill().await;
 }
 
 fn image_block(path: &Path) -> Result<Value> {
@@ -738,7 +772,9 @@ impl AgentSession {
         }
     }
 
-    /// Kills the process and waits until it is gone.
+    /// Kills the process and waits until it is gone. Any turn in flight ends
+    /// with `done { stopReason: "cancelled" }` and open permission requests
+    /// are answered `cancelled`.
     async fn shutdown(&self) {
         self.core.stopping.store(true, Ordering::SeqCst);
         if let Some(tx) = self.kill_tx.lock().unwrap().take() {
@@ -749,6 +785,13 @@ impl AgentSession {
             let _ = handle.await;
         }
         self.core.on_closed();
+    }
+}
+
+impl Drop for AgentSession {
+    fn drop(&mut self) {
+        // Dropping `kill_tx` wakes the supervisor, which kills the process.
+        self.core.stopping.store(true, Ordering::SeqCst);
     }
 }
 

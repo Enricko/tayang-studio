@@ -10,9 +10,11 @@
 //   wait       -> waits for session/cancel, then stopReason "cancelled"
 //   fs-outside -> fs/write_text_file to a path outside cwd, reports "fs-ok" or "fs-error: <message>"
 //   fs-inside  -> writes then reads line 2 of notes/inside.txt, reports "read: <JSON content>"
+//   pids       -> starts a long-lived helper process, reports "pids <agent pid> <helper pid>"
 //   any prompt with an image block -> text "image <mimeType> <data>"
 import { createInterface } from "node:readline";
 import path from "node:path";
+import { spawn } from "node:child_process";
 
 let nextId = 1;
 const pending = new Map();
@@ -96,6 +98,11 @@ async function runPrompt(params) {
       text("about to crash");
       setTimeout(() => process.exit(1), 50);
       return new Promise(() => {});
+    case "pids": {
+      const helper = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+      text(`pids ${process.pid} ${helper.pid}`);
+      return "end_turn";
+    }
     case "wait":
       return new Promise((resolve) => {
         cancelWaiter = resolve;

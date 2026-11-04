@@ -355,3 +355,53 @@ async fn unknown_chat_and_bad_command_are_errors() {
     assert!(manager.start("c1", &bad, &ws.cwd, sink.clone()).await.is_err());
     assert!(manager.start("c1", &[], &ws.cwd, sink).await.is_err());
 }
+
+#[cfg(unix)]
+fn alive(pid: &str) -> bool {
+    std::process::Command::new("kill")
+        .args(["-0", pid])
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+#[cfg(unix)]
+async fn agent_pids(manager: &AcpManager, sink: &RecordingSink) -> Vec<String> {
+    manager.prompt("c1", vec![PromptPart::Text("pids".into())]).await.unwrap();
+    sink.wait_finished().await;
+    let line = sink.texts().pop().unwrap();
+    let pids: Vec<String> = line.split_whitespace().skip(1).map(str::to_string).collect();
+    assert_eq!(pids.len(), 2, "{line}");
+    assert!(pids.iter().all(|p| alive(p)));
+    pids
+}
+
+#[cfg(unix)]
+async fn wait_dead(pids: &[String]) {
+    let start = Instant::now();
+    while pids.iter().any(|p| alive(p)) {
+        assert!(start.elapsed() < Duration::from_secs(5), "processes still alive: {pids:?}");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn stop_kills_the_agent_and_its_helpers() {
+    let ws = workspace();
+    let (manager, sink) = started("c1", &ws).await;
+    let pids = agent_pids(&manager, &sink).await;
+    manager.stop("c1").await.unwrap();
+    wait_dead(&pids).await;
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn dropping_the_manager_kills_the_agent() {
+    let ws = workspace();
+    let (manager, sink) = started("c1", &ws).await;
+    let pids = agent_pids(&manager, &sink).await;
+    drop(manager);
+    wait_dead(&pids).await;
+}
