@@ -11,7 +11,7 @@ use tauri::{AppHandle, Emitter, Manager, Runtime, WindowEvent};
 
 /// Event the main window receives on every tick; the payload is the time as RFC 3339 (UTC).
 pub const TICK_EVENT: &str = "scheduler://tick";
-/// Event the tray's "Pause all autopilots" item emits to the main window (disabled until A4).
+/// Event the tray's "Pause all autopilots" item emits to the main window; the autopilot engine pauses them all.
 pub const PAUSE_ALL_EVENT: &str = "autopilot://pause-all";
 pub const TICK_SECS: u64 = 30;
 const TRAY_ID: &str = "tayang";

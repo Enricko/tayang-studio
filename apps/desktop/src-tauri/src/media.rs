@@ -111,14 +111,18 @@ fn newest_mp4(dir: &Path) -> Option<PathBuf> {
             p.is_file() && p.extension().map(|x| x.eq_ignore_ascii_case("mp4")).unwrap_or(false)
         })
         .filter_map(|p| {
-            let m = p.metadata().ok()?.modified().ok()?;
-            Some((m, p))
+            let meta = p.metadata().ok()?;
+            // An empty file is a render that never got written (killed halfway): not a video.
+            if meta.len() == 0 {
+                return None;
+            }
+            Some((meta.modified().ok()?, p))
         })
         .max_by_key(|(m, _)| *m)
         .map(|(_, p)| p)
 }
 
-/// Newest `*.mp4` in `<folder>/renders/`, else in `<folder>/`.
+/// Newest non-empty `*.mp4` in `<folder>/renders/`, else in `<folder>/`.
 pub fn latest_render(folder: &Path) -> Option<PathBuf> {
     newest_mp4(&folder.join("renders")).or_else(|| newest_mp4(folder))
 }
@@ -1027,6 +1031,20 @@ mod tests {
         std::fs::write(&new, b"x").unwrap();
         std::fs::write(renders.join("c.txt"), b"x").unwrap();
         assert_eq!(latest_render(tmp.path()), Some(new));
+    }
+
+    #[test]
+    fn latest_render_skips_empty_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let renders = tmp.path().join("renders");
+        std::fs::create_dir_all(&renders).unwrap();
+        let good = renders.join("a.mp4");
+        std::fs::write(&good, b"x").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        std::fs::write(renders.join("b.mp4"), b"").unwrap();
+        assert_eq!(latest_render(tmp.path()), Some(good));
+        std::fs::remove_file(renders.join("a.mp4")).unwrap();
+        assert_eq!(latest_render(tmp.path()), None);
     }
 
     #[test]
