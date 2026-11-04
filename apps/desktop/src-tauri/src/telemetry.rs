@@ -44,7 +44,7 @@ pub fn is_due(s: &Settings, api_url: &str, now: DateTime<Utc>) -> bool {
 }
 
 async fn send(api_url: &str, ping: &TelemetryPing) -> Result<(), reqwest::Error> {
-    let url = format!("{}/v1/telemetry/ping", api_url.trim_end_matches('/'));
+    let url = crate::styles_sync::endpoint(api_url, "/v1/telemetry/ping");
     reqwest::Client::builder()
         .timeout(PING_TIMEOUT)
         .build()?
@@ -187,11 +187,11 @@ mod tests {
         let (url, rx) = serve();
         let db = Db::open_in_memory().unwrap();
         let home = PathBuf::from("/home/u");
-        db.update_settings(serde_json::json!({ "apiUrl": url })).unwrap();
+        db.update_settings(serde_json::json!({ "apiUrl": format!("{url}/api/") })).unwrap();
         let now = at("2026-11-04T12:00:00Z");
         assert!(ping_if_due(&db, &home, &info(), now).await);
         let req = rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
-        assert!(req.starts_with("POST /v1/telemetry/ping "), "{req}");
+        assert!(req.starts_with("POST /api/v1/telemetry/ping "), "{req}");
         let body: serde_json::Value = serde_json::from_str(req.split("\r\n\r\n").nth(1).unwrap()).unwrap();
         assert_eq!(body["installId"], db.get_settings(&home).install_id);
         assert_eq!(body["platform"], "macos");

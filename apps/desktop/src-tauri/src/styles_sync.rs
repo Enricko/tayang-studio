@@ -80,8 +80,11 @@ fn resolve_api_url(env: Option<String>, settings: &crate::types::Settings) -> St
     }
 }
 
-fn endpoint(api_url: &str, path: &str) -> String {
-    format!("{}{}", api_url.trim_end_matches('/'), path)
+/// `path` (e.g. `/v1/styles`) under the API base. The base may carry a path
+/// (`https://studio.tayang.app/api`); it is kept, minus one trailing slash.
+pub(crate) fn endpoint(api_url: &str, path: &str) -> String {
+    let base = api_url.trim();
+    format!("{}{}", base.strip_suffix('/').unwrap_or(base), path)
 }
 
 #[derive(Deserialize)]
@@ -370,6 +373,25 @@ mod tests {
             "https://api.test/v1/styles".into(),
             (200, serde_json::to_vec(&serde_json::json!({ "styles": styles })).unwrap()),
         )
+    }
+
+    #[test]
+    fn endpoint_keeps_the_base_path() {
+        for base in ["https://studio.tayang.app/api", "https://studio.tayang.app/api/", " https://studio.tayang.app/api "] {
+            assert_eq!(endpoint(base, "/v1/styles"), "https://studio.tayang.app/api/v1/styles", "{base:?}");
+        }
+        assert_eq!(endpoint("http://localhost:8787/api", "/v1/styles/a/template"), "http://localhost:8787/api/v1/styles/a/template");
+        assert_eq!(endpoint("https://edge.test", "/v1/styles"), "https://edge.test/v1/styles");
+    }
+
+    #[tokio::test]
+    async fn sync_uses_the_base_path() {
+        let db = Db::open_in_memory().unwrap();
+        let mut f = FakeFetcher::default();
+        let (_, v) = list_route(&[style("a", None)]);
+        f.routes.insert("https://studio.test/api/v1/styles".into(), v);
+        assert!(!sync_styles(&db, "https://studio.test/api/", &f).await.unwrap().offline);
+        assert_eq!(f.calls.lock().unwrap().as_slice(), ["https://studio.test/api/v1/styles"]);
     }
 
     #[test]
