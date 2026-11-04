@@ -192,10 +192,14 @@ pub fn update_project(
 /// Sets or clears when a video is due to be posted. `at` must be RFC 3339; a new time is
 /// reminded afresh, so `remindedAt` is cleared with it.
 pub fn schedule_project(db: &Db, project_id: &str, at: Option<String>) -> CmdResult<Project> {
-    if let Some(at) = &at {
-        chrono::DateTime::parse_from_rfc3339(at)
-            .map_err(|_| format!("That date and time isn't valid: {at}"))?;
-    }
+    // Stored as UTC so every schedule compares as plain text.
+    let at = at
+        .map(|at| {
+            chrono::DateTime::parse_from_rfc3339(&at)
+                .map(|dt| dt.with_timezone(&chrono::Utc).to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
+                .map_err(|_| format!("That date and time isn't valid: {at}"))
+        })
+        .transpose()?;
     db.update_project(project_id, serde_json::json!({ "scheduledAt": at, "remindedAt": null }))
         .map_err(err)
 }
@@ -1049,10 +1053,12 @@ mod tests {
         assert!(schedule_project(&db, "nope", Some("2026-11-05T09:00:00+07:00".into())).is_err());
         assert!(schedule_project(&db, "nope", None).is_err());
         let p = schedule_project(&db, "p", Some("2026-11-05T09:00:00+07:00".into())).unwrap();
-        assert_eq!(p.scheduled_at.as_deref(), Some("2026-11-05T09:00:00+07:00"));
+        assert_eq!(p.scheduled_at.as_deref(), Some("2026-11-05T02:00:00Z"));
         assert_eq!(p.reminded_at, None);
+        db.update_project("p", serde_json::json!({ "remindedAt": "2026-11-05T01:00:00Z" })).unwrap();
         let p = schedule_project(&db, "p", None).unwrap();
         assert_eq!(p.scheduled_at, None);
+        assert_eq!(p.reminded_at, None);
         assert_eq!(db.get_project("p").unwrap().unwrap().scheduled_at, None);
     }
 
