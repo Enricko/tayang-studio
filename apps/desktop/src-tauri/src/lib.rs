@@ -36,6 +36,20 @@ pub fn run() {
             commands::get_settings,
             commands::update_settings,
             commands::pick_folder,
+            commands::list_projects,
+            commands::create_project,
+            commands::update_project,
+            commands::list_chats,
+            commands::create_chat,
+            commands::list_messages,
+            commands::add_message,
+            commands::list_styles,
+            commands::save_style,
+            commands::delete_style,
+            commands::read_style_result,
+            commands::study_dir,
+            commands::list_jobs,
+            commands::upsert_job,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Tayang Studio");
