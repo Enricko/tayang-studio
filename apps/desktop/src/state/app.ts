@@ -5,7 +5,7 @@ export type Route =
   | { name: 'welcome' }
   | { name: 'connect' }
   | { name: 'requirements' }
-  | { name: 'chat-new' }
+  | { name: 'chat-new'; styleId?: string }
   | { name: 'chat'; chatId: string }
   | { name: 'videos' }
   | { name: 'style' }

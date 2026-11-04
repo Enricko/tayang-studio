@@ -6,6 +6,7 @@ import { AgentLogo } from '@/components/AgentLogo';
 import { Button } from '@/components/Button';
 import { Oyen } from '@/components/Oyen';
 import { ToolRow, TOOL_ORDER } from '@/components/ToolRow';
+import { Input } from '@/components/ui/input';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -320,7 +321,7 @@ export function Settings() {
                 Share anonymous install stats
               </label>
               <span className="text-xs text-text-3">
-                Sends a random install ID, your system (macOS, Windows or Linux), its version and the app version once a day. Nothing about you or your videos.
+                Sends a random install ID, your system (macOS, Windows or Linux), its version, your computer's processor type and the app version once a day. Nothing about you or your videos.
               </span>
             </div>
             <Switch
@@ -328,6 +329,25 @@ export function Settings() {
               checked={settings.shareInstallStats}
               aria-label="Share anonymous install stats"
               onCheckedChange={(v) => void save({ shareInstallStats: v })}
+            />
+          </div>
+          <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3">
+            <div className="mr-auto flex flex-col gap-1">
+              <label htmlFor="api-url" className="text-sm font-medium">
+                API address
+              </label>
+              <span className="text-xs text-text-3">Used for built-in styles and install stats</span>
+            </div>
+            <Input
+              id="api-url"
+              key={settings.apiUrl}
+              defaultValue={settings.apiUrl}
+              spellCheck={false}
+              className="h-8 w-[260px] bg-background font-mono text-xs"
+              onBlur={(e) => {
+                const v = e.target.value.trim();
+                if (v && v !== settings.apiUrl) void save({ apiUrl: v });
+              }}
             />
           </div>
         </section>

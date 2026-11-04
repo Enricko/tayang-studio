@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link2, Lightbulb, Disc3 } from 'lucide-react';
 import type { AgentId, MessagePart, Project, Style, VideoKind } from '@tayang/shared';
-import { BUILTIN_STYLES, buildProjectBrief, buildTopicIdeasPrompt, parseTopicIdeas } from '@tayang/skills';
+import { buildProjectBrief, buildTopicIdeasPrompt, parseTopicIdeas } from '@tayang/skills';
 import oyen from '@/assets/brand/oyen-expr-default.svg';
 import { Composer, type MentionRef } from '@/components/Composer';
 import { MessageList } from '@/components/MessageList';
 import { PermissionCard } from '@/components/PermissionCard';
-import { createChat, createProject, listProjects, listStyles } from '@/lib/ipc';
+import { addMessage, createChat, createProject, installStyleTemplate, listProjects, listStyles } from '@/lib/ipc';
 import { useApp } from '@/state/app';
 import { headPermission, useChat } from '@/state/chat';
 import { useUsage } from '@/state/usage';
@@ -23,6 +23,7 @@ function agentText(parts: MessagePart[]) {
 export function ChatNew() {
   const settings = useApp((s) => s.settings);
   const navigate = useApp((s) => s.navigate);
+  const styleId = useApp((s) => (s.route.name === 'chat-new' ? (s.route.styleId ?? null) : null));
   const [projects, setProjects] = useState<Project[]>([]);
   const [chatId, setChatId] = useState<string | null>(null);
   const [mention, setMention] = useState<MentionRef | null>(null);
@@ -92,7 +93,7 @@ export function ChatNew() {
       if (part.type !== 'mention' || seen.includes(part.projectId)) continue;
       const p = projects.find((x) => x.id === part.projectId);
       if (!p || !settings) continue;
-      const style = [...styles, ...BUILTIN_STYLES].find((s) => s.id === p.styleId) ?? null;
+      const style = styles.find((s) => s.id === p.styleId) ?? null;
       out.push({
         type: 'text',
         text: `The user attached the video "${p.title}". Its project folder is ${p.folder}.\n\n${buildProjectBrief(p, style, settings)}`,
@@ -138,22 +139,39 @@ export function ChatNew() {
     if (!settings || busy) return;
     setBusy(true);
     try {
-      const input = { title: idea.title, kind: idea.kind, format: settings.format, language: settings.language };
+      const styles: Style[] = styleId ? await listStyles().catch(() => []) : [];
+      const style = styles.find((s) => s.id === styleId) ?? null;
+      const input = {
+        title: idea.title,
+        kind: idea.kind,
+        format: settings.format,
+        language: settings.language,
+        ...(style ? { styleId: style.id } : {}),
+      };
       const draft: Project = {
         id: '',
         slug: '',
         folder: '',
         status: 'draft',
-        styleId: null,
+        styleId: style?.id ?? null,
         scheduledAt: null,
         durationSec: null,
         createdAt: '',
         updatedAt: '',
         ...input,
       };
-      const project = await createProject(input, buildProjectBrief(draft, null, settings));
+      const project = await createProject(input, buildProjectBrief(draft, style, settings));
       useApp.getState().bumpProjects();
       const chat = await createChat(project.id, agent, idea.title);
+      if (style?.template) {
+        const say = (text: string) => addMessage(chat.id, 'system', [{ type: 'text', text }]).catch(() => {});
+        await say(`Setting up the ${style.name} template…`);
+        try {
+          await installStyleTemplate(project.id);
+        } catch (e) {
+          await say(`Couldn't set up the ${style.name} template: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
       navigate({ name: 'chat', chatId: chat.id });
       void useChat
         .getState()

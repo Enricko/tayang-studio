@@ -7,7 +7,7 @@ import { MessageList } from '@/components/MessageList';
 import { PermissionCard } from '@/components/PermissionCard';
 import { Preview } from '@/screens/preview/Preview';
 import { StepBar } from '@/components/StepBar';
-import { getChat, listProjects, mediaProbe, mediaRender, updateProject } from '@/lib/ipc';
+import { getChat, listProjects, mediaProbe, mediaRender, renderCommand, updateProject } from '@/lib/ipc';
 import { useApp } from '@/state/app';
 import { headPermission, useChat } from '@/state/chat';
 import { useUsage } from '@/state/usage';
@@ -31,6 +31,7 @@ export function ChatProject({ chatId }: { chatId: string }) {
   const [rendering, setRendering] = useState(false);
   const [renderError, setRenderError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const [runs, setRuns] = useState<string[] | null>(null);
   const messages = useChat((s) => s.messages[chatId]) ?? NO_MESSAGES;
   const streaming = useChat((s) => !!s.streaming[chatId]);
   const permission = useChat((s) => headPermission(s, chatId));
@@ -50,6 +51,18 @@ export function ChatProject({ chatId }: { chatId: string }) {
       alive = false;
     };
   }, [chatId]);
+
+  // A project with a tayang.json renders with its own command: show it before the user presses Render.
+  useEffect(() => {
+    if (!project) return;
+    let alive = true;
+    renderCommand(project.id)
+      .then((c) => alive && setRuns(c))
+      .catch(() => alive && setRuns(null));
+    return () => {
+      alive = false;
+    };
+  }, [project?.id]);
 
   useEffect(() => {
     useUsage.getState().setChatAgent(agent);
@@ -126,6 +139,11 @@ export function ChatProject({ chatId }: { chatId: string }) {
           {rendering ? 'Rendering…' : 'Render video'}
         </Button>
       </header>
+      {runs && runs.length > 0 && (
+        <p className="m-0 truncate border-b border-border px-6 py-2 font-mono text-xs text-text-3" title={runs.join(' ')}>
+          Runs: {runs.join(' ')}
+        </p>
+      )}
       {renderError && (
         <p role="alert" className="m-0 border-b border-border px-6 py-2 text-xs text-orange-light">
           {renderError}

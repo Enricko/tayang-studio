@@ -187,10 +187,12 @@ const plain: StyleT = { ...atlas, id: 'plain', name: 'Plain look', engine: 'hype
 
 describe('Style built-in styles from the API', () => {
   it('syncs on open and shows the synced styles with preview images', async () => {
-    vi.mocked(ipc.syncStyles).mockResolvedValue({ styles: [atlas, plain], offline: false });
+    let done: (r: { styles: StyleT[]; offline: boolean }) => void = () => {};
+    vi.mocked(ipc.syncStyles).mockReturnValue(new Promise((res) => (done = res)));
     vi.mocked(ipc.listStyles).mockResolvedValue([atlas, plain]);
     const { container } = render(<Style />);
     expect(await screen.findByText('Updating built-in styles')).toBeInTheDocument();
+    await act(async () => done({ styles: [atlas, plain], offline: false }));
     expect(await screen.findByText('Starts from a working project')).toBeInTheDocument();
     expect(ipc.syncStyles).toHaveBeenCalledTimes(1);
     expect(screen.queryByText('Updating built-in styles')).not.toBeInTheDocument();
