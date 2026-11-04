@@ -198,6 +198,15 @@ pub enum MessagePart {
         title: String,
         status: ToolCallStatus,
     },
+    A2ui {
+        surface_id: String,
+        messages: Vec<serde_json::Value>,
+    },
+    #[serde(rename = "a2ui-action")]
+    A2uiAction {
+        summary: String,
+        action: serde_json::Value,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

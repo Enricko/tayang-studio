@@ -447,7 +447,10 @@ pub fn build_prompt(
                     out.push(PromptPart::Text(format!("Attached file: {rel} ({name}, {size})")));
                 }
             }
-            MessagePart::Tool { .. } => {}
+            MessagePart::Tool { .. } | MessagePart::A2ui { .. } => {}
+            MessagePart::A2uiAction { summary, action } => {
+                out.push(PromptPart::Text(format!("{summary}\n\n```a2ui-action\n{action}\n```")));
+            }
         }
     }
     out
@@ -858,6 +861,23 @@ mod tests {
         let body = cut.strip_suffix("\n[AGENTS.md cut at 8 KB]").unwrap();
         assert!(body.len() <= BRIEF_LIMIT && body.len() > BRIEF_LIMIT - 4);
         assert!(long.starts_with(body));
+    }
+
+    #[test]
+    fn a2ui_action_becomes_summary_and_fenced_json() {
+        let parts = vec![
+            MessagePart::A2ui { surface_id: "s1".into(), messages: vec![serde_json::json!({"version":"v0.9"})] },
+            MessagePart::A2uiAction {
+                summary: "Picked: Kenapa rupiah melemah?".into(),
+                action: serde_json::json!({"version":"v0.9","action":{"name":"pick"}}),
+            },
+        ];
+        assert_eq!(
+            build_prompt(&parts, 30, |_| None, |_| None),
+            vec![PromptPart::Text(
+                "Picked: Kenapa rupiah melemah?\n\n```a2ui-action\n{\"action\":{\"name\":\"pick\"},\"version\":\"v0.9\"}\n```".into()
+            )]
+        );
     }
 
     #[test]
