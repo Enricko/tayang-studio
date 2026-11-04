@@ -274,7 +274,10 @@ async function makeVideo(run: Run): Promise<string> {
     reviewState: a.review ? 'pending' : 'approved',
   });
   await setSchedule(project.id, run.slot.dueAt);
+  // Stopped during the writes above: the video stays, but is no longer due at the slot's time.
+  if (run.stopped) await setSchedule(project.id, null).catch(() => {});
   useApp.getState().bumpProjects();
+  live();
   return project.id;
 }
 

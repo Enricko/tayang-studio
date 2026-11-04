@@ -675,6 +675,23 @@ describe('review fixes', () => {
     expect(slotAt(at(4, 9))).toMatchObject({ status: 'failed', error: 'Stopped' });
   });
 
+  it('Stop now during the final writes takes the schedule back', async () => {
+    let finish: () => void = () => {};
+    const real = vi.mocked(ipc.setSchedule).getMockImplementation()!;
+    vi.mocked(ipc.setSchedule).mockImplementationOnce(async (id, at) => {
+      await new Promise<void>((r) => (finish = r));
+      return real(id, at);
+    });
+    await pass(NOW);
+    await vi.waitFor(() => expect(ipc.setSchedule).toHaveBeenCalled());
+    const stopping = stopNow(currentSlot()!);
+    finish();
+    await stopping;
+    await settle(() => expect(currentSlot()).toBeNull());
+    expect(db.projects[0]!.scheduledAt).toBeNull();
+    expect(slotAt(at(4, 9))).toMatchObject({ status: 'failed', error: 'Stopped' });
+  });
+
   it('Stop now leaves a slot alone that is no longer making', async () => {
     db.slots.push({ id: 'd', autopilotId: 'a1', dueAt: at(4, 7), status: 'done', projectId: 'px', error: null });
     await stopNow(clone(slot('d')));
