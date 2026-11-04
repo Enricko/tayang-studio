@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useRef } from 'react';
 import { Check, File as FileIcon, Loader2, X } from 'lucide-react';
-import { formatTimecode, type ChatMessage, type MessagePart } from '@tayang/shared';
+import { formatTimecode, type AgentId, type ChatMessage, type MessagePart } from '@tayang/shared';
 import { Oyen } from '@/components/Oyen';
 import { AGENT_NAMES } from '@/lib/agents';
 import { useApp } from '@/state/app';
@@ -38,8 +38,24 @@ function SentFile({ part }: { part: Extract<MessagePart, { type: 'file' }> }) {
   );
 }
 
+interface Actions {
+  /** A screen can take an A2UI action itself (return true) instead of sending it to the agent. */
+  handle?: (a: A2uiAction) => boolean;
+  /** Surfaces take no input while the agent replies: one gate with the composer and agent picker. */
+  locked: boolean;
+  sendOptions?: SendOptions;
+  /** The chat's own agent, for the activity card. */
+  agentId?: AgentId;
+}
+
+/** The screen's own send options for what the agent receives (its agent, build job, prompt prefix). */
+export type SendOptions = (promptParts: MessagePart[]) => SendOpts;
+
+const ActionsContext = createContext<Actions>({ locked: false });
+
 function ActivityCard({ tools, working }: { tools: Tool[]; working: boolean }) {
-  const agent = useApp((s) => s.settings?.defaultAgent ?? 'claude');
+  const fallback = useApp((s) => s.settings?.defaultAgent ?? 'claude');
+  const agent = useContext(ActionsContext).agentId ?? fallback;
   const done = tools.filter((t) => t.status === 'done').length;
   const pct = tools.length ? Math.round((done / tools.length) * 100) : 0;
   return (
@@ -113,18 +129,6 @@ function isUpdateOnly(text: string, messageId: string, a2ui: A2uiState): boolean
     return !sid || a2ui.owner[sid] !== messageId;
   });
 }
-
-interface Actions {
-  /** A screen can take an A2UI action itself (return true) instead of sending it to the agent. */
-  handle?: (a: A2uiAction) => boolean;
-  /** Surfaces take no input while the agent replies: one gate with the composer and agent picker. */
-  locked: boolean;
-  sendOptions?: SendOptions;
-}
-
-/** The screen's own send options for what the agent receives (its agent, build job, prompt prefix). */
-export type SendOptions = (promptParts: MessagePart[]) => SendOpts;
-const ActionsContext = createContext<Actions>({ locked: false });
 
 function sendAction(chatId: string, a: A2uiAction, sendOptions?: SendOptions) {
   const { summary, ...rest } = a;
@@ -209,7 +213,10 @@ export function MessageList({
   onA2uiAction,
   sendOptions,
   busy = false,
+  agentId,
 }: {
+  /** The chat's agent; the activity card names it. Defaults to the agent picked in Settings. */
+  agentId?: AgentId;
   messages: ChatMessage[];
   streaming: boolean;
   /** The screen is busy with an earlier action (setting up a topic): surfaces wait, like while streaming. */
@@ -228,8 +235,8 @@ export function MessageList({
 
   const a2ui = useMemo(() => deriveA2ui(messages), [messages]);
   const actions = useMemo(
-    () => ({ handle: onA2uiAction, locked: streaming || busy, sendOptions }),
-    [onA2uiAction, streaming, busy, sendOptions],
+    () => ({ handle: onA2uiAction, locked: streaming || busy, sendOptions, agentId }),
+    [onA2uiAction, streaming, busy, sendOptions, agentId],
   );
   const last = messages[messages.length - 1];
   return (

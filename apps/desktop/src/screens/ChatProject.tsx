@@ -162,7 +162,7 @@ export function ChatProject({ chatId }: { chatId: string }) {
       <div className="flex min-h-0 flex-1">
         <section aria-label="Conversation" className="flex min-w-0 flex-1 flex-col">
           <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
-            <MessageList messages={messages} streaming={streaming} sendOptions={sendOptions}>
+            <MessageList messages={messages} streaming={streaming} sendOptions={sendOptions} agentId={agent}>
               {permission && (
                 <PermissionCard
                   request={permission}

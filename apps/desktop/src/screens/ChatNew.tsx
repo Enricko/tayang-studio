@@ -216,6 +216,7 @@ export function ChatNew() {
                 messages={messages}
                 streaming={streaming}
                 busy={busy}
+                agentId={agent}
                 onA2uiAction={onA2uiAction}
                 sendOptions={() => ({ agentId: agent })}
               >

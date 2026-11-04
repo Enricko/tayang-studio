@@ -198,6 +198,14 @@ describe('answering a surface after a restart', () => {
   });
 });
 
+describe('activity card', () => {
+  it("names the chat's agent, not the default one", () => {
+    const tool = { type: 'tool' as const, toolCallId: 't1', title: 'Write scene 1', status: 'done' as const };
+    render(<MessageList streaming={false} agentId="codex" messages={[msg('1', 'agent', [tool])]} />);
+    expect(screen.getByText('Codex finished')).toBeInTheDocument();
+  });
+});
+
 describe('send agent fallback', () => {
   it("uses the chat's last agent, not the default, when none is given", async () => {
     vi.mocked(agentStart).mockClear();
