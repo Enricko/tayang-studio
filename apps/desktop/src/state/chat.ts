@@ -20,7 +20,8 @@ interface ChatState {
   started: Record<string, boolean>;
 
   load(chatId: string): Promise<void>;
-  send(chatId: string, parts: MessagePart[], opts?: SendOpts): Promise<void>;
+  /** Resolves to an error message when the agent could not be reached, otherwise null. */
+  send(chatId: string, parts: MessagePart[], opts?: SendOpts): Promise<string | null>;
   respondPermission(chatId: string, optionId: string | null): Promise<void>;
   attach(chatId: string, part: MessagePart): void;
   detach(chatId: string, index: number): void;
@@ -103,8 +104,9 @@ export const useChat = create<ChatState>((set, get) => {
       if (last && last.role === 'agent' && isLocal(last)) void persist(chatId, last);
       return;
     }
-    // error
+    // error: the session is gone, so the next send must start a new one
     finish(chatId);
+    set((s) => ({ started: { ...s.started, [chatId]: false } }));
     const sys = localMessage(chatId, 'system', [{ type: 'text', text: AGENT_STOPPED }]);
     append(chatId, sys);
     void persist(chatId, sys);
@@ -143,8 +145,10 @@ export const useChat = create<ChatState>((set, get) => {
           set((s) => ({ started: { ...s.started, [chatId]: true } }));
         }
         await agentPrompt(chatId, opts?.promptParts ? [...attached, ...opts.promptParts] : visible);
-      } catch {
+        return null;
+      } catch (e) {
         onUpdate(chatId, { kind: 'error', message: 'send failed' });
+        return e instanceof Error ? e.message : String(e);
       }
     },
 
