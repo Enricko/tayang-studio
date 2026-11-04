@@ -600,6 +600,28 @@ describe('review fixes', () => {
     await settle(() => expect(jobFor(`chat-${p.id}`)).toMatchObject({ status: 'failed', note: 'Stopped' }));
   });
 
+  it("leaves the project chat's session alone when the user started a newer turn before the slot ended", async () => {
+    let userSent = false;
+    respond = (chatId, prompt) => {
+      if (chatId.startsWith('autopilot-')) return { text: topicJson('User jumps in') };
+      if (prompt.includes('Make it bluer')) return { hang: true };
+      return { text: 'Rendered', render: true };
+    };
+    vi.mocked(ipc.mediaProbe).mockImplementationOnce(async () => {
+      // The engine's build turn is over; the user clicks a quick reply before the slot is written.
+      const chatId = `chat-${db.projects[0]!.id}`;
+      void useChat.getState().send(chatId, [{ type: 'text', text: 'Make it bluer' }]);
+      userSent = true;
+      return { durationSec: 30, fps: 30, frames: 900, width: 1080, height: 1920 };
+    });
+    await runOnce();
+    const chatId = `chat-${db.projects[0]!.id}`;
+    expect(userSent).toBe(true);
+    expect(slotAt(at(4, 9)).status).toBe('done');
+    expect(useChat.getState().streaming[chatId]).toBe(true);
+    expect(ipc.agentStop).not.toHaveBeenCalledWith(chatId);
+  });
+
   it('a tick past 45 minutes times the turn out even when the timer never fired, after the cancel finished', async () => {
     let finishCancel: () => void = () => {};
     vi.mocked(ipc.agentCancel).mockImplementation(() => new Promise<void>((r) => (finishCancel = r)));

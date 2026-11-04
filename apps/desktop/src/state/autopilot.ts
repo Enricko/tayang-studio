@@ -86,6 +86,8 @@ interface Run {
   turnStartedAt: number | null;
   /** Cancels the running turn and ends it as timed out (what the timer does). */
   timeOut: (() => Promise<void>) | null;
+  /** The engine's last turn was cut short (stopped, timed out) and may still be winding down. */
+  cutShort: boolean;
 }
 
 /** A slot failure with the (stored, English) text the slot keeps. */
@@ -123,13 +125,15 @@ function turn(run: Run, chatId: string, parts: MessagePart[], opts: SendOpts & {
       clearTimeout(timer);
       if (waiters.get(chatId)?.end === end) waiters.delete(chatId);
       if (run.endTurn === end) {
+        run.cutShort = e.kind === 'stopped' || e.kind === 'timeout';
         run.endTurn = null;
         run.turnStartedAt = null;
         run.timeOut = null;
       }
       resolve(e);
     };
-    // The agent's cancel is awaited before the turn ends, so the engine is only free once it stopped.
+    // The cancel request is sent before the turn ends; the agent is really stopped by the stop/retire
+    // in pickTopic's and produce's finally blocks, before the engine is free.
     const timeOut = async () => {
       if (over || firing) return;
       firing = true;
@@ -288,7 +292,11 @@ async function produce(run: Run): Promise<void> {
     }
   } finally {
     // The video's chat stays; its agent process ends (a later message starts a new one with a recap).
-    if (run.projectChatId) await useChat.getState().retire(run.projectChatId).catch(() => {});
+    // A chat still streaming after the engine's own turn ended normally is running a newer turn the user
+    // started (say a quick reply): that session is theirs now, so it is left alone, not stopped.
+    const chatId = run.projectChatId;
+    const userTurn = !!chatId && !run.cutShort && !!useChat.getState().streaming[chatId];
+    if (chatId && !userTurn) await useChat.getState().retire(chatId).catch(() => {});
     if (running === run) running = null;
     notifyAutopilotChanged();
   }
@@ -367,6 +375,7 @@ export async function pass(now: Date = new Date()): Promise<void> {
       endTurn: null,
       turnStartedAt: null,
       timeOut: null,
+      cutShort: false,
     };
     running = run;
     void produce(run);
