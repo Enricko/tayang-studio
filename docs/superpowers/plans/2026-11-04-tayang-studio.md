@@ -470,3 +470,16 @@ Owner request: "make skill only when agent connected to our desktop app, also me
 - `render.tsx`: `<A2uiSurface surface onAction />` renders the basic-catalog subset with shadcn/ui + brand tokens (Card, Column, Row, List incl. template children, Text variants h1–h5/body/caption, Image (https or asset URLs only), Icon (small lucide map, unknown → nothing), Divider, Button (primary = accent, others secondary), ChoicePicker (radio when maxAllowedSelections is 1, chips otherwise), TextField, CheckBox, Slider, Tabs); unknown components → muted "This option can't be shown here". Two-way binding to the local data model.
 - Action: Button `action.event` → resolve `context` paths → `onAction({ name, surfaceId, sourceComponentId, timestamp, context })` → chat sends a user message with parts `[{type:'text', text: summary}, {type:'a2ui-action', …}]` where summary is readable ("Picked: Kenapa rupiah melemah?" — derived from the chosen option/button label). After an action the surface is shown as answered (inputs disabled) until the agent updates it. `functionCall` actions: only `openUrl` with https URLs via the opener after a confirm; others ignored.
 - Tests: extract mixed text + block; apply all four messages; render a card with text + two buttons; ChoicePicker single/multi binding; button action resolves context paths and sends the action JSON; unsupported component note; invalid JSON stays text.
+
+---
+
+### Task 23: Pick the agent in chat
+
+Owner request: "why can't we use all agent? so user could pick in chat".
+
+**Files:** Modify `apps/desktop/src/components/Composer.tsx` (agent selector), `src/state/chat.ts`, `src/screens/{ChatNew,ChatProject}.tsx`, `src/screens/Settings.tsx` (label "Default agent for new chats"), `src/lib/ipc.ts`; Rust `db.rs` (`set_chat_agent(chat_id, agent)`), `commands.rs` (`update_chat_agent(chatId, agentId) -> Chat`), `lib.rs`; Tests `src/test/chat.test.tsx`, Rust db test.
+- The composer's agent button becomes a shadcn DropdownMenu listing every installed agent (logo, name, version, a check on the current one); agents that aren't installed are listed disabled with "Not installed" and a "Set up agents" item opens Settings.
+- New chat: the pick decides which agent the chat is created with (default = Settings' default agent).
+- Existing chat: picking another agent stops the current session (`agentStop`), saves the chat's new agentId (`update_chat_agent`), and starts the new agent on the next send. A system line appears in the chat: "Switched to <agent>. It starts fresh: it sees this project's files but not the earlier messages." The first prompt after a switch is prefixed with a short recap built from the last 6 messages (text only, ≤ 1,500 characters).
+- Disabled while a turn is running (switching mid-turn isn't allowed; Stop first).
+- Usage bar/popover follow the chat's agent when a chat is open (default agent otherwise).
