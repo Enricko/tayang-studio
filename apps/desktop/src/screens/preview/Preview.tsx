@@ -26,7 +26,23 @@ const Key = ({ children, className = '' }: { children: React.ReactNode; classNam
   </span>
 );
 
-export function Preview({ projectId, chatId, scenes }: { projectId: string; chatId: string; scenes?: Scene[] }) {
+export function Preview({
+  projectId,
+  chatId,
+  scenes,
+  reloadKey = 0,
+  onRender,
+  rendering: renderingProp = false,
+}: {
+  projectId: string;
+  chatId: string;
+  scenes?: Scene[];
+  /** Bump to reload the latest render, its probe and thumbnails. */
+  reloadKey?: number;
+  /** Renders through the screen (which also records the project's status). */
+  onRender?(): void;
+  rendering?: boolean;
+}) {
   const [videoPath, setVideoPath] = useState<string | null>(null);
   const [info, setInfo] = useState<MediaInfo | null>(null);
   const [thumbs, setThumbs] = useState<string[]>([]);
@@ -59,9 +75,10 @@ export function Preview({ projectId, chatId, scenes }: { projectId: string; chat
     return () => {
       alive = false;
     };
-  }, [load]);
+  }, [load, reloadKey]);
 
   const render = async () => {
+    if (onRender) return onRender();
     setRendering(true);
     setError(null);
     try {
@@ -74,12 +91,13 @@ export function Preview({ projectId, chatId, scenes }: { projectId: string; chat
     }
   };
 
+  const busy = rendering || renderingProp;
   if (!videoPath || !info) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-4 bg-[#101010] px-5 text-center">
-        <Oyen mood={rendering ? 'sleepy' : 'default'} size={56} />
-        <span className="text-[13px] text-text-2">{rendering ? 'Rendering…' : 'Nothing rendered yet'}</span>
-        {!rendering && <Button variant="secondary" onClick={() => void render()}>Render preview</Button>}
+        <Oyen mood={busy ? 'sleepy' : 'default'} size={56} />
+        <span className="text-[13px] text-text-2">{busy ? 'Rendering…' : 'Nothing rendered yet'}</span>
+        {!busy && <Button variant="secondary" onClick={() => void render()}>Render preview</Button>}
         {error && (
           <p role="alert" className="text-xs text-[#FFB08F]">
             {error}

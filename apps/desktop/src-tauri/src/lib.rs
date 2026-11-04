@@ -19,6 +19,8 @@ pub fn run() {
             let data = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data)?;
             let db = db::Db::open(&data.join("tayang.db"))?;
+            // No agent survives a restart, so nothing can still be working.
+            let _ = db.fail_stale_jobs("Tayang was closed while this was running");
             // Also records the real home so later settings updates resolve defaults against it.
             let working = db.get_settings(&home).working_folder;
             commands::allow_asset_folders(app.handle(), &db, &working);

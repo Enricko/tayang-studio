@@ -7,7 +7,7 @@ import { MessageList } from '@/components/MessageList';
 import { PermissionCard } from '@/components/PermissionCard';
 import { Preview } from '@/screens/preview/Preview';
 import { StepBar } from '@/components/StepBar';
-import { getChat, listProjects } from '@/lib/ipc';
+import { getChat, listProjects, mediaProbe, mediaRender, updateProject } from '@/lib/ipc';
 import { useApp } from '@/state/app';
 import { headPermission, useChat } from '@/state/chat';
 
@@ -25,6 +25,9 @@ const KIND: Record<VideoKind, string> = {
 export function ChatProject({ chatId }: { chatId: string }) {
   const agent = useApp((s) => s.settings?.defaultAgent ?? 'claude');
   const [project, setProject] = useState<Project | null>(null);
+  const [rendering, setRendering] = useState(false);
+  const [renderError, setRenderError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const messages = useChat((s) => s.messages[chatId]) ?? NO_MESSAGES;
   const streaming = useChat((s) => !!s.streaming[chatId]);
   const permission = useChat((s) => headPermission(s, chatId));
@@ -46,9 +49,28 @@ export function ChatProject({ chatId }: { chatId: string }) {
   const send = (parts: MessagePart[]) => {
     // The brief's frame check applies to projects made while it was on; this covers turning it off later.
     const skip = useApp.getState().settings?.frameCheck === false;
-    void useChat
-      .getState()
-      .send(chatId, parts, skip ? { promptParts: [{ type: 'text', text: SKIP_FRAME_CHECK }, ...parts] } : undefined);
+    const job = project ? { projectId: project.id, title: project.title } : undefined;
+    void useChat.getState().send(chatId, parts, {
+      job,
+      ...(skip ? { promptParts: [{ type: 'text', text: SKIP_FRAME_CHECK }, ...parts] } : {}),
+    });
+  };
+
+  const renderVideo = async () => {
+    if (!project || rendering) return;
+    setRendering(true);
+    setRenderError(null);
+    try {
+      await mediaRender(project.id);
+      const info = await mediaProbe(project.id).catch(() => null);
+      setProject(await updateProject(project.id, { status: 'rendered', durationSec: info?.durationSec ?? null }));
+      useApp.getState().bumpProjects();
+      setReloadKey((k) => k + 1);
+    } catch (e) {
+      setRenderError(`Couldn't render: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setRendering(false);
+    }
   };
 
   return (
@@ -67,10 +89,20 @@ export function ChatProject({ chatId }: { chatId: string }) {
             <StepBar status={project.status} />
           </div>
         )}
-        <Button variant="primary" disabled className={project ? '' : 'ml-auto'}>
-          Render video
+        <Button
+          variant="primary"
+          disabled={!project || rendering || streaming}
+          className={project ? '' : 'ml-auto'}
+          onClick={() => void renderVideo()}
+        >
+          {rendering ? 'Rendering…' : 'Render video'}
         </Button>
       </header>
+      {renderError && (
+        <p role="alert" className="m-0 border-b border-border px-6 py-2 text-xs text-orange-light">
+          {renderError}
+        </p>
+      )}
 
       <div className="flex min-h-0 flex-1">
         <section aria-label="Conversation" className="flex min-w-0 flex-1 flex-col">
@@ -98,7 +130,17 @@ export function ChatProject({ chatId }: { chatId: string }) {
           </div>
         </section>
         <section aria-label="Preview" className="w-[360px] shrink-0 border-l border-border">
-          {project ? <Preview projectId={project.id} chatId={chatId} /> : <div data-testid="preview-slot" />}
+          {project ? (
+            <Preview
+              projectId={project.id}
+              chatId={chatId}
+              reloadKey={reloadKey}
+              onRender={() => void renderVideo()}
+              rendering={rendering}
+            />
+          ) : (
+            <div data-testid="preview-slot" />
+          )}
         </section>
       </div>
     </div>

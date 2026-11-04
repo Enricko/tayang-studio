@@ -134,9 +134,11 @@ export function ChatNew() {
       useApp.getState().bumpProjects();
       const chat = await createChat(project.id, agent, idea.title);
       navigate({ name: 'chat', chatId: chat.id });
-      void useChat.getState().send(chat.id, [
-        { type: 'text', text: `Write the script for "${idea.title}", about ${idea.lengthSec} seconds.` },
-      ]);
+      void useChat
+        .getState()
+        .send(chat.id, [{ type: 'text', text: `Write the script for "${idea.title}", about ${idea.lengthSec} seconds.` }], {
+          job: { projectId: project.id, title: project.title },
+        });
     } catch {
       setBusy(false);
     }

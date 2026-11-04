@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { AgentId, AgentUpdate, ChatMessage, MessagePart, PermissionRequest } from '@tayang/shared';
+import type { AgentId, AgentUpdate, ChatMessage, JobStatus, MessagePart, PermissionRequest } from '@tayang/shared';
 import {
   addMessage,
   agentCancel,
@@ -8,16 +8,26 @@ import {
   agentStart,
   agentStop,
   listMessages,
+  upsertJob,
 } from '@/lib/ipc';
 import { onAgentUpdate, onPermission } from '@/lib/events';
 import { agentErrorText } from '@/lib/agents';
 import { useApp } from '@/state/app';
+import { refreshJobs } from '@/state/jobs';
 
 export { AGENT_STOPPED } from '@/lib/agents';
+
+/** A project chat's turns show up on the Agents board as this build job. */
+export interface ChatJob {
+  projectId: string;
+  title: string;
+}
 
 export interface SendOpts {
   /** What the agent receives instead of the visible message (extra context, topic prompts). */
   promptParts?: MessagePart[];
+  /** Track this chat's turns as a `build` job. */
+  job?: ChatJob;
 }
 
 interface ChatState {
@@ -53,6 +63,30 @@ export const isScratchChat = (chatId: string) =>
 const tracked = new Set<string>();
 /** The agent each chat last started with, for error copy. */
 const chatAgent = new Map<string, AgentId>();
+/** Project chats whose turns are tracked as a build job. */
+const chatJobs = new Map<string, ChatJob>();
+
+export const buildJobId = (chatId: string) => `build-${chatId}`;
+
+/** Best effort: the job board must never break a chat. */
+function writeJob(chatId: string, status: JobStatus, note: string | null = null) {
+  const job = chatJobs.get(chatId);
+  if (!job) return;
+  void upsertJob({
+    id: buildJobId(chatId),
+    kind: 'build',
+    title: job.title,
+    projectId: job.projectId,
+    chatId,
+    agentId: chatAgent.get(chatId) ?? 'claude',
+    status,
+    progress: null,
+    note,
+    updatedAt: new Date().toISOString(),
+  })
+    .then(() => refreshJobs())
+    .catch(() => {});
+}
 let seq = 0;
 const localMessage = (chatId: string, role: ChatMessage['role'], parts: MessagePart[]): ChatMessage => ({
   id: `local-${++seq}`,
@@ -132,6 +166,7 @@ export const useChat = create<ChatState>((set, get) => {
       return;
     }
     if (u.kind === 'done') {
+      writeJob(chatId, 'done');
       finish(chatId);
       const last = (get().messages[chatId] ?? []).at(-1);
       if (last && last.role === 'agent' && isLocal(last)) void persist(chatId, last);
@@ -141,6 +176,7 @@ export const useChat = create<ChatState>((set, get) => {
     finish(chatId);
     set((s) => ({ started: { ...s.started, [chatId]: false } }));
     const text = agentErrorText(u.message, chatAgent.get(chatId) ?? 'claude');
+    writeJob(chatId, 'failed', text);
     const sys = localMessage(chatId, 'system', [{ type: 'text', text }]);
     append(chatId, sys);
     void persist(chatId, sys);
@@ -178,6 +214,8 @@ export const useChat = create<ChatState>((set, get) => {
       try {
         const agent = useApp.getState().settings?.defaultAgent ?? 'claude';
         chatAgent.set(chatId, agent);
+        if (opts?.job) chatJobs.set(chatId, opts.job);
+        writeJob(chatId, 'working');
         if (!get().started[chatId]) {
           await agentStart(chatId, agent);
           set((s) => ({ started: { ...s.started, [chatId]: true } }));
@@ -195,6 +233,7 @@ export const useChat = create<ChatState>((set, get) => {
       const [req, ...rest] = get().permissions[chatId] ?? [];
       if (!req) return;
       set((s) => ({ permissions: { ...s.permissions, [chatId]: rest } }));
+      if (!rest.length && get().streaming[chatId]) writeJob(chatId, 'working');
       await agentRespondPermission(req.requestId, optionId);
     },
 
@@ -221,6 +260,7 @@ export const useChat = create<ChatState>((set, get) => {
         onAgentUpdate(({ chatId, update }) => onUpdate(chatId, update)),
         onPermission((req) => {
           if (!tracked.has(req.chatId)) return;
+          writeJob(req.chatId, 'needs-you');
           set((s) => ({
             permissions: { ...s.permissions, [req.chatId]: [...(s.permissions[req.chatId] ?? []), req] },
           }));
@@ -233,6 +273,7 @@ export const useChat = create<ChatState>((set, get) => {
       unlisten = [];
       tracked.clear();
       chatAgent.clear();
+      chatJobs.clear();
       set({ messages: {}, streaming: {}, permissions: {}, attachments: {}, started: {} });
     },
   };

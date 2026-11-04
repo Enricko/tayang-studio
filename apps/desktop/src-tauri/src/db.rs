@@ -468,6 +468,15 @@ impl Db {
         Ok(())
     }
 
+    /// Marks jobs still `working` as failed with `note`: their agent died with the app.
+    /// Returns how many changed.
+    pub fn fail_stale_jobs(&self, note: &str) -> Result<usize> {
+        Ok(self.conn().execute(
+            "UPDATE jobs SET status = 'failed', note = ?1, updated_at = ?2 WHERE status = 'working'",
+            rusqlite::params![note, now()],
+        )?)
+    }
+
     pub fn list_jobs(&self) -> Result<Vec<Job>> {
         let sql = format!("{JOB_SELECT} ORDER BY updated_at DESC, rowid DESC");
         query_as(&self.conn(), &sql, &[])
@@ -698,5 +707,29 @@ mod tests {
         j.updated_at = "2026-01-02T00:00:00Z".into();
         db.upsert_job(&j).unwrap();
         assert_eq!(db.list_jobs().unwrap(), vec![j]);
+    }
+
+    #[test]
+    fn stale_working_jobs_fail_on_start() {
+        let db = db();
+        let job = |id: &str, status: JobStatus| Job {
+            id: id.into(),
+            kind: JobKind::Build,
+            title: id.into(),
+            project_id: None,
+            chat_id: None,
+            agent_id: AgentId::Claude,
+            status,
+            progress: None,
+            note: None,
+            updated_at: "2026-01-01T00:00:00Z".into(),
+        };
+        db.upsert_job(&job("w", JobStatus::Working)).unwrap();
+        db.upsert_job(&job("d", JobStatus::Done)).unwrap();
+        assert_eq!(db.fail_stale_jobs("closed").unwrap(), 1);
+        let jobs = db.list_jobs().unwrap();
+        let w = jobs.iter().find(|j| j.id == "w").unwrap();
+        assert_eq!((w.status, w.note.as_deref()), (JobStatus::Failed, Some("closed")));
+        assert_eq!(jobs.iter().find(|j| j.id == "d").unwrap().status, JobStatus::Done);
     }
 }

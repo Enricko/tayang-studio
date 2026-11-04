@@ -24,6 +24,8 @@ vi.mock('@/lib/ipc', () => ({
   mediaThumbnails: vi.fn().mockResolvedValue([]),
   mediaExtractFrame: vi.fn(),
   mediaRender: vi.fn(),
+  upsertJob: vi.fn().mockResolvedValue(undefined),
+  listJobs: vi.fn().mockResolvedValue([]),
   assetUrl: (p: string) => p,
 }));
 
@@ -355,6 +357,67 @@ describe('chat persistence scope', () => {
     useChat.getState().listen();
     await emit('someone-else', { kind: 'text', text: 'hi' });
     expect(useChat.getState().messages['someone-else']).toBeUndefined();
+  });
+});
+
+describe('ChatProject render and jobs', () => {
+  it('Render video renders, then records rendered with the probed duration', async () => {
+    const user = userEvent.setup();
+    vi.mocked(ipc.mediaRender).mockResolvedValue('/tmp/Tayang/p1/renders/a.mp4');
+    vi.mocked(ipc.mediaProbe).mockResolvedValue({ durationSec: 12.5, fps: 30, frames: 375, width: 1080, height: 1920 });
+    vi.mocked(ipc.updateProject).mockImplementation(async (id, patch) => ({ ...projects[0]!, id, ...patch }));
+    render(<ChatProject chatId="c1" />);
+    await screen.findByText('Kenapa rupiah melemah?', { selector: 'span' });
+    await user.click(screen.getByRole('button', { name: 'Render video' }));
+    await waitFor(() => expect(ipc.updateProject).toHaveBeenCalledWith('p1', { status: 'rendered', durationSec: 12.5 }));
+    expect(ipc.mediaRender).toHaveBeenCalledWith('p1');
+    // the preview reloads after the render
+    await waitFor(() => expect(vi.mocked(ipc.mediaLatestRender).mock.calls.length).toBeGreaterThan(1));
+  });
+
+  it('shows an inline error when the render fails', async () => {
+    const user = userEvent.setup();
+    vi.mocked(ipc.mediaRender).mockRejectedValue(new Error('hyperframes render failed: no composition'));
+    render(<ChatProject chatId="c1" />);
+    await screen.findByText('Kenapa rupiah melemah?', { selector: 'span' });
+    await user.click(screen.getByRole('button', { name: 'Render video' }));
+    expect(await screen.findByText("Couldn't render: hyperframes render failed: no composition")).toBeInTheDocument();
+    expect(ipc.updateProject).not.toHaveBeenCalled();
+  });
+
+  it('tracks a turn as a build job: working, needs you, done, failed', async () => {
+    const user = userEvent.setup();
+    render(<ChatProject chatId="c1" />);
+    await screen.findByText('Kenapa rupiah melemah?', { selector: 'span' });
+    const statuses = () => vi.mocked(ipc.upsertJob).mock.calls.map(([j]) => j.status);
+    await user.type(screen.getByRole('textbox', { name: 'Message' }), 'go');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(statuses()).toEqual(['working']));
+    expect(vi.mocked(ipc.upsertJob).mock.calls[0]![0]).toMatchObject({
+      id: 'build-c1',
+      kind: 'build',
+      projectId: 'p1',
+      chatId: 'c1',
+      title: 'Kenapa rupiah melemah?',
+    });
+    await act(async () =>
+      handlers.perm.forEach((cb) =>
+        cb({ chatId: 'c1', requestId: 'r1', title: 't', commands: ['x'], options: [{ id: 'a', label: 'Allow', kind: 'allow-once' }] }),
+      ),
+    );
+    expect(statuses().at(-1)).toBe('needs-you');
+    await user.click(screen.getByRole('button', { name: 'Allow' }));
+    expect(statuses().at(-1)).toBe('working');
+    await emit('c1', { kind: 'done', stopReason: 'end_turn' });
+    expect(statuses().at(-1)).toBe('done');
+
+    await user.type(screen.getByRole('textbox', { name: 'Message' }), 'again');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+    await emit('c1', { kind: 'error', message: 'The agent reported an error: boom' });
+    expect(vi.mocked(ipc.upsertJob).mock.calls.at(-1)![0]).toMatchObject({
+      status: 'failed',
+      note: 'The agent reported an error: boom',
+    });
   });
 });
 
