@@ -457,7 +457,7 @@ impl Db {
 
     /// Moves a project along draft → building → rendered. Without `reset` it never goes back, and a
     /// project already there (or `scheduled`, from older data) is returned as it is, unwritten.
-    /// `scheduled` is never set: scheduling lives in `scheduledAt`.
+    /// `scheduled` is never set: scheduling lives in `scheduledAt`. `updatedAt` never changes.
     pub fn set_project_status(&self, id: &str, status: ProjectStatus, reset: bool) -> Result<Project> {
         let rank = |s: ProjectStatus| match s {
             ProjectStatus::Draft => 0,
@@ -475,7 +475,8 @@ impl Db {
         if !moves {
             return Ok(current);
         }
-        self.update_project(id, json!({ "status": status }))
+        // Not an edit: `updatedAt` (the "recent" order and "x ago") stays as it was.
+        self.update_project(id, json!({ "status": status, "updatedAt": current.updated_at }))
     }
 
     // ---- chats and messages ----
@@ -1186,12 +1187,17 @@ mod tests {
         db.insert_project(&project("a", "2026-01-01T00:00:00Z")).unwrap();
         let b = db.set_project_status("a", ProjectStatus::Building, false).unwrap();
         assert_eq!(b.status, ProjectStatus::Building);
-        assert_ne!(b.updated_at, "2026-01-01T00:00:00Z");
+        // A status move is not an edit: the project keeps its place in "recent" lists.
+        assert_eq!(b.updated_at, "2026-01-01T00:00:00Z");
+        assert_eq!(db.get_project("a").unwrap().unwrap().updated_at, "2026-01-01T00:00:00Z");
         // The same status again changes nothing, not even the time.
         let again = db.set_project_status("a", ProjectStatus::Building, false).unwrap();
         assert_eq!(again, b);
         let r = db.set_project_status("a", ProjectStatus::Rendered, false).unwrap();
         assert_eq!(r.status, ProjectStatus::Rendered);
+        assert_eq!(r.updated_at, "2026-01-01T00:00:00Z");
+        assert_eq!(db.set_project_status("a", ProjectStatus::Draft, true).unwrap().updated_at, "2026-01-01T00:00:00Z");
+        db.set_project_status("a", ProjectStatus::Rendered, false).unwrap();
         // Never backwards on its own.
         assert_eq!(db.set_project_status("a", ProjectStatus::Building, false).unwrap().status, ProjectStatus::Rendered);
         assert_eq!(db.set_project_status("a", ProjectStatus::Draft, false).unwrap().status, ProjectStatus::Rendered);
