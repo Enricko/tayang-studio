@@ -1,8 +1,8 @@
 # Tayang Studio: design
 
-Status: draft, 2026-11-04. Design canvas: https://claude.ai/artifact/YQ5VdN8VyaRqaHq8hYBD1h
+Status: updated to match what was built on `feat/style-popup`, 2026-11-04. Design canvas: https://claude.ai/artifact/YQ5VdN8VyaRqaHq8hYBD1h
 
-Lines marked **(my call)** were decided by Claude while designing and are open to change. Everything else was decided by the owner.
+Lines marked **(my call)** were decided by Claude while designing and are open to change. Lines marked **(owner decision)** record a later owner ruling. Everything else was decided by the owner.
 
 ## Why
 
@@ -30,6 +30,7 @@ These would make it a failure even if it worked technically:
 - The user has to write a prompt to get a decent result.
 - The user sees broken output (overlapping text, cut-off captions) that the agent could have caught.
 - A command runs on the user's computer without them seeing and approving it first.
+  - Exceptions, each told to the user where they decide **(owner decision)**: Auto mode for chats (opt-in in Settings and per chat), a style study (always auto), and autopilots (always auto: the wizard's Agent & review step, its summary and Settings › Agents say so). Installs always ask.
 - It looks like a generic AI tool rather than Tayang.
 
 ## Constraints and architecture
@@ -51,7 +52,7 @@ docs/
 - **Agent connection:** ACP (Agent Client Protocol) for every agent. Claude Code connects through its ACP adapter. The Rust side speaks ACP directly; there's an official crate, `agent-client-protocol`.
 - **Storage:** local SQLite holds projects, chats, styles, the job queue and settings. **(my call: through `tauri-plugin-sql` or `rusqlite`)**
 - **Working folder:** the user picks one folder in Settings, with a default like `~/Tayang` that the user can change. Each video project is a subfolder of it, and the agent's ACP session runs with that project folder as its working directory, so it only touches files there. **(interpreted from "set working directory"; the default path is my call)**
-- **Interface language:** English.
+- **Interface language:** English and Indonesian **(owner decision)**. The first run follows the system language; Settings › General has a picker, and the agent is told to reply in Indonesian when the interface is. Text Tayang saves (system lines, job notes, slot errors) is stored in English and shown in the reader's language.
 - **License:** open source.
 - **Rendering engine:** HyperFrames (Apache-2.0), with Remotion acceptable. **(my call: HyperFrames first)**
 
@@ -123,7 +124,7 @@ For the ElevenLabs MCP, Tayang first asks for an API key, stored only in the age
 
 ### App
 
-The app uses a sidebar with **Chat, Videos, Style, Agents, Calendar** and Settings.
+The app uses a sidebar with **Chat, Videos, Style, Autopilot, Agents, Calendar** and Settings.
 
 #### Chat
 
@@ -138,10 +139,20 @@ The right panel of a video project chat is a **preview, not an editor**:
 - **A custom frame scrubber.** A strip of frame thumbnails with a draggable handle. A tooltip shows the timecode and scene, and scene names sit under the strip. Unbuilt scenes are hatched and show sleepy Oyen when the playhead is on them. Keys: ← → step one frame, Shift + ← → step one second.
 - **Send frame to chat.** Renders the exact frame to a PNG and attaches it to the next message as an image. It goes with the timecode, the frame number, the scene id and any spot the user marked on it.
 - **Mark a spot.** The user clicks on the frame to drop a numbered pin, which is sent with the frame.
+- **Rendering banner.** While the agent's render command or Tayang's own Render runs, a slim banner reads "Rendering video… 1m 20s" and the preview reloads the new render when it ends.
+
+How the conversation reads (as built):
+
+- **Markdown.** Agent prose renders as GFM Markdown, never raw HTML. Remote images stay alt text; links open outside the app, https and mailto only.
+- **Activity line.** Tool calls and thoughts between text collapse into one muted line ("Thought process · Ran 3 commands · edited 2 files"), expandable to rows. Failed steps are marked, skill loads hidden; thoughts are stored with the chat.
+- **Working line.** While a turn runs, the live reply always ends in "Working · 2m 10s"; a running activity line carries the time itself. While the agent's render runs it reads "Rendering video · 1m 20s" (render commands are spotted from tayang.json, HyperFrames, Remotion, npm/pnpm render and ffmpeg writing an MP4). The skills tell agents to run long jobs in the foreground, never in the background after the turn ends **(owner report)**.
+- **Images in chat (owner request).** Images the agent makes in the project folder during a turn appear in its message as a strip of 96 px thumbnails (8, then "+N more") with a lightbox (arrows, Open in folder). They are stored with the message and never sent back to the agent.
+- **Turn rail and scroll pill.** A rail of the user's turns replaces the scrollbar (hover shows the prompt, click jumps); a pill scrolls back to the latest message.
+- **Auto mode.** A per-chat Auto toggle, defaulting to Settings. Claude switches its session to auto; other agents' requests are approved by Tayang one at a time. Turning it off fails closed (the session is stopped).
 
 #### Videos
 
-A grid of every video in the working folder, with tabs for All, In progress, Rendered and Scheduled.
+A grid of every video in the working folder, with tabs for All, In progress, Rendered and Scheduled. A card shows a pulsing "Rendering" chip while its video renders, and a Schedule button.
 
 #### Style
 
@@ -169,7 +180,13 @@ Styles come from three places: **built in**, **copied from a video** and **yours
 2. Samples frames at scene changes plus a regular interval, about 48 frames. It measures cut lengths and the beat if there's music. **(my call: ffmpeg scene detection, frames sent to the agent as contact sheets to save tokens)**
 3. Studies the frames with timestamps. It looks at camera movement (zoom, pan, shake), pacing (shot length, holds), type (family, weight, words per card, position), color, captions and transitions.
 4. Writes a style: the breakdown plus a prompt the user can read and edit.
-5. Deletes the downloaded video and frames. Tayang copies the look, never the footage.
+5. Deletes the downloaded video and frames, keeping only a 10-second silent preview clip and a poster frame on this computer (in the app data folder, never uploaded). Tayang copies the look, not the footage. The Style screen says exactly this **(owner decision)**.
+
+**Style popup (as built).** A card opens a dialog with the style's looping silent preview (or its poster; static under reduced motion), its breakdown and prompt. A copied style without a local preview falls back to its YouTube thumbnail (from i.ytimg.com; the README's Privacy section says so).
+- **Edit** (yours and copied): name, the six notes and the prompt.
+- **Clone** (built-ins can't be edited): a copy that is yours, with `basedOn` pointing at the original. The clone installs its original's current template, or its own snapshot when the original is gone.
+- **Delete** (not built-ins). A style an autopilot uses can't be deleted ("This style is used by autopilot <name>. Change that autopilot first."), and the built-in sync keeps a built-in an autopilot or a clone still uses **(owner decision: a style in use never vanishes)**.
+- Built-in previews come from `GET /v1/styles/:id/preview` and `/preview-video` (with Range).
 
 The study shows up as a job on the Agents board and in the Style screen with its steps: Downloaded, Frames sampled, Reading, Writing the prompt.
 
@@ -177,9 +194,11 @@ The study shows up as a job on the Agents board and in the Style screen with its
 
 A kanban board with four columns: Queued, Working, Needs you, Done. Each column has its Oyen expression. Failed jobs land in Needs you with surprised Oyen and a "Fix it" action.
 
+**A project chat's build job is done only with a video (owner report).** When a turn ends, the job is Done only if a non-empty render appeared since the turn started (its note is the file name). Otherwise it needs you: "The agent is waiting for your answer" when the agent asked something, else "No video yet. The agent stopped before rendering", with Open chat and Continue (asks the agent to render and check the frames). A render that arrives later makes it Done (checked on the board, at start and every tick). While a render runs the job reads "Rendering video". A user's Stop is Done with "Cancelled"; autopilot jobs follow the autopilot.
+
 #### Calendar
 
-A month view with each video marked as ready to post or planned. It also shows topic ideas for the week. An Autopilot card leads to tayang.app, which posts on schedule. The free app only reminds the user to post.
+A month view with each video and its state, scheduling (Schedule, drag to another day, Mark as posted), autopilot slot ghosts with Try again, topic ideas for the week, and a "Manage autopilots" link to the Autopilot screen. The free app only reminds the user to post. See Autopilot and Calendar below.
 
 #### Agent usage
 
@@ -188,6 +207,9 @@ The sidebar's bottom shows the default agent's usage, the same way Orca does: a 
 #### Settings
 
 - Default agent
+- Auto mode for chats (with "Autopilots always use Auto mode.")
+- Interface language
+- Background mode, Open at login, Send a test notification
 - "Check every frame before showing me"
 - Working folder
 - Video defaults: language, format, frame rate
@@ -256,18 +278,25 @@ Before planning, this document gets a builder check: a fresh reader looks for ga
 
 ### Autopilot
 - Fields: name, niche (free text + example chips), language, style (from the Style library), agent, frequency (N per day at set times, or N per week on chosen days + time), length (short form), review first on/off, posting = Manual (Automatic shown disabled "Coming soon"), active/paused.
-- Calendar gets an **Autopilots** panel (replacing the promo card): each autopilot with status, next slot, Pause/Resume, Edit, Delete; "+ New autopilot" opens a dialog.
+- **As built (A5):** a separate **Autopilot screen** replaces the planned Calendar panel. Cards (style thumbnail, niche, frequency, status chip, next video, made/failed counts) with Stop now, Pause/Resume, Edit and Delete; a detail view with the next 7 days of slots and the videos it made. **New autopilot** is a 5-step wizard (Niche, Style, Schedule, Agent & review, Summary) with a leave guard. The Calendar only links there.
 - Engine (runs in the app while it is open, including hidden in the tray):
   - Keeps the next 7 days of slots planned on the Calendar per active autopilot.
   - Production starts for the next slot due within 24 h; **one video at a time across all autopilots** (a queue), so they don't fight over the agent.
   - For a slot: ask the agent for ONE motion-design topic for the niche + style that isn't a repeat of the autopilot's earlier titles → create the project from the style's template (existing topic flow) → build and render in a dedicated autopilot chat in **auto mode** (no permission cards) → when a render exists the video becomes Needs review (review first) or Ready.
+  - **As built:** the topic comes from a hidden per-autopilot chat (`autopilot-<id>`, a fresh session per slot, no skills). The video is built in a **normal project chat** in auto mode, which is retired with a recap afterwards so the user can continue it. Each turn times out after 45 minutes. Failures are stored slot errors in the user's language (no topic, no render, timed out, busy, stopped, "This autopilot's style is missing"). Recovery after a restart fails slots left making and their build jobs. Autopilots always run in Auto mode, and the user is told so where they decide **(owner decision)**.
   - Failure → the slot shows Failed with Try again; the autopilot moves on to the next slot.
   - Pause stops new work (the current video finishes; "Stop now" cancels it). Missed slots while the app was closed are produced on next launch if still in the future, else marked Skipped.
   - Every autopilot video and chat is visible like any other (Videos, Agents board, chat history) so the user can step in.
 
 ### Background mode (Settings › General)
 - "Keep Tayang running in the background" (default off): closing the window hides it to the tray/menu bar instead of quitting; tray menu: Open Tayang · Pause all autopilots · Quit. Plus "Open at login" (only enabled when background is on).
+- Where no system tray can be made (Linux without AppIndicator), turning it on fails safely: the setting goes back off with "Background mode needs a system tray, which isn't available here", and the window is never hidden.
+
+### Agent scheduling (owner request)
+- The agent proposes a schedule as an A2UI card whose button sends the reserved `schedule_videos` action with `items` (`projectId` for this chat's own video or a mentioned one, else a new draft title; `at` in RFC 3339 with the user's offset). It works in every user-facing chat.
+- Pressing it never writes directly: Tayang checks the items (1–20, future, within a year, real dates, only this chat's videos, no duplicates) and shows its own confirmation built from them ("New draft", "Moves from <time>"). Only "Schedule N videos" there writes, all-or-nothing in Rust (drafts removed and old schedules restored on any failure). Then one stored line with Open calendar; the agent learns about it with the next message.
+- Every session tells the agent the user's time zone and time; a project chat also gets its video's id. The Schedule dialog has **Let the agent pick**, which asks the video's chat for the best time in the next 7 days.
 
 ### Not now
 - Automatic posting to TikTok/Reels/Shorts (later, likely tayang.app).
-- Asking the agent in chat to schedule videos; .ics export.
+- .ics export.
