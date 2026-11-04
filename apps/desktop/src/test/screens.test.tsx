@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentInfo, AgentUpdate, Job, PermissionRequest, Project, Settings, Style as StyleT } from '@tayang/shared';
@@ -199,6 +199,19 @@ describe('Style built-in styles from the API', () => {
     expect(container.querySelector('img')).toHaveAttribute('src', atlas.previewUrl);
     expect(screen.queryByText('Built-in styles are from your last sync')).not.toBeInTheDocument();
     expect(screen.getAllByText('Plain look').length).toBeGreaterThan(0);
+  });
+
+  it('falls back to the swatch when a preview image fails to load (offline)', async () => {
+    vi.mocked(ipc.syncStyles).mockResolvedValue({ styles: [atlas], offline: true });
+    vi.mocked(ipc.listStyles).mockResolvedValue([atlas]);
+    const { container } = render(<Style />);
+    await screen.findByText('Built-in styles are from your last sync');
+    const imgs = [...container.querySelectorAll('img')];
+    expect(imgs.length).toBe(2);
+    imgs.forEach((img) => fireEvent.error(img));
+    expect(container.querySelector('img')).toBeNull();
+    expect(screen.getByTestId('style-swatch')).toBeInTheDocument();
+    expect(screen.getByLabelText('Sampled frames')).toBeInTheDocument();
   });
 
   it('shows the engine in the detail', async () => {

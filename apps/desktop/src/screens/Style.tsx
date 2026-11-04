@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link2, Loader2 } from 'lucide-react';
 import type { Style as StyleT, StyleAspect } from '@tayang/shared';
 import { Button } from '@/components/Button';
@@ -139,6 +139,23 @@ function StudyBox() {
   );
 }
 
+/** The style's preview image; the swatch when it has none or the image can't load (offline). */
+function PreviewImage({
+  src,
+  className,
+  fallback,
+  lazy = false,
+}: {
+  src?: string | null;
+  className: string;
+  fallback: ReactNode;
+  lazy?: boolean;
+}) {
+  const [failed, setFailed] = useState<string | null>(null);
+  if (!src || failed === src) return <>{fallback}</>;
+  return <img src={src} alt="" loading={lazy ? 'lazy' : undefined} className={className} onError={() => setFailed(src)} />;
+}
+
 function Detail({ style, onChanged }: { style: StyleT; onChanged(): void }) {
   const navigate = useApp((s) => s.navigate);
   const [editing, setEditing] = useState(false);
@@ -201,19 +218,21 @@ function Detail({ style, onChanged }: { style: StyleT; onChanged(): void }) {
         <span className="text-xs text-text-3">{sourceLabel(style)}</span>
         {style.engine && <span className="font-mono text-xs text-text-3">{ENGINE_LABEL[style.engine]}</span>}
       </div>
-      {style.previewUrl ? (
-        <img src={style.previewUrl} alt="" className="aspect-video w-full rounded-md border border-[#333] object-cover" />
-      ) : (
-        <div className="flex gap-1" aria-label="Sampled frames">
-          {[0, 1, 2, 3, 4, 5].map((i) => (
-            <span
-              key={i}
-              className="aspect-[9/16] flex-1 rounded-sm border border-[#333]"
-              style={{ background: bg, opacity: 1 - i * 0.08 }}
-            />
-          ))}
-        </div>
-      )}
+      <PreviewImage
+        src={style.previewUrl}
+        className="aspect-video w-full rounded-md border border-[#333] object-cover"
+        fallback={
+          <div className="flex gap-1" aria-label="Sampled frames">
+            {[0, 1, 2, 3, 4, 5].map((i) => (
+              <span
+                key={i}
+                className="aspect-[9/16] flex-1 rounded-sm border border-[#333]"
+                style={{ background: bg, opacity: 1 - i * 0.08 }}
+              />
+            ))}
+          </div>
+        }
+      />
       {notes.length > 0 && (
         <dl className="m-0 flex flex-col gap-2">
           {notes.map((a) => (
@@ -417,22 +436,21 @@ export function Style() {
                     on ? 'border-primary bg-card' : 'border-transparent bg-transparent',
                   )}
                 >
-                  {s.previewUrl ? (
-                    <img
-                      src={s.previewUrl}
-                      alt=""
-                      loading="lazy"
-                      className="mb-1 aspect-[9/16] w-full rounded-md border border-[#333] object-cover"
-                    />
-                  ) : (
-                    <div
-                      className="mb-1 flex aspect-[9/16] flex-col justify-between rounded-md border border-[#333] p-3"
-                      style={{ background: bg, color: fg }}
-                    >
-                      <span className="font-mono text-[9px] uppercase opacity-80">{s.source === 'builtin' ? 'Style' : s.source}</span>
-                      <span className="text-xl leading-[1.02] font-extrabold tracking-[-0.02em]">{s.name}</span>
-                    </div>
-                  )}
+                  <PreviewImage
+                    src={s.previewUrl}
+                    lazy
+                    className="mb-1 aspect-[9/16] w-full rounded-md border border-[#333] object-cover"
+                    fallback={
+                      <div
+                        data-testid="style-swatch"
+                        className="mb-1 flex aspect-[9/16] flex-col justify-between rounded-md border border-[#333] p-3"
+                        style={{ background: bg, color: fg }}
+                      >
+                        <span className="font-mono text-[9px] uppercase opacity-80">{s.source === 'builtin' ? 'Style' : s.source}</span>
+                        <span className="text-xl leading-[1.02] font-extrabold tracking-[-0.02em]">{s.name}</span>
+                      </div>
+                    }
+                  />
                   <span className="text-[13px] font-medium">{s.name}</span>
                   <span className="text-xs text-text-3">{sourceLabel(s)}</span>
                   {s.template && <span className="text-xs text-text-3">Starts from a working project</span>}
