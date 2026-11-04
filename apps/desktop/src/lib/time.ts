@@ -58,3 +58,13 @@ export function localClock(now: Date = new Date()): { timeZone: string; offset: 
   const localNow = `${weekday} ${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
   return { timeZone, offset, localNow };
 }
+
+/** How long something has run: "45s", "2m 10s", "1h 3m" (through `Intl`, so Indonesian reads "2 mnt 10 dtk"). */
+export function elapsed(ms: number): string {
+  const sec = Math.max(0, Math.floor(ms / 1000));
+  const unit = (n: number, u: 'second' | 'minute' | 'hour') =>
+    new Intl.NumberFormat(locale(), { style: 'unit', unit: u, unitDisplay: 'narrow' }).format(n);
+  if (sec < 60) return unit(sec, 'second');
+  if (sec < 3600) return `${unit(Math.floor(sec / 60), 'minute')} ${unit(sec % 60, 'second')}`;
+  return `${unit(Math.floor(sec / 3600), 'hour')} ${unit(Math.floor((sec % 3600) / 60), 'minute')}`;
+}

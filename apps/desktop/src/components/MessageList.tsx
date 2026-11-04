@@ -5,10 +5,11 @@ import { formatTimecode, type ChatMessage, type MessagePart } from '@tayang/shar
 import { Markdown } from '@/components/Markdown';
 import { Oyen } from '@/components/Oyen';
 import { STICK_EVENT } from '@/components/ScrollToBottom';
-import { ActivityGroup, isHiddenTool, WorkingLine, type ActivityItem } from '@/components/Activity';
+import { ActivityGroup, isHiddenTool, WorkingLine, type ActivityItem, type LiveTurn } from '@/components/Activity';
 import { localized } from '@/lib/stored';
 import { isScheduleRecord, SCHEDULE_ACTION, scheduleFromAction } from '@/lib/scheduleVideos';
 import { useApp } from '@/state/app';
+import { useRender } from '@/state/render';
 import { messageKey, useChat, type SendOpts } from '@/state/chat';
 import { splitTopicJson, stripFramesToken } from '@tayang/skills';
 import { extractA2ui } from '@/a2ui/parse';
@@ -165,18 +166,27 @@ function Parts({
   live,
   messageId,
   a2ui,
+  turn,
 }: {
   parts: MessagePart[];
   /** This message is the one the agent is still writing. */
   live: boolean;
   messageId: string;
   a2ui: A2uiState;
+  /** The running turn, for the live line. */
+  turn?: LiveTurn;
 }) {
   // Tool calls and thoughts that run together become one activity line, where they happened.
   const out: React.ReactNode[] = [];
   let run: ActivityItem[] = [];
+  /** Whether the tail is an activity line already showing a running step: it carries the live time itself. */
+  let tailRunning = false;
   const flush = (tail: boolean) => {
-    if (run.length) out.push(<ActivityGroup key={`g${out.length}`} items={run} live={live && tail} />);
+    if (run.length) {
+      const liveTail = live && tail;
+      tailRunning = liveTail && run.some((p) => p.type === 'tool' && (p.status === 'running' || p.status === 'pending'));
+      out.push(<ActivityGroup key={`g${out.length}`} items={run} live={liveTail} turn={liveTail ? turn : undefined} />);
+    }
     run = [];
   };
   parts.forEach((p, i) => {
@@ -190,12 +200,8 @@ function Parts({
     else if (p.type === 'frame') out.push(<FrameChip key={i} part={p} />);
   });
   flush(true);
+  if (live && !tailRunning) out.push(<WorkingLine key="working" turn={turn} />);
   return <>{out}</>;
-}
-
-/** Whether a message has anything to draw once hidden tools are dropped. */
-function hasVisible(parts: MessagePart[]): boolean {
-  return parts.some((p) => (p.type === 'tool' ? !isHiddenTool(p) : p.type !== 'a2ui' && p.type !== 'a2ui-action'));
 }
 
 export function MessageList({
@@ -259,6 +265,10 @@ export function MessageList({
     [onA2uiAction, streaming, busy, sendOptions],
   );
   const last = messages[messages.length - 1];
+  const chatId = messages[0]?.chatId ?? '';
+  const startedAt = useChat((s) => (chatId ? s.turnStartedAt[chatId] : undefined));
+  const render = useRender((s) => (chatId ? Object.values(s.runs).find((r) => r.chatId === chatId) : undefined));
+  const turn = useMemo<LiveTurn>(() => ({ startedAt, render }), [startedAt, render]);
   return (
     <ActionsContext.Provider value={actions}>
     <div className="flex flex-col gap-6" role="log" aria-label={t('chat.conversation')}>
@@ -319,8 +329,7 @@ export function MessageList({
           <div key={messageKey(m)} data-testid="agent-message" className="flex items-start gap-3">
             <Oyen mood={working ? 'sleepy' : 'default'} size={28} />
             <div className="flex min-w-0 flex-1 flex-col gap-3">
-              <Parts parts={m.parts} live={working} messageId={m.id} a2ui={a2ui} />
-              {working && !hasVisible(m.parts) && <WorkingLine />}
+              <Parts parts={m.parts} live={working} messageId={m.id} a2ui={a2ui} turn={working ? turn : undefined} />
             </div>
           </div>
         );
@@ -328,7 +337,7 @@ export function MessageList({
       {streaming && (!last || last.role !== 'agent') && (
         <div className="flex items-center gap-3">
           <Oyen mood="sleepy" size={28} />
-          <WorkingLine />
+          <WorkingLine turn={turn} />
         </div>
       )}
       {children}

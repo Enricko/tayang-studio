@@ -139,9 +139,9 @@ describe('a render the agent runs', () => {
     expect(useRender.getState().runs.p1).toMatchObject({ source: 'agent', chatId: 'c1', toolCallId: 't1' });
     expect(lastJob()).toMatchObject({ status: 'working', note: 'Rendering video' });
     // Another tool finishing is not the render ending.
-    await emit('c1', { kind: 'tool', toolCallId: 't2', title: 'Read STYLE.md', status: 'completed', toolKind: 'read' });
+    await emit('c1', { kind: 'tool', toolCallId: 't2', title: 'Read STYLE.md', status: 'done', toolKind: 'read' });
     expect(useRender.getState().runs.p1).toBeDefined();
-    await emit('c1', { kind: 'tool', toolCallId: 't1', title: 'Run npx hyperframes render --output renders/a.mp4', status: 'completed', toolKind: 'execute' });
+    await emit('c1', { kind: 'tool', toolCallId: 't1', title: 'Run npx hyperframes render --output renders/a.mp4', status: 'done', toolKind: 'execute' });
     expect(useRender.getState().runs.p1).toBeUndefined();
     expect(lastJob()).toMatchObject({ status: 'working', note: null });
 

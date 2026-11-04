@@ -1,9 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ChevronRight, FileText, Globe, MessageSquare, Pencil, Search, SquareTerminal, Wrench, type LucideIcon } from 'lucide-react';
+import { ChevronRight, Clapperboard, FileText, Globe, MessageSquare, Pencil, Search, SquareTerminal, Wrench, type LucideIcon } from 'lucide-react';
 import type { MessagePart } from '@tayang/shared';
 import { i18n } from '@/i18n';
 import { localized } from '@/lib/stored';
+import { elapsed } from '@/lib/time';
+import type { RenderRun } from '@/state/render';
 
 export type ToolPart = Extract<MessagePart, { type: 'tool' }>;
 export type ThoughtPart = Extract<MessagePart, { type: 'thought' }>;
@@ -71,6 +73,42 @@ function fileName(p: ToolPart): string {
 
 function command(p: ToolPart): string {
   return p.title.replace(/^\s*run\s+/i, '').replace(/^`+|`+$/g, '').trim();
+}
+
+/** Elapsed time since `since` (ms), updated every second; null without a start. */
+export function useElapsed(since: number | undefined): string | null {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (since === undefined) return;
+    setNow(Date.now());
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [since]);
+  return since === undefined ? null : elapsed(now - since);
+}
+
+/** What the live line knows about the turn: when it started, and the render it runs, if any. */
+export interface LiveTurn {
+  startedAt?: number;
+  render?: RenderRun;
+}
+
+/** "🎬 Rendering video · 1m 20s": the live line while the agent's render command runs. */
+function RenderingLabel({ since }: { since: number }) {
+  const { t } = useTranslation();
+  const time = useElapsed(since);
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <Clapperboard size={14} strokeWidth={1.5} className="shrink-0" aria-hidden="true" />
+      <PulseDot />
+      {t('activity.renderingFor', { time: time ?? '' })}
+    </span>
+  );
+}
+
+function Since({ since }: { since: number }) {
+  const time = useElapsed(since);
+  return <>{` · ${time}`}</>;
 }
 
 const PulseDot = () => (
@@ -162,7 +200,7 @@ function ToolRow({ part }: { part: ToolPart }) {
 }
 
 /** One run of tool calls and thoughts between text: a muted summary line that opens into a list. */
-export function ActivityGroup({ items, live }: { items: ActivityItem[]; live: boolean }) {
+export function ActivityGroup({ items, live, turn }: { items: ActivityItem[]; live: boolean; turn?: LiveTurn }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const notes = items.filter((i): i is ToolPart => i.type === 'tool' && isAutoNote(i));
@@ -192,12 +230,19 @@ export function ActivityGroup({ items, live }: { items: ActivityItem[]; live: bo
               <span className="text-error">{t('activity.failed', { count: failed })}</span>
             </>
           )}
-          {running && (
-            <>
-              {' · '}
-              <PulseDot /> {rowOf(running).label}
-            </>
-          )}
+          {running &&
+            (turn?.render && turn.render.toolCallId === running.toolCallId ? (
+              <>
+                {' · '}
+                <RenderingLabel since={turn.render.startedAt} />
+              </>
+            ) : (
+              <>
+                {' · '}
+                <PulseDot /> {rowOf(running).label}
+                {turn?.startedAt !== undefined && <Since since={turn.startedAt} />}
+              </>
+            ))}
         </span>
       </button>
       {open && (
@@ -216,13 +261,24 @@ export function ActivityGroup({ items, live }: { items: ActivityItem[]; live: bo
   );
 }
 
-/** "● Working": shown while a reply has nothing else to show yet. */
-export function WorkingLine() {
+/**
+ * "● Working · 2m 10s" at the end of the live reply, for as long as the turn runs; "Rendering video" while the
+ * agent's render command runs. Without a start time it reads "Working".
+ */
+export function WorkingLine({ turn }: { turn?: LiveTurn }) {
   const { t } = useTranslation();
+  const time = useElapsed(turn?.startedAt);
+  if (turn?.render) {
+    return (
+      <span role="status" className="inline-flex items-center gap-2 text-[13px] text-text-3">
+        <RenderingLabel since={turn.render.startedAt} />
+      </span>
+    );
+  }
   return (
-    <span className="inline-flex items-center gap-2 text-[13px] text-text-3">
+    <span role="status" className="inline-flex items-center gap-2 text-[13px] text-text-3">
       <PulseDot />
-      {t('activity.working')}
+      {time ? t('activity.workingFor', { time }) : t('activity.working')}
     </span>
   );
 }
