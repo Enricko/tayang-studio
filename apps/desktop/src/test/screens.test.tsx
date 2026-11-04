@@ -51,10 +51,12 @@ vi.mock('@/lib/events', () => ({
   }),
 }));
 vi.mock('@tauri-apps/plugin-opener', () => ({ openUrl: vi.fn() }));
+vi.mock('@tauri-apps/plugin-autostart', () => ({ enable: vi.fn(), disable: vi.fn() }));
 
 import * as ipc from '@/lib/ipc';
 import { Agents } from '@/screens/Agents';
 import { Calendar } from '@/screens/Calendar';
+import * as autostart from '@tauri-apps/plugin-autostart';
 import { Settings as SettingsScreen } from '@/screens/Settings';
 import { Style, youtubeThumbnail } from '@/screens/Style';
 import { Videos } from '@/screens/Videos';
@@ -1300,6 +1302,19 @@ describe('Calendar', () => {
 });
 
 describe('Calendar scheduling', () => {
+  it('explains missing reminders only when notifications were denied, in both languages', async () => {
+    const { unmount } = render(<Calendar today={today} />);
+    await screen.findByRole('button', { name: 'Schedule a video' });
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    useApp.setState({ notificationsBlocked: true });
+    expect(await screen.findByText(/Reminders can't show because notifications are off/)).toBeInTheDocument();
+    unmount();
+    setUiLanguage('id');
+    render(<Calendar today={today} />);
+    expect(await screen.findByText(/Pengingat tidak bisa muncul karena notifikasi/)).toBeInTheDocument();
+    useApp.setState({ notificationsBlocked: false });
+  });
+
   const at = (h: number, m = 0) => new Date(2026, 10, 12, h, m).toISOString();
   const today = new Date(2026, 10, 4);
 
@@ -1495,6 +1510,40 @@ describe('Videos schedule action', () => {
 });
 
 describe('Settings', () => {
+  it('background mode saves through updateSettings; open at login is disabled until it is on', async () => {
+    render(<SettingsScreen />);
+    expect(await screen.findByRole('switch', { name: 'Open at login' })).toBeDisabled();
+    const bg = screen.getByRole('switch', { name: 'Keep Tayang running in the background' });
+    expect(bg).not.toBeChecked();
+    await userEvent.click(bg);
+    await waitFor(() => expect(ipc.updateSettings).toHaveBeenCalledWith({ backgroundMode: true }));
+  });
+
+  it('open at login enables the OS login item, then saves', async () => {
+    useApp.setState({ settings: { ...settings, backgroundMode: true } });
+    render(<SettingsScreen />);
+    await userEvent.click(await screen.findByRole('switch', { name: 'Open at login' }));
+    await waitFor(() => expect(ipc.updateSettings).toHaveBeenCalledWith({ openAtLogin: true }));
+    expect(autostart.enable).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows an error and keeps the setting when the OS login item fails', async () => {
+    vi.mocked(autostart.enable).mockRejectedValueOnce(new Error('denied by the system'));
+    useApp.setState({ settings: { ...settings, backgroundMode: true } });
+    render(<SettingsScreen />);
+    await userEvent.click(await screen.findByRole('switch', { name: 'Open at login' }));
+    expect(await screen.findByText(/Couldn't change that: denied by the system/)).toBeInTheDocument();
+    expect(ipc.updateSettings).not.toHaveBeenCalled();
+  });
+
+  it('turning the background off also turns off open at login', async () => {
+    useApp.setState({ settings: { ...settings, backgroundMode: true, openAtLogin: true } });
+    render(<SettingsScreen />);
+    await userEvent.click(await screen.findByRole('switch', { name: 'Keep Tayang running in the background' }));
+    await waitFor(() => expect(ipc.updateSettings).toHaveBeenCalledWith({ backgroundMode: false, openAtLogin: false }));
+    expect(autostart.disable).toHaveBeenCalledTimes(1);
+  });
+
   it('toggles frameCheck through updateSettings', async () => {
     render(<SettingsScreen />);
     const sw = await screen.findByRole('switch', { name: 'Check every frame before showing me' });

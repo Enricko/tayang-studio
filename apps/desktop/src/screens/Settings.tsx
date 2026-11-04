@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { RefreshCw } from 'lucide-react';
+import { disable as disableAutostart, enable as enableAutostart } from '@tauri-apps/plugin-autostart';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { DEFAULT_SETTINGS, type AgentInfo, type Settings as SettingsT, type SystemInfo, type ToolId } from '@tayang/shared';
 import { AgentLogo } from '@/components/AgentLogo';
@@ -112,6 +113,31 @@ export function Settings() {
     } catch (e) {
       setError(t('settings.saveError', { message: e instanceof Error ? e.message : String(e) }));
     }
+  };
+
+  // Background mode keeps the app alive in the tray; "Open at login" only makes sense with it, so turning
+  // the background off also turns the login item off. A failed OS change leaves the setting as it was.
+  const changeBackground = async (on: boolean) => {
+    if (!on && settings?.openAtLogin) {
+      try {
+        await disableAutostart();
+      } catch (e) {
+        setError(t('settings.backgroundError', { message: e instanceof Error ? e.message : String(e) }));
+        return;
+      }
+      await save({ backgroundMode: false, openAtLogin: false });
+      return;
+    }
+    await save({ backgroundMode: on });
+  };
+  const changeOpenAtLogin = async (on: boolean) => {
+    try {
+      await (on ? enableAutostart() : disableAutostart());
+    } catch (e) {
+      setError(t('settings.backgroundError', { message: e instanceof Error ? e.message : String(e) }));
+      return;
+    }
+    await save({ openAtLogin: on });
   };
 
   const changeFolder = async () => {
@@ -228,6 +254,35 @@ export function Settings() {
               checked={settings.autoMode}
               aria-label={t('settings.autoMode')}
               onCheckedChange={(v) => void save({ autoMode: v })}
+            />
+          </div>
+          <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3">
+            <div className="mr-auto flex flex-col gap-1">
+              <label htmlFor="background-mode" className="text-sm font-medium">
+                {t('settings.background')}
+              </label>
+              <span className="text-xs text-text-3">{t('settings.backgroundHint')}</span>
+            </div>
+            <Switch
+              id="background-mode"
+              checked={settings.backgroundMode}
+              aria-label={t('settings.background')}
+              onCheckedChange={(v) => void changeBackground(v)}
+            />
+          </div>
+          <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3">
+            <div className="mr-auto flex flex-col gap-1">
+              <label htmlFor="open-at-login" className="text-sm font-medium">
+                {t('settings.openAtLogin')}
+              </label>
+              <span className="text-xs text-text-3">{t('settings.openAtLoginHint')}</span>
+            </div>
+            <Switch
+              id="open-at-login"
+              checked={settings.backgroundMode && settings.openAtLogin}
+              disabled={!settings.backgroundMode}
+              aria-label={t('settings.openAtLogin')}
+              onCheckedChange={(v) => void changeOpenAtLogin(v)}
             />
           </div>
         </section>
