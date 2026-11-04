@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link2, Lightbulb, Disc3 } from 'lucide-react';
-import type { MessagePart, Project, Style, VideoKind } from '@tayang/shared';
+import type { AgentId, MessagePart, Project, Style, VideoKind } from '@tayang/shared';
 import { BUILTIN_STYLES, buildProjectBrief, buildTopicIdeasPrompt, parseTopicIdeas } from '@tayang/skills';
 import oyen from '@/assets/brand/oyen-expr-default.svg';
 import { Composer, type MentionRef } from '@/components/Composer';
@@ -9,6 +9,7 @@ import { PermissionCard } from '@/components/PermissionCard';
 import { createChat, createProject, listProjects, listStyles } from '@/lib/ipc';
 import { useApp } from '@/state/app';
 import { headPermission, useChat } from '@/state/chat';
+import { useUsage } from '@/state/usage';
 
 const KINDS: VideoKind[] = ['explainer', 'promo', 'quote', 'news', 'tutorial', 'data', 'event'];
 const NO_MESSAGES: never[] = [];
@@ -35,7 +36,26 @@ export function ChatNew() {
   const messages = useChat((s) => (chatId ? s.messages[chatId] : undefined)) ?? NO_MESSAGES;
   const streaming = useChat((s) => (chatId ? !!s.streaming[chatId] : false));
   const permission = useChat((s) => headPermission(s, chatId));
-  const agent = settings?.defaultAgent ?? 'claude';
+  const [picked, setPicked] = useState<AgentId | null>(null);
+  const agent = picked ?? settings?.defaultAgent ?? 'claude';
+
+  useEffect(() => {
+    useUsage.getState().setChatAgent(agent);
+    return () => useUsage.getState().setChatAgent(null);
+  }, [agent]);
+
+  const changeAgent = async (next: AgentId) => {
+    if (next === agent || streaming) return;
+    // Before the first send nothing exists yet: the pick is used when the chat is created.
+    if (chatId) {
+      try {
+        await useChat.getState().switchAgent(chatId, next);
+      } catch {
+        return;
+      }
+    }
+    setPicked(next);
+  };
 
   useEffect(() => {
     useChat.getState().listen();
@@ -91,7 +111,7 @@ export function ChatNew() {
       const ctx = await context(parts);
       const failure = await useChat
         .getState()
-        .send(id, parts, ctx.length ? { promptParts: [...ctx, ...parts] } : undefined);
+        .send(id, parts, { agentId: agent, ...(ctx.length ? { promptParts: [...ctx, ...parts] } : {}) });
       if (failure) throw new Error(failure);
       const ids = parts.flatMap((p) => (p.type === 'mention' ? [p.projectId] : []));
       setSeen((s) => [...new Set([...s, ...ids])]);
@@ -109,6 +129,7 @@ export function ChatNew() {
     topicPending.current = true;
     setIdeas([]);
     void useChat.getState().send(id, [{ type: 'text', text: 'Suggest video topics for my channel' }], {
+      agentId: agent,
       promptParts: [{ type: 'text', text: buildTopicIdeasPrompt(KINDS, settings.language) }],
     });
   };
@@ -137,6 +158,7 @@ export function ChatNew() {
       void useChat
         .getState()
         .send(chat.id, [{ type: 'text', text: `Write the script for "${idea.title}", about ${idea.lengthSec} seconds.` }], {
+          agentId: agent,
           job: { projectId: project.id, title: project.title },
         });
     } catch {
@@ -218,6 +240,8 @@ export function ChatNew() {
             projects={projects}
             mention={mention}
             onMention={setMention}
+            agentId={agent}
+            onAgentChange={(a) => void changeAgent(a)}
             mentionSignal={signal}
             placeholder="Describe the video you want, or type @ to start from one you made"
           />

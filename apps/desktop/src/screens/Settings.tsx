@@ -156,7 +156,7 @@ export function Settings() {
           </div>
           <Card>
             <RadioGroup
-              aria-label="Default agent"
+              aria-label="Default agent for new chats"
               value={settings.defaultAgent}
               onValueChange={(v) => void save({ defaultAgent: v as SettingsT['defaultAgent'] })}
               className="gap-0"

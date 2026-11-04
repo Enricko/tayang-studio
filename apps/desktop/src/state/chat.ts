@@ -8,10 +8,11 @@ import {
   agentStart,
   agentStop,
   listMessages,
+  updateChatAgent,
   upsertJob,
 } from '@/lib/ipc';
 import { onAgentUpdate, onPermission } from '@/lib/events';
-import { agentErrorText } from '@/lib/agents';
+import { agentErrorText, AGENT_NAMES } from '@/lib/agents';
 import { useApp } from '@/state/app';
 import { refreshJobs } from '@/state/jobs';
 
@@ -49,6 +50,8 @@ interface ChatState {
   cancel(chatId: string): Promise<void>;
   /** Ends the chat's agent process; the next send starts a new one. */
   stop(chatId: string): Promise<void>;
+  /** Moves the chat to another agent; it starts fresh on the next send. */
+  switchAgent(chatId: string, agent: AgentId): Promise<void>;
   attach(chatId: string, part: MessagePart): void;
   detach(chatId: string, index: number): void;
   listen(): void;
@@ -67,6 +70,36 @@ const tracked = new Set<string>();
 const chatAgent = new Map<string, AgentId>();
 /** Project chats whose turns are tracked as a build job. */
 const chatJobs = new Map<string, ChatJob>();
+
+/** Recaps waiting for the first prompt after an agent switch. */
+const pendingRecap = new Map<string, string>();
+
+const RECAP_MESSAGES = 6;
+const RECAP_CHARS = 1500;
+
+/** The last 6 text messages as "You:"/"Agent:" lines, oldest first, within 1,500 characters. */
+export function buildRecap(messages: ChatMessage[]): string {
+  const lines: string[] = [];
+  for (const m of messages) {
+    if (m.role === 'system') continue;
+    const text = m.parts
+      .map((p) => (p.type === 'text' ? p.text : ''))
+      .join('')
+      .trim();
+    if (text) lines.push(`${m.role === 'user' ? 'You' : 'Agent'}: ${text}`);
+  }
+  const kept: string[] = [];
+  let used = 0;
+  for (const line of lines.slice(-RECAP_MESSAGES).reverse()) {
+    const room = RECAP_CHARS - used - (kept.length ? 1 : 0);
+    if (room <= 0) break;
+    const cut = line.length > room ? `${line.slice(0, Math.max(0, room - 1))}…` : line;
+    kept.unshift(cut);
+    used += cut.length + (kept.length > 1 ? 1 : 0);
+    if (line.length > room) break;
+  }
+  return kept.join('\n');
+}
 
 export const buildJobId = (chatId: string) => `build-${chatId}`;
 
@@ -222,7 +255,13 @@ export const useChat = create<ChatState>((set, get) => {
           await agentStart(chatId, agent);
           set((s) => ({ started: { ...s.started, [chatId]: true } }));
         }
-        await agentPrompt(chatId, opts?.promptParts ? [...attached, ...opts.promptParts] : visible);
+        const recap = pendingRecap.get(chatId);
+        const sent = opts?.promptParts ? [...attached, ...opts.promptParts] : visible;
+        const prompt: MessagePart[] = recap
+          ? [{ type: 'text', text: `Earlier in this chat, with another agent:\n${recap}\n\nContinue from here.` }, ...sent]
+          : sent;
+        await agentPrompt(chatId, prompt);
+        pendingRecap.delete(chatId);
         return null;
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e);
@@ -246,6 +285,22 @@ export const useChat = create<ChatState>((set, get) => {
     async stop(chatId) {
       set((s) => ({ started: { ...s.started, [chatId]: false } }));
       await agentStop(chatId).catch(() => {});
+    },
+
+    async switchAgent(chatId, agent) {
+      const earlier = get().messages[chatId] ?? [];
+      await updateChatAgent(chatId, agent);
+      await get().stop(chatId);
+      chatAgent.set(chatId, agent);
+      pendingRecap.set(chatId, buildRecap(earlier));
+      const sys = localMessage(chatId, 'system', [
+        {
+          type: 'text',
+          text: `Switched to ${AGENT_NAMES[agent]}. It starts fresh: it sees this project's files but not the earlier messages.`,
+        },
+      ]);
+      append(chatId, sys);
+      void persist(chatId, sys);
     },
 
     attach: (chatId, part) =>
@@ -276,6 +331,7 @@ export const useChat = create<ChatState>((set, get) => {
       tracked.clear();
       chatAgent.clear();
       chatJobs.clear();
+      pendingRecap.clear();
       set({ messages: {}, streaming: {}, permissions: {}, attachments: {}, started: {} });
     },
   };

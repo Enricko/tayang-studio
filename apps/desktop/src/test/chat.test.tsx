@@ -27,6 +27,8 @@ vi.mock('@/lib/ipc', () => ({
   upsertJob: vi.fn().mockResolvedValue(undefined),
   listJobs: vi.fn().mockResolvedValue([]),
   attachFile: vi.fn(),
+  detectAgents: vi.fn(),
+  updateChatAgent: vi.fn(),
   assetUrl: (p: string) => p,
 }));
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn() }));
@@ -50,7 +52,9 @@ import * as ipc from '@/lib/ipc';
 import { ChatNew } from '@/screens/ChatNew';
 import { ChatProject } from '@/screens/ChatProject';
 import { useApp } from '@/state/app';
-import { useChat } from '@/state/chat';
+import { buildRecap, useChat } from '@/state/chat';
+import { useUsage } from '@/state/usage';
+import { UsageBar } from '@/components/UsageBar';
 
 const settings: Settings = {
   workingFolder: '/tmp/Tayang',
@@ -592,5 +596,136 @@ describe('Composer attachments', () => {
     expect(box.className).toContain('border-0');
     expect(box.className).toContain('focus-visible:ring-0');
     expect(box.className).toContain('focus-visible:border-transparent');
+  });
+});
+
+const info = (id: string, name: string, installed: boolean, version: string | null) => ({
+  id,
+  name,
+  installed,
+  version,
+  acpCommand: [],
+  recommended: false,
+});
+
+describe('Agent picker', () => {
+  beforeEach(() => {
+    vi.mocked(ipc.detectAgents).mockResolvedValue([
+      info('claude', 'Claude Code', true, '2.1.0'),
+      info('opencode', 'opencode', true, '0.9.1'),
+      info('codex', 'Codex', false, null),
+      info('gemini', 'Gemini CLI', true, '0.4.0'),
+    ] as never);
+    vi.mocked(ipc.updateChatAgent).mockImplementation(async (id, agentId) => ({ ...chat(id, 'p1'), agentId }));
+  });
+
+  it('lists installed agents with versions, a check on the current one, and disables the rest', async () => {
+    const user = userEvent.setup();
+    render(<ChatProject chatId="c1" />);
+    await user.click(await screen.findByRole('button', { name: /Claude Code/ }));
+    const current = await screen.findByRole('menuitem', { name: /Claude Code/ });
+    expect(current).toHaveTextContent('2.1.0');
+    expect(within(current).getByTestId('agent-check')).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: /opencode/ })).not.toHaveAttribute('data-disabled');
+    const codex = screen.getByRole('menuitem', { name: /Codex/ });
+    expect(codex).toHaveAttribute('data-disabled');
+    expect(codex).toHaveTextContent('Not installed');
+    await user.click(screen.getByRole('menuitem', { name: 'Set up agents' }));
+    expect(useApp.getState().route).toEqual({ name: 'settings' });
+  });
+
+  it('new chat: the pick decides the agent the chat is created and started with', async () => {
+    const user = userEvent.setup();
+    render(<ChatNew />);
+    await user.click(await screen.findByRole('button', { name: /Claude Code/ }));
+    await user.click(await screen.findByRole('menuitem', { name: /Gemini CLI/ }));
+    await user.type(screen.getByRole('textbox', { name: 'Message' }), 'hello');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(ipc.agentStart).toHaveBeenCalledWith('c-new', 'gemini'));
+    expect(ipc.createChat).toHaveBeenCalledWith(null, 'gemini', 'hello');
+  });
+
+  it('existing chat: switching stops the session, saves, adds the system line, then starts the new agent with a recap once', async () => {
+    const user = userEvent.setup();
+    vi.mocked(ipc.listMessages).mockResolvedValue([
+      { id: 'm1', chatId: 'c1', role: 'user', parts: [{ type: 'text', text: 'Make it punchy' }], createdAt: '' },
+      { id: 'm2', chatId: 'c1', role: 'agent', parts: [{ type: 'text', text: 'Done, shortened.' }], createdAt: '' },
+    ]);
+    render(<ChatProject chatId="c1" />);
+    await user.click(await screen.findByRole('button', { name: /Claude Code/ }));
+    await user.click(await screen.findByRole('menuitem', { name: /opencode/ }));
+    await waitFor(() => expect(ipc.updateChatAgent).toHaveBeenCalledWith('c1', 'opencode'));
+    expect(ipc.agentStop).toHaveBeenCalledWith('c1');
+    expect(
+      await screen.findByText(
+        "Switched to opencode. It starts fresh: it sees this project's files but not the earlier messages.",
+      ),
+    ).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /opencode/ })).toBeInTheDocument();
+
+    await user.type(screen.getByRole('textbox', { name: 'Message' }), 'Next');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(ipc.agentStart).toHaveBeenCalledWith('c1', 'opencode'));
+    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalledTimes(1));
+    const first = vi.mocked(ipc.agentPrompt).mock.calls[0]![1];
+    const flat = first.map((p) => (p.type === 'text' ? p.text : '')).join('\n');
+    expect(flat).toContain('You: Make it punchy');
+    expect(flat).toContain('Agent: Done, shortened.');
+    expect(flat).toContain('Next');
+    await emit('c1', { kind: 'done', stopReason: 'end_turn' } as never);
+    await user.type(screen.getByRole('textbox', { name: 'Message' }), 'Again');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalledTimes(2));
+    const second = vi.mocked(ipc.agentPrompt).mock.calls[1]![1];
+    expect(JSON.stringify(second)).not.toContain('Make it punchy');
+  });
+
+  it('cannot switch while a turn is running', async () => {
+    const user = userEvent.setup();
+    useChat.setState({ streaming: { c1: true } });
+    render(<ChatProject chatId="c1" />);
+    const trigger = await screen.findByRole('button', { name: /Claude Code/ });
+    expect(trigger).toBeDisabled();
+    await user.click(trigger);
+    expect(screen.queryByRole('menuitem')).not.toBeInTheDocument();
+  });
+
+  it('usage bar follows the open chat agent', async () => {
+    vi.mocked(ipc.getChat).mockResolvedValue({ ...chat('c1', 'p1'), agentId: 'gemini' });
+    useUsage.setState({ usage: [], loaded: true, start: () => {} });
+    render(
+      <>
+        <UsageBar />
+        <ChatProject chatId="c1" />
+      </>,
+    );
+    expect(await screen.findByRole('button', { name: 'Gemini CLI usage' })).toBeInTheDocument();
+  });
+});
+
+describe('buildRecap', () => {
+  const msg = (role: 'user' | 'agent' | 'system', text: string, i = 0) => ({
+    id: `x${i}`,
+    chatId: 'c',
+    role,
+    parts: [{ type: 'text' as const, text }],
+    createdAt: '',
+  });
+
+  it('keeps the last 6 text messages, oldest first, with You/Agent prefixes', () => {
+    const list = Array.from({ length: 8 }, (_, i) => msg(i % 2 ? 'agent' : 'user', `line ${i}`, i));
+    list.splice(3, 0, msg('system', 'Switched', 99));
+    const recap = buildRecap(list);
+    expect(recap).not.toContain('line 1');
+    expect(recap).not.toContain('Switched');
+    expect(recap.indexOf('You: line 2')).toBeLessThan(recap.indexOf('Agent: line 7'));
+  });
+
+  it('stays within 1,500 characters and skips messages without text', () => {
+    const big = 'x'.repeat(900);
+    const list = [msg('user', big, 1), msg('agent', big, 2), msg('user', big, 3)];
+    list.push({ id: 'f', chatId: 'c', role: 'user', parts: [] as never, createdAt: '' });
+    expect(buildRecap(list).length).toBeLessThanOrEqual(1500);
+    expect(buildRecap([])).toBe('');
   });
 });

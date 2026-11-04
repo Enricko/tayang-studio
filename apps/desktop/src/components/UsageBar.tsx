@@ -40,7 +40,9 @@ export function UsageBar() {
   const usage = useUsage((s) => s.usage);
   const loaded = useUsage((s) => s.loaded);
   const start = useUsage((s) => s.start);
-  const agent = useApp((s) => s.settings?.defaultAgent) ?? 'claude';
+  const chatAgent = useUsage((s) => s.chatAgent);
+  const defaultAgent = useApp((s) => s.settings?.defaultAgent) ?? 'claude';
+  const agent = chatAgent ?? defaultAgent;
 
   useEffect(() => {
     start();

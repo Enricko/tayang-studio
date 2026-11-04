@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { Chat, MessagePart, Project, VideoKind } from '@tayang/shared';
+import type { AgentId, Chat, MessagePart, Project, VideoKind } from '@tayang/shared';
 import { SKIP_FRAME_CHECK } from '@tayang/skills';
 import { Button } from '@/components/Button';
 import { Composer } from '@/components/Composer';
@@ -10,6 +10,7 @@ import { StepBar } from '@/components/StepBar';
 import { getChat, listProjects, mediaProbe, mediaRender, updateProject } from '@/lib/ipc';
 import { useApp } from '@/state/app';
 import { headPermission, useChat } from '@/state/chat';
+import { useUsage } from '@/state/usage';
 
 const NO_MESSAGES: never[] = [];
 const KIND: Record<VideoKind, string> = {
@@ -49,6 +50,21 @@ export function ChatProject({ chatId }: { chatId: string }) {
       alive = false;
     };
   }, [chatId]);
+
+  useEffect(() => {
+    useUsage.getState().setChatAgent(agent);
+    return () => useUsage.getState().setChatAgent(null);
+  }, [agent]);
+
+  const switchAgent = async (next: AgentId) => {
+    if (next === agent || streaming) return;
+    try {
+      await useChat.getState().switchAgent(chatId, next);
+      setChat((c) => (c ? { ...c, agentId: next } : c));
+    } catch {
+      /* the chat keeps its agent */
+    }
+  };
 
   // When a turn ends well the agent may have rendered a new version: reload the preview.
   const wasStreaming = useRef(false);
@@ -137,6 +153,7 @@ export function ChatProject({ chatId }: { chatId: string }) {
               disabled={streaming}
               onStop={() => void useChat.getState().cancel(chatId)}
               agentId={agent}
+              onAgentChange={(a) => void switchAgent(a)}
               quickChips
               sees={project?.title}
             />
