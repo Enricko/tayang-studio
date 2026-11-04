@@ -45,17 +45,19 @@ A binding is `{"path":"/topic"}`. Set a starting value with `updateDataModel`, f
 When the user presses a Button you receive one message:
 
 ```json
-{"version":"v0.9","action":{"name":"pick_topic","surfaceId":"pick","sourceComponentId":"go","timestamp":"2026-11-04T10:00:00Z","context":{"choice":["b"]}}}
+{"version":"v0.9","action":{"name":"pick_option","surfaceId":"pick","sourceComponentId":"go","timestamp":"2026-11-04T10:00:00Z","context":{"choice":["b"]}}}
 ```
 
 Read `name` and `context`, then continue. Send `deleteSurface` when the question is answered.
 
-## Example 1: pick one of 3 topic ideas
+The event name `pick_topic` is reserved for topic ideas: a "Make this" button whose context is `title`, `kind`, `lengthSec` and `styleId` (see the tayang-studio skill). Name every other event yourself, such as `pick_option`.
+
+## Example 1: pick one of 3 options
 
 ```a2ui
-{"version":"v0.9","createSurface":{"surfaceId":"topics","catalogId":"https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json"}}
-{"version":"v0.9","updateDataModel":{"surfaceId":"topics","path":"/choice","value":[]}}
-{"version":"v0.9","updateComponents":{"surfaceId":"topics","components":[{"id":"root","component":"Card","child":"col"},{"id":"col","component":"Column","children":["title","picker","go"]},{"id":"title","component":"Text","text":"Which topic do you want","variant":"h4"},{"id":"picker","component":"ChoicePicker","options":[{"label":"Why the rupiah is weakening","value":"a"},{"label":"A short history of QRIS","value":"b"},{"label":"How BPJS works","value":"c"}],"selections":{"path":"/choice"},"maxAllowedSelections":1},{"id":"go","component":"Button","child":"go-text","variant":"primary","action":{"event":{"name":"pick_topic","context":{"choice":{"path":"/choice"}}}}},{"id":"go-text","component":"Text","text":"Use this topic"}]}}
+{"version":"v0.9","createSurface":{"surfaceId":"pick","catalogId":"https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json"}}
+{"version":"v0.9","updateDataModel":{"surfaceId":"pick","path":"/choice","value":[]}}
+{"version":"v0.9","updateComponents":{"surfaceId":"pick","components":[{"id":"root","component":"Card","child":"col"},{"id":"col","component":"Column","children":["title","picker","go"]},{"id":"title","component":"Text","text":"Which voice do you want","variant":"h4"},{"id":"picker","component":"ChoicePicker","options":[{"label":"Calm","value":"a"},{"label":"Upbeat","value":"b"},{"label":"News anchor","value":"c"}],"selections":{"path":"/choice"},"maxAllowedSelections":1},{"id":"go","component":"Button","child":"go-text","variant":"primary","action":{"event":{"name":"pick_option","context":{"choice":{"path":"/choice"}}}}},{"id":"go-text","component":"Text","text":"Use this voice"}]}}
 ```
 
 ## Example 2: confirm before a big change

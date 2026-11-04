@@ -57,6 +57,23 @@ describe('agent plugin', () => {
     }
   });
 
+  it('uses pick_topic only for the topic contract', () => {
+    for (const name of ['tayang-studio', 'a2ui-options']) {
+      const t = read(`skills/${name}/SKILL.md`);
+      for (const m of t.matchAll(/"name":"pick_topic"(?:,"context":(\{[^}]*\}))?/g)) {
+        // Every pick_topic event in an example carries the topic fields, never another shape.
+        expect(m[1], name).toBeDefined();
+        expect(Object.keys(JSON.parse(m[1]!.replace(/<[^>]*>/g, '0'))).sort(), name).toEqual(
+          ['kind', 'lengthSec', 'styleId', 'title'],
+        );
+      }
+    }
+    const a2ui = read('skills/a2ui-options/SKILL.md');
+    expect(a2ui).not.toContain('"name":"pick_topic"');
+    expect(a2ui).toContain('`pick_topic` is reserved for topic ideas');
+    expect(a2ui).toContain('"name":"pick_option"');
+  });
+
   it('preamble contains both skills without frontmatter', () => {
     const p = buildSessionPreamble();
     expect(p).toContain('# Tayang Studio');
