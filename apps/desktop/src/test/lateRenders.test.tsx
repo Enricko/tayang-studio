@@ -5,6 +5,7 @@ import type { FileInfo, Job } from '@tayang/shared';
 
 vi.mock('@/lib/ipc', () => ({
   listJobs: vi.fn(),
+  updateSettings: vi.fn().mockResolvedValue({}),
   upsertJob: vi.fn().mockResolvedValue(undefined),
   deleteJob: vi.fn().mockResolvedValue(undefined),
   detectAgents: vi.fn().mockResolvedValue([]),
@@ -23,10 +24,10 @@ vi.mock('@/lib/ipc', () => ({
 }));
 vi.mock('@/lib/events', () => ({ onAgentUpdate: vi.fn(async () => () => {}), onPermission: vi.fn(async () => () => {}) }));
 
-import { agentPrompt, agentStart, getChat, latestRenderInfo, listJobs, mediaProbe, upsertJob } from '@/lib/ipc';
+import { agentPrompt, agentStart, getChat, latestRenderInfo, listJobs, mediaProbe, updateSettings, upsertJob } from '@/lib/ipc';
 import { renderTiming } from '@/lib/renderCheck';
 import { useJobs } from '@/state/jobs';
-import { resetLateRenders, settleLateRenders } from '@/lib/buildJobs';
+import { recheckDoneBuildJobs, resetLateRenders, settleLateRenders } from '@/lib/buildJobs';
 import { Agents } from '@/screens/Agents';
 import { setUiLanguage } from '@/i18n';
 import { useApp } from '@/state/app';
@@ -47,6 +48,49 @@ beforeEach(() => {
   useJobs.setState({ jobs: [] });
   useChat.getState().reset();
   useApp.setState({ route: { name: 'agents' } });
+});
+
+describe('done build jobs from before the done-only-with-video rule', () => {
+  const NOW = T + 3_600_000;
+  const done = (id: string, projectId: string | null, extra: Partial<Job> = {}) =>
+    job({ id, projectId, chatId: id, status: 'done', note: null, ...extra });
+
+  it('once at start, a done build job whose project has no video goes back to needs-you with the No video yet note', async () => {
+    vi.mocked(latestRenderInfo).mockImplementation(async (projectId) => (projectId === 'p2' ? file(T - 600_000) : null));
+    vi.mocked(listJobs).mockResolvedValue([
+      done('build-a', 'p1'),
+      done('build-b', 'p2', { note: 'v-2.mp4' }),
+      done('build-c', null),
+      done('study-1', 'p1', { kind: 'study-style' }),
+      job({ id: 'build-d', projectId: 'p3' }),
+    ]);
+    await recheckDoneBuildJobs(false, NOW);
+    expect(upsertJob).toHaveBeenCalledTimes(1);
+    expect(upsertJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'build-a',
+        status: 'needs-you',
+        // Saved in English, shown in the reader's language (lib/stored.ts).
+        note: 'No video yet. The agent stopped before rendering',
+        renderBaselineAt: null,
+        updatedAt: new Date(NOW).toISOString(),
+      }),
+    );
+    expect(updateSettings).toHaveBeenCalledWith({ buildJobsChecked: true });
+  });
+
+  it('never runs again once the flag is saved', async () => {
+    await recheckDoneBuildJobs(true, NOW);
+    expect(listJobs).not.toHaveBeenCalled();
+    expect(updateSettings).not.toHaveBeenCalled();
+  });
+
+  it("keeps the flag unset when a job couldn't be written, so the next start tries again", async () => {
+    vi.mocked(listJobs).mockResolvedValue([done('build-a', 'p1')]);
+    vi.mocked(upsertJob).mockRejectedValueOnce(new Error('db'));
+    await recheckDoneBuildJobs(false, NOW);
+    expect(updateSettings).not.toHaveBeenCalled();
+  });
 });
 
 describe('late renders', () => {

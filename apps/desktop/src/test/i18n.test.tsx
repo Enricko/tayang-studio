@@ -94,6 +94,7 @@ const settings: Settings = {
   uiLanguage: 'en',
   backgroundMode: false,
   openAtLogin: false,
+  buildJobsChecked: true,
 };
 
 describe('Indonesian interface', () => {

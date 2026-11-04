@@ -53,6 +53,7 @@ const settings: Settings = {
   uiLanguage: null,
   backgroundMode: false,
   openAtLogin: false,
+  buildJobsChecked: true,
 };
 
 const tool = (id: ToolStatus['id'], name: string, required: boolean, ok: boolean): ToolStatus => ({

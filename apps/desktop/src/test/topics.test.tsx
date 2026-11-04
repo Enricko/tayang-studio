@@ -66,6 +66,7 @@ const settings: Settings = {
   uiLanguage: null,
   backgroundMode: false,
   openAtLogin: false,
+  buildJobsChecked: true,
 };
 
 const atlas: Style = {

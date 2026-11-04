@@ -299,6 +299,7 @@ impl Db {
             "uiLanguage": null,
             "backgroundMode": false,
             "openAtLogin": false,
+            "buildJobsChecked": false,
         })
     }
 
@@ -1095,6 +1096,9 @@ mod tests {
         assert!(b.background_mode && b.open_at_login);
         assert!(db.get_settings(&home).background_mode);
         db.update_settings(json!({"backgroundMode": false, "openAtLogin": false})).unwrap();
+        assert!(!s.build_jobs_checked, "the one-time build job check hasn't run");
+        db.update_settings(json!({"buildJobsChecked": true})).unwrap();
+        assert!(db.get_settings(&home).build_jobs_checked);
         let l = db.update_settings(json!({"uiLanguage": "id"})).unwrap();
         assert_eq!(l.ui_language, Some(UiLanguage::Id));
         assert_eq!(db.get_settings(&home).ui_language, Some(UiLanguage::Id));

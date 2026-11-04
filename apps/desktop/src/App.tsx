@@ -6,7 +6,7 @@ import { setUiLanguage } from '@/i18n';
 import { systemLanguage } from '@/lib/language';
 import { getSettings, syncStyles, updateSettings } from '@/lib/ipc';
 import { onTick, startScheduler } from '@/lib/scheduler';
-import { settleLateRenders } from '@/lib/buildJobs';
+import { recheckDoneBuildJobs, settleLateRenders } from '@/lib/buildJobs';
 import { startAutopilot } from '@/state/autopilot';
 import { useWindowDrag } from '@/lib/windowDrag';
 import { Agents } from '@/screens/Agents';
@@ -76,6 +76,8 @@ export default function App() {
         if (st.onboarded) {
           useApp.getState().navigate({ name: 'chat-new' });
           void refreshJobs().catch(() => {});
+          // Once per install: old build jobs marked done without a video go back to needs-you.
+          void recheckDoneBuildJobs(st.buildJobsChecked);
         }
       })
       .catch(() => setLoadError(true));

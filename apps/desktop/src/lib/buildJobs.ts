@@ -1,5 +1,6 @@
 import type { Job } from '@tayang/shared';
-import { upsertJob } from '@/lib/ipc';
+import { listJobs, updateSettings, upsertJob } from '@/lib/ipc';
+import { stored } from '@/lib/stored';
 import { finishedRender } from '@/lib/renderCheck';
 import { dropRenderBaseline, turnCount, useChat } from '@/state/chat';
 import { refreshJobs, useJobs } from '@/state/jobs';
@@ -45,6 +46,38 @@ export async function settleLateRenders(now: number = Date.now(), jobs?: Job[]):
     }
   }
   if (changed) await refreshJobs().catch(() => {});
+}
+
+/**
+ * Once per install, at startup: build jobs marked done before a build job could only be done with its
+ * video. One whose project has no finished video goes back to needs-you with the "No video yet" note,
+ * as it would be marked now. `checked` is the saved flag; it is saved only when every job was written.
+ */
+let rechecking: Promise<void> | null = null;
+
+export function recheckDoneBuildJobs(checked: boolean | undefined, now: number = Date.now()): Promise<void> {
+  if (checked) return Promise.resolve();
+  // StrictMode (and a Try again) can start it twice; one run is enough.
+  rechecking ??= recheck(now).finally(() => {
+    rechecking = null;
+  });
+  return rechecking;
+}
+
+async function recheck(now: number): Promise<void> {
+  try {
+    const done = (await listJobs()).filter((j) => j.kind === 'build' && j.status === 'done' && !!j.projectId);
+    const found = await Promise.all(done.map((j) => finishedRender(j.projectId!)));
+    const stale = done.filter((_, i) => !found[i]);
+    const updatedAt = new Date(now).toISOString();
+    for (const job of stale) {
+      await upsertJob({ ...job, status: 'needs-you', note: stored('agents.noVideo'), renderBaselineAt: null, updatedAt });
+    }
+    await updateSettings({ buildJobsChecked: true });
+    if (stale.length) await refreshJobs();
+  } catch {
+    /* best effort: tried again at the next start */
+  }
 }
 
 /** For tests: forget when each job was last looked at. */

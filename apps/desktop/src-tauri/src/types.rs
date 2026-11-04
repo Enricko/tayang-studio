@@ -415,6 +415,9 @@ pub struct Settings {
     /// Start Tayang when the user logs in; only meaningful while `background_mode` is on.
     #[serde(default)]
     pub open_at_login: bool,
+    /// The one-time startup check of build jobs marked done without a video has run.
+    #[serde(default)]
+    pub build_jobs_checked: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -224,6 +224,8 @@ export interface Settings {
   backgroundMode: boolean;
   /** Start Tayang at login; only available while backgroundMode is on. */
   openAtLogin: boolean;
+  /** Build jobs marked done before a job could only be done with its video were checked once. */
+  buildJobsChecked: boolean;
 }
 
 /** Defaults; workingFolder is `<home>/Tayang`, resolved at runtime. */
@@ -242,6 +244,7 @@ export const DEFAULT_SETTINGS: Omit<Settings, 'workingFolder'> = {
   uiLanguage: null,
   backgroundMode: false,
   openAtLogin: false,
+  buildJobsChecked: false,
 };
 
 export type AgentUpdate =

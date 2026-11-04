@@ -12,10 +12,12 @@ vi.mock('@/lib/ipc', () => ({
 vi.mock('@/lib/events', () => ({ onAgentUpdate: vi.fn(), onPermission: vi.fn() }));
 const engine = vi.hoisted(() => ({ stop: vi.fn() }));
 vi.mock('@/state/autopilot', () => ({ startAutopilot: vi.fn(() => engine.stop) }));
+vi.mock('@/lib/buildJobs', () => ({ settleLateRenders: vi.fn(), recheckDoneBuildJobs: vi.fn().mockResolvedValue(undefined) }));
 
 import { getSettings, syncStyles, systemLocale, updateSettings } from '@/lib/ipc';
 import App from '@/App';
 import { startAutopilot } from '@/state/autopilot';
+import { recheckDoneBuildJobs } from '@/lib/buildJobs';
 import { useApp } from '@/state/app';
 
 const base: Settings = {
@@ -34,6 +36,7 @@ const base: Settings = {
   uiLanguage: null,
   backgroundMode: false,
   openAtLogin: false,
+  buildJobsChecked: true,
 };
 
 describe('App start', () => {
@@ -50,6 +53,14 @@ describe('App start', () => {
     render(<App />);
     expect(await screen.findByText('What are we making?', { selector: 'h1' })).toBeInTheDocument();
     expect(useApp.getState().route.name).toBe('chat-new');
+  });
+
+  it('once onboarded, starts the one-time check of old done build jobs with the saved flag', async () => {
+    vi.mocked(recheckDoneBuildJobs).mockClear();
+    vi.mocked(getSettings).mockResolvedValue({ ...base, onboarded: true, buildJobsChecked: false });
+    render(<App />);
+    await screen.findByText('What are we making?', { selector: 'h1' });
+    expect(recheckDoneBuildJobs).toHaveBeenCalledWith(false);
   });
 
   it('starts the autopilot engine once onboarded, and stops it on unmount', async () => {

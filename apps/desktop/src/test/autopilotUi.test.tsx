@@ -46,6 +46,7 @@ const settings: Settings = {
   uiLanguage: null,
   backgroundMode: false,
   openAtLogin: false,
+  buildJobsChecked: true,
 };
 
 const style = (id: string, name: string): Style => ({ id, name, source: 'builtin', sourceUrl: null, notes: {}, prompt: '', createdAt: 'x' });
