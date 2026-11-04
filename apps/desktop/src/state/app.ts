@@ -19,6 +19,9 @@ interface AppState {
   settings: Settings | null;
   setSettings(s: Settings): void;
   needsYouCount: number;
+  /** Bumped when a project is created so the sidebar's Recent list refreshes. */
+  projectsVersion: number;
+  bumpProjects(): void;
 }
 
 export const useApp = create<AppState>((set) => ({
@@ -27,4 +30,6 @@ export const useApp = create<AppState>((set) => ({
   settings: null,
   setSettings: (settings) => set({ settings }),
   needsYouCount: 0,
+  projectsVersion: 0,
+  bumpProjects: () => set((s) => ({ projectsVersion: s.projectsVersion + 1 })),
 }));
