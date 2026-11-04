@@ -29,6 +29,7 @@ export const STORED_KEYS = [
   'autopilot.slot.noTopic',
   'autopilot.slot.noRender',
   'autopilot.slot.timedOut',
+  'autopilot.slot.busy',
 ] as const;
 export type StoredKey = (typeof STORED_KEYS)[number];
 

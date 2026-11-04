@@ -89,6 +89,7 @@ vi.mock('@/lib/ipc', () => ({
   agentSetAuto: vi.fn().mockResolvedValue(undefined),
   agentRespondPermission: vi.fn().mockResolvedValue(undefined),
   updateChatAgent: vi.fn(),
+  listChats: vi.fn(async (projectId: string) => [{ id: `chat-${projectId}` }]),
 }));
 
 const updateHandlers: ((e: { chatId: string; update: AgentUpdate }) => void)[] = [];
@@ -202,6 +203,8 @@ beforeEach(() => {
   db.seq = 0;
   useApp.setState({ settings, route: { name: 'videos' } });
   vi.mocked(ipc.listStyles).mockResolvedValue([atlas]);
+  vi.mocked(ipc.agentCancel).mockResolvedValue(undefined);
+  vi.mocked(ipc.agentStop).mockResolvedValue(undefined);
   respond = happy();
   vi.mocked(ipc.agentPrompt).mockImplementation(async (chatId: string, parts: MessagePart[]) => {
     const prompt = parts.map((p) => (p.type === 'text' ? p.text : '')).join('\n');
@@ -432,7 +435,7 @@ describe('making a video', () => {
   it('fails the slot, without retrying, when the agent is still working', async () => {
     respond = (chatId) => (chatId.startsWith('autopilot-') ? { reject: 'The agent is still working on the last message' } : happy()(chatId));
     await runOnce();
-    expect(slotAt(at(4, 9))).toMatchObject({ status: 'failed', error: 'The agent is still working on the last message' });
+    expect(slotAt(at(4, 9))).toMatchObject({ status: 'failed', error: 'The agent was still working on an earlier message' });
     expect(prompts).toHaveLength(1);
   });
 
@@ -450,15 +453,36 @@ describe('making a video', () => {
     expect(slotAt(at(4, 9))).toMatchObject({ status: 'failed', error: 'The agent took longer than 45 minutes, so Tayang stopped it', projectId: p.id });
   });
 
-  it('switches the topic chat to the new agent after an edit', async () => {
+  it('stops the topic session after the topic step, so the next slot starts a fresh one, on its current agent', async () => {
     await runOnce();
+    const topic = topicChatId('a1');
+    expect(ipc.agentStop).toHaveBeenCalledWith(topic);
+    const stopAt = vi.mocked(ipc.agentStop).mock.invocationCallOrder[vi.mocked(ipc.agentStop).mock.calls.findIndex((c) => c[0] === topic)]!;
+    expect(stopAt).toBeLessThan(vi.mocked(ipc.createProject).mock.invocationCallOrder[0]!);
     db.autopilots = [pilot({ agentId: 'claude' })];
     respond = happy('A new topic');
     await runOnce(new Date(2026, 10, 4, 10, 0));
     expect(slotAt(at(5, 9)).status).toBe('done');
+    expect(vi.mocked(ipc.agentStart).mock.calls.filter((c) => c[0] === topic).map((c) => c[1])).toEqual(['codex', 'claude']);
+  });
+
+  it('stops the topic session when the topic step fails too', async () => {
+    respond = (chatId) => (chatId.startsWith('autopilot-') ? { text: 'no idea' } : happy()(chatId));
+    await runOnce();
+    expect(prompts.filter((p) => p.chatId.startsWith('autopilot-'))).toHaveLength(2);
     expect(ipc.agentStop).toHaveBeenCalledWith(topicChatId('a1'));
-    expect(ipc.agentStart).toHaveBeenLastCalledWith(expect.stringMatching(/^chat-/), 'claude', true);
-    expect(vi.mocked(ipc.agentStart).mock.calls.filter((c) => c[0] === topicChatId('a1')).map((c) => c[1])).toEqual(['codex', 'claude']);
+  });
+
+  it('stops the project chat session when the slot ends, done or failed; the chat stays', async () => {
+    await runOnce();
+    const p1 = db.projects[0]!;
+    expect(ipc.agentStop).toHaveBeenCalledWith(`chat-${p1.id}`);
+    expect(useChat.getState().started[`chat-${p1.id}`]).toBe(false);
+    expect(useChat.getState().messages[`chat-${p1.id}`]!.length).toBeGreaterThan(0);
+    respond = (chatId) => (chatId.startsWith('autopilot-') ? { text: topicJson('Fails') } : { error: 'boom' });
+    await runOnce(new Date(2026, 10, 4, 10, 0));
+    const p2 = db.projects.find((p) => p.title === 'Fails')!;
+    expect(ipc.agentStop).toHaveBeenCalledWith(`chat-${p2.id}`);
   });
 });
 
@@ -539,5 +563,118 @@ describe('slot errors in Indonesian', () => {
     expect(localized('No video file was rendered')).toBe('Tidak ada file video yang dirender');
     expect(localized("The agent didn't suggest a topic Tayang could use")).toBe('Agen belum memberi topik yang bisa dipakai Tayang');
     expect(localized('The agent took longer than 45 minutes, so Tayang stopped it')).toBe('Agen bekerja lebih dari 45 menit, jadi Tayang menghentikannya');
+  });
+});
+
+describe('review fixes', () => {
+  const jobFor = (chatId: string) => vi.mocked(ipc.upsertJob).mock.calls.filter(([j]) => j.id === `build-${chatId}`).at(-1)?.[0];
+
+  it('the build job ends failed with the slot error: no render, busy, timeout, stop', async () => {
+    respond = (chatId) => (chatId.startsWith('autopilot-') ? { text: topicJson('No file') } : { text: 'All done' });
+    await runOnce();
+    let p = db.projects.at(-1)!;
+    await settle(() => expect(jobFor(`chat-${p.id}`)).toMatchObject({ status: 'failed', note: 'No video file was rendered' }));
+
+    respond = (chatId) => (chatId.startsWith('autopilot-') ? { text: topicJson('Busy') } : { reject: 'The agent is still working on the last message' });
+    await runOnce(new Date(2026, 10, 4, 10, 0));
+    p = db.projects.at(-1)!;
+    expect(slotAt(at(5, 9)).error).toBe('The agent was still working on an earlier message');
+    await settle(() => expect(jobFor(`chat-${p.id}`)).toMatchObject({ status: 'failed', note: 'The agent was still working on an earlier message' }));
+
+    respond = (chatId) => (chatId.startsWith('autopilot-') ? { text: topicJson('Stop it') } : { hang: true });
+    await pass(new Date(2026, 10, 5, 10, 0));
+    await vi.waitFor(() => expect(prompts.some((x) => x.prompt.includes('Stop it') && x.chatId.startsWith('chat-'))).toBe(true));
+    p = db.projects.at(-1)!;
+    await stopNow(currentSlot()!);
+    await settle(() => expect(currentSlot()).toBeNull());
+    emit(`chat-${p.id}`, { kind: 'done', stopReason: 'cancelled' });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(jobFor(`chat-${p.id}`)).toMatchObject({ status: 'failed', note: 'Stopped' });
+  });
+
+  it('a tick past 45 minutes times the turn out even when the timer never fired, after the cancel finished', async () => {
+    let finishCancel: () => void = () => {};
+    vi.mocked(ipc.agentCancel).mockImplementation(() => new Promise<void>((r) => (finishCancel = r)));
+    respond = (chatId) => (chatId.startsWith('autopilot-') ? { text: topicJson('Stuck') } : { hang: true });
+    await pass(NOW);
+    await vi.waitFor(() => expect(prompts.some((x) => x.chatId.startsWith('chat-'))).toBe(true));
+    const p = db.projects[0]!;
+    const late = new Date(Date.now() + TURN_TIMEOUT_MS + 1000);
+    const ticking = pass(late);
+    await vi.waitFor(() => expect(ipc.agentCancel).toHaveBeenCalledWith(`chat-${p.id}`));
+    // Not released until the agent's cancel is done.
+    await new Promise((r) => setTimeout(r, 10));
+    expect(currentSlot()).not.toBeNull();
+    expect(slotAt(at(4, 9)).status).toBe('making');
+    finishCancel();
+    await ticking;
+    await settle(() => expect(currentSlot()).toBeNull());
+    expect(slotAt(at(4, 9))).toMatchObject({ status: 'failed', error: 'The agent took longer than 45 minutes, so Tayang stopped it' });
+  });
+
+  it('Stop now waits for the agent to cancel before the slot is written and the engine is free', async () => {
+    let finishCancel: () => void = () => {};
+    vi.mocked(ipc.agentCancel).mockImplementation(() => new Promise<void>((r) => (finishCancel = r)));
+    respond = (chatId) => (chatId.startsWith('autopilot-') ? { text: topicJson('Slow stop') } : { hang: true });
+    await pass(NOW);
+    await vi.waitFor(() => expect(prompts.some((x) => x.chatId.startsWith('chat-'))).toBe(true));
+    const stopping = stopNow(currentSlot()!);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(currentSlot()).not.toBeNull();
+    expect(slotAt(at(4, 9)).status).toBe('making');
+    finishCancel();
+    await stopping;
+    await settle(() => expect(currentSlot()).toBeNull());
+    expect(slotAt(at(4, 9))).toMatchObject({ status: 'failed', error: 'Stopped' });
+  });
+
+  it('Stop now leaves a slot alone that is no longer making', async () => {
+    db.slots.push({ id: 'd', autopilotId: 'a1', dueAt: at(4, 7), status: 'done', projectId: 'px', error: null });
+    await stopNow(clone(slot('d')));
+    expect(slot('d')).toMatchObject({ status: 'done', error: null });
+    expect(ipc.updateSlot).not.toHaveBeenCalled();
+  });
+
+  it('Stop now while the project is being set up stops before anything else is written', async () => {
+    let finishCreate: () => void = () => {};
+    const real = vi.mocked(ipc.createChat).getMockImplementation()!;
+    vi.mocked(ipc.createChat).mockImplementationOnce(async (...args) => {
+      await new Promise<void>((r) => (finishCreate = r));
+      return real(...args);
+    });
+    await pass(NOW);
+    await vi.waitFor(() => expect(ipc.createChat).toHaveBeenCalled());
+    const stopping = stopNow(currentSlot()!);
+    finishCreate();
+    await stopping;
+    await settle(() => expect(currentSlot()).toBeNull());
+    expect(prompts.filter((x) => x.chatId.startsWith('chat-'))).toHaveLength(0);
+    expect(ipc.setSchedule).not.toHaveBeenCalled();
+    expect(slotAt(at(4, 9))).toMatchObject({ status: 'failed', error: 'Stopped' });
+  });
+
+  it('does not start a slot when its autopilot was paused during upkeep', async () => {
+    respond = () => ({ hang: true });
+    vi.mocked(ipc.listAutopilots)
+      .mockImplementationOnce(async () => clone(db.autopilots))
+      .mockImplementationOnce(async () => clone(db.autopilots).map((a) => ({ ...a, status: 'paused' as const })));
+    await pass(NOW);
+    expect(currentSlot()).toBeNull();
+    expect(db.slots.every((x) => x.status === 'planned')).toBe(true);
+  });
+
+  it('recovery also stops the agents of a slot left making', async () => {
+    db.slots.push({ id: 'm', autopilotId: 'a1', dueAt: at(4, 7), status: 'making', projectId: 'p0', error: null });
+    vi.mocked(ipc.agentStop).mockRejectedValueOnce(new Error('no agent'));
+    respond = () => ({ hang: true });
+    await pass(NOW);
+    expect(ipc.agentStop).toHaveBeenCalledWith(topicChatId('a1'));
+    expect(ipc.agentStop).toHaveBeenCalledWith('chat-p0');
+    expect(slot('m').status).toBe('failed');
+  });
+
+  it('the busy error is said in Indonesian', () => {
+    setUiLanguage('id');
+    expect(localized('The agent was still working on an earlier message')).toBe('Agen masih mengerjakan pesan sebelumnya');
   });
 });

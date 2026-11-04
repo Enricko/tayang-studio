@@ -532,6 +532,7 @@ export const en = {
       },
     },
     slot: {
+      busy: 'The agent was still working on an earlier message',
       stopped: 'Stopped',
       noTopic: "The agent didn't suggest a topic Tayang could use",
       noRender: 'No video file was rendered',

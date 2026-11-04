@@ -527,6 +527,7 @@ export const id: Translations = {
       },
     },
     slot: {
+      busy: 'Agen masih mengerjakan pesan sebelumnya',
       stopped: 'Dihentikan',
       noTopic: 'Agen belum memberi topik yang bisa dipakai Tayang',
       noRender: 'Tidak ada file video yang dirender',

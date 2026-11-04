@@ -15,8 +15,10 @@ import { planSlots } from '@/lib/autopilot';
 import { notifyAutopilotChanged, setStopNowHandler } from '@/lib/autopilotHooks';
 import { onAgentUpdate } from '@/lib/events';
 import {
+  agentStop,
   getSettings,
   listAutopilots,
+  listChats,
   listProjects,
   listSlots,
   listStyles,
@@ -32,7 +34,7 @@ import { onTick } from '@/lib/scheduler';
 import { stored } from '@/lib/stored';
 import { createTopicProject } from '@/lib/topics';
 import { useApp } from '@/state/app';
-import { useChat, type SendOpts } from '@/state/chat';
+import { failChatJob, isBusyRefusal, useChat, type SendOpts } from '@/state/chat';
 
 /**
  * The autopilot engine. It runs in the app (also while it is hidden in the tray), on every scheduler
@@ -74,10 +76,16 @@ interface Run {
   autopilot: Autopilot;
   /** The chat whose turn is running now. */
   chatId: string | null;
+  /** The video's project chat, once it exists. */
+  projectChatId: string | null;
   /** "Stop now" was pressed: the slot is already failed, nothing else may be written. */
   stopped: boolean;
   /** Ends the running turn early. */
   endTurn: ((e: TurnEnd) => void) | null;
+  /** When the running turn started (ms); every tick checks it too, in case the JS timer was throttled. */
+  turnStartedAt: number | null;
+  /** Cancels the running turn and ends it as timed out (what the timer does). */
+  timeOut: (() => Promise<void>) | null;
 }
 
 /** A slot failure with the (stored, English) text the slot keeps. */
@@ -87,10 +95,8 @@ let running: Run | null = null;
 let recovered = false;
 /** Turns being waited for, by chat id: the text so far and how to end the wait. */
 const waiters = new Map<string, { text: string; agent: AgentId; end: (e: TurnEnd) => void }>();
-/** The agent each topic chat's session was started with. */
-const topicAgents = new Map<string, AgentId>();
 
-/** The slot being made now, if any. */
+/** The slot being made now, if any (the tests watch it). */
 export const currentSlot = (): AutopilotSlot | null => running?.slot ?? null;
 
 function onUpdate(chatId: string, u: AgentUpdate) {
@@ -110,20 +116,31 @@ function turn(run: Run, chatId: string, parts: MessagePart[], opts: SendOpts & {
   run.chatId = chatId;
   return new Promise<TurnEnd>((resolve) => {
     let over = false;
+    let firing = false;
     const end = (e: TurnEnd) => {
       if (over) return;
       over = true;
       clearTimeout(timer);
       if (waiters.get(chatId)?.end === end) waiters.delete(chatId);
-      if (run.endTurn === end) run.endTurn = null;
+      if (run.endTurn === end) {
+        run.endTurn = null;
+        run.turnStartedAt = null;
+        run.timeOut = null;
+      }
       resolve(e);
     };
-    const timer = setTimeout(() => {
-      void useChat.getState().cancel(chatId);
+    // The agent's cancel is awaited before the turn ends, so the engine is only free once it stopped.
+    const timeOut = async () => {
+      if (over || firing) return;
+      firing = true;
+      await useChat.getState().cancel(chatId);
       end({ kind: 'timeout' });
-    }, TURN_TIMEOUT_MS);
+    };
+    const timer = setTimeout(() => void timeOut(), TURN_TIMEOUT_MS);
     waiters.set(chatId, { text: '', agent: opts.agentId, end });
     run.endTurn = end;
+    run.turnStartedAt = Date.now();
+    run.timeOut = timeOut;
     useChat
       .getState()
       .send(chatId, parts, { ...opts, background: true })
@@ -142,7 +159,8 @@ function replyOf(end: TurnEnd): string {
       if (end.stopReason === 'cancelled') throw new SlotError(stored('autopilot.slot.stopped'));
       return end.text;
     case 'error':
-      throw new SlotError(end.message);
+      // Refused because the agent was still working: our own text, saved so it can be said in any language.
+      throw new SlotError(isBusyRefusal(end.message) ? stored('autopilot.slot.busy') : end.message);
     case 'timeout':
       throw new SlotError(stored('autopilot.slot.timedOut'));
     case 'stopped':
@@ -167,10 +185,6 @@ async function previousTitles(autopilotId: string): Promise<string[]> {
 async function pickTopic(run: Run): Promise<AutopilotTopic> {
   const a = run.autopilot;
   const chatId = topicChatId(a.id);
-  const chat = useChat.getState();
-  // A session left from another agent (the autopilot was edited) is ended; the next send starts the new one.
-  if (chat.started[chatId] && topicAgents.get(chatId) !== a.agentId) await chat.stop(chatId);
-  topicAgents.set(chatId, a.agentId);
   if (!useChat.getState().auto[chatId]) await useChat.getState().setAuto(chatId, true);
   // Nobody reads this chat: keep only the current slot's turns in memory.
   useChat.setState((s) => ({ messages: { ...s.messages, [chatId]: [] } }));
@@ -190,25 +204,37 @@ async function pickTopic(run: Run): Promise<AutopilotTopic> {
     lengthSec: a.lengthSec,
     previousTitles: titles,
   });
-  const topic = (await ask(first)) ?? (await ask(AUTOPILOT_TOPIC_RETRY));
-  if (!topic) throw new SlotError(stored('autopilot.slot.noTopic'));
-  return topic;
+  try {
+    const topic = (await ask(first)) ?? (await ask(AUTOPILOT_TOPIC_RETRY));
+    if (!topic) throw new SlotError(stored('autopilot.slot.noTopic'));
+    return topic;
+  } finally {
+    // Each slot gets a fresh session: the prompt already lists the earlier titles, so an old session's
+    // history would only cost tokens. Stopped once the topic step is over, however it ended.
+    await useChat.getState().stop(chatId);
+  }
 }
 
 /** Makes the slot's video; resolves to its project id once a rendered file exists. */
 async function makeVideo(run: Run): Promise<string> {
   const a = run.autopilot;
+  /** "Stop now" ends the work at the next step. */
+  const live = () => {
+    if (run.stopped) throw new SlotError(stored('autopilot.slot.stopped'));
+  };
   const settings = useApp.getState().settings ?? (await getSettings());
   const topic = await pickTopic(run);
-  if (run.stopped) throw new SlotError(stored('autopilot.slot.stopped'));
+  live();
 
   const { project, chat } = await createTopicProject(
     { title: topic.title, kind: topic.kind, lengthSec: a.lengthSec },
     { settings: { ...settings, language: a.language }, agent: a.agentId, styleId: a.styleId },
   );
+  run.projectChatId = chat.id;
   // From here a failure keeps the project, linked from the slot, for the user to look at.
   await updateSlot(run.slot.id, { projectId: project.id });
   notifyAutopilotChanged();
+  live();
   await useChat.getState().setAuto(chat.id, true);
 
   const skip = settings.frameCheck === false;
@@ -234,9 +260,10 @@ async function makeVideo(run: Run): Promise<string> {
     );
     if (!(await rendered())) throw new SlotError(stored('autopilot.slot.noRender'));
   }
-  if (run.stopped) throw new SlotError(stored('autopilot.slot.stopped'));
+  live();
 
   const info = await mediaProbe(project.id).catch(() => null);
+  live();
   await updateProject(project.id, {
     status: 'rendered',
     durationSec: info?.durationSec ?? null,
@@ -252,22 +279,34 @@ async function produce(run: Run): Promise<void> {
     const projectId = await makeVideo(run);
     if (!run.stopped) await updateSlot(run.slot.id, { status: 'done', projectId, error: null });
   } catch (e) {
+    const error = e instanceof Error ? e.message : String(e);
+    // The Agents board says what the slot says, and a late `done` can't change it back.
+    if (run.projectChatId) await failChatJob(run.projectChatId, error);
     // A stopped slot was already failed by "Stop now".
     if (!run.stopped) {
-      const error = e instanceof Error ? e.message : String(e);
       await updateSlot(run.slot.id, { status: 'failed', error }).catch((err) => console.error('Tayang: slot update failed', err));
     }
   } finally {
+    // The video's chat stays; its agent process ends (a later message starts a new one with a recap).
+    if (run.projectChatId) await useChat.getState().retire(run.projectChatId).catch(() => {});
     if (running === run) running = null;
     notifyAutopilotChanged();
   }
 }
 
-/** Slots still `making` from an earlier run of the app: it was closed while they were made. */
+/**
+ * Slots still `making` from an earlier run of the app: it was closed while they were made. Their agents may
+ * have outlived a reload of the window, so their topic and project chats are stopped too (errors ignored).
+ */
 async function recover(): Promise<boolean> {
   let changed = false;
   for (const s of await listSlots(EPOCH, FOREVER)) {
     if (s.status !== 'making' || s.id === running?.slot.id) continue;
+    await agentStop(topicChatId(s.autopilotId)).catch(() => {});
+    if (s.projectId) {
+      const chats = await listChats(s.projectId).catch(() => []);
+      for (const c of chats) await agentStop(c.id).catch(() => {});
+    }
     await updateSlot(s.id, { status: 'failed', error: stored('agents.closedNote') });
     changed = true;
   }
@@ -278,6 +317,9 @@ async function recover(): Promise<boolean> {
 export async function pass(now: Date = new Date()): Promise<void> {
   let changed = false;
   try {
+    // Backup for the turn timer, which a hidden window may throttle: the tick still arrives.
+    const r = running;
+    if (r?.turnStartedAt != null && now.getTime() - r.turnStartedAt >= TURN_TIMEOUT_MS) await r.timeOut?.();
     if (!recovered) {
       changed = (await recover()) || changed;
       recovered = true;
@@ -311,9 +353,21 @@ export async function pass(now: Date = new Date()): Promise<void> {
       })
       .sort((a, b) => Date.parse(a.dueAt) - Date.parse(b.dueAt))[0];
     if (!next) return;
+    // Paused (or deleted) since the list above was read: don't start.
+    const owner = (await listAutopilots()).find((a) => a.id === next.autopilotId);
+    if (owner?.status !== 'active') return;
     const slot = await updateSlot(next.id, { status: 'making', error: null });
     changed = true;
-    const run: Run = { slot, autopilot: byId.get(next.autopilotId)!, chatId: null, stopped: false, endTurn: null };
+    const run: Run = {
+      slot,
+      autopilot: owner,
+      chatId: null,
+      projectChatId: null,
+      stopped: false,
+      endTurn: null,
+      turnStartedAt: null,
+      timeOut: null,
+    };
     running = run;
     void produce(run);
   } finally {
@@ -321,7 +375,10 @@ export async function pass(now: Date = new Date()): Promise<void> {
   }
 }
 
-/** "Stop now" on the panel: cancels the running turn and fails the slot "Stopped". */
+/**
+ * "Stop now": cancels the running turn (awaited, so the agent has stopped first) and fails the slot
+ * "Stopped", but only a slot that is still `making` when read again (a stale button can't fail a done one).
+ */
 export async function stopSlot(slot: AutopilotSlot): Promise<void> {
   const run = running;
   if (run && run.slot.id === slot.id) {
@@ -329,7 +386,8 @@ export async function stopSlot(slot: AutopilotSlot): Promise<void> {
     if (run.chatId) await useChat.getState().cancel(run.chatId);
     run.endTurn?.({ kind: 'stopped' });
   }
-  await updateSlot(slot.id, { status: 'failed', error: stored('autopilot.slot.stopped') });
+  const now = (await listSlots(slot.dueAt, slot.dueAt)).find((s) => s.id === slot.id);
+  if (now?.status === 'making') await updateSlot(slot.id, { status: 'failed', error: stored('autopilot.slot.stopped') });
   notifyAutopilotChanged();
 }
 
@@ -379,5 +437,4 @@ export function resetAutopilotEngine(): void {
   running = null;
   recovered = false;
   waiters.clear();
-  topicAgents.clear();
 }
