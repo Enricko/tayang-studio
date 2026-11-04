@@ -112,7 +112,14 @@ export function TurnRail({
   const show = (turn: number, btn: HTMLElement) => {
     const n = nav.current?.getBoundingClientRect();
     const b = btn.getBoundingClientRect();
-    setHover({ turn, top: n ? b.top - n.top + b.height / 2 : 0 });
+    // A tick scrolled out of the strip gets no card; otherwise keep the card inside the rail's height.
+    const s = strip.current?.getBoundingClientRect();
+    if (s && s.height > 0 && (b.bottom < s.top || b.top > s.bottom)) {
+      setHover(null);
+      return;
+    }
+    const mid = n ? b.top - n.top + b.height / 2 : 0;
+    setHover({ turn, top: n && n.height > 0 ? Math.min(Math.max(mid, 0), n.height) : mid });
   };
 
   /** The strip scrolled under an open card: put the card back beside its tick. */
@@ -161,7 +168,7 @@ export function TurnRail({
               onMouseLeave={() => setHover(null)}
               onFocus={(e) => show(i, e.currentTarget)}
               onBlur={() => setHover(null)}
-              className="flex h-[10px] w-6 shrink-0 cursor-pointer items-center justify-end rounded-sm border-0 bg-transparent p-0 outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
+              className="flex h-[10px] w-6 shrink-0 cursor-pointer items-center justify-end rounded-sm border-0 bg-transparent p-0 outline-none focus-visible:outline-solid focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
             >
               <span
                 className="block h-[2px] w-5 origin-right rounded-full transition-[transform,background-color] duration-[120ms] motion-reduce:transition-none"
