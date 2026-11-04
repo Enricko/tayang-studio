@@ -29,6 +29,8 @@ const base: Settings = {
   autoMode: false,
   lastPingAt: null,
   uiLanguage: null,
+  backgroundMode: false,
+  openAtLogin: false,
 };
 
 describe('App start', () => {

@@ -51,6 +51,8 @@ const settings: Settings = {
   autoMode: false,
   lastPingAt: null,
   uiLanguage: null,
+  backgroundMode: false,
+  openAtLogin: false,
 };
 
 const tool = (id: ToolStatus['id'], name: string, required: boolean, ok: boolean): ToolStatus => ({

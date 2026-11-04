@@ -78,6 +78,8 @@ const settings: Settings = {
   autoMode: false,
   lastPingAt: null,
   uiLanguage: null,
+  backgroundMode: false,
+  openAtLogin: false,
 };
 
 const project = (id: string, title: string, status: Project['status'], scheduledAt: string | null = null, extra: Partial<Project> = {}): Project => ({

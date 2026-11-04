@@ -76,6 +76,8 @@ const settings: Settings = {
   autoMode: false,
   lastPingAt: null,
   uiLanguage: null,
+  backgroundMode: false,
+  openAtLogin: false,
 };
 
 const mk = (id: string, title: string): Project => ({

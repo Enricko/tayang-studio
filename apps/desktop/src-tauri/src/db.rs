@@ -195,6 +195,8 @@ impl Db {
             "lastPingAt": null,
             "autoMode": false,
             "uiLanguage": null,
+            "backgroundMode": false,
+            "openAtLogin": false,
         })
     }
 
@@ -699,6 +701,11 @@ mod tests {
         assert_eq!(s.api_url, "https://api.tayang.app");
         assert_eq!((s.language, s.format, s.fps), (VideoLanguage::Id, VideoFormat::Portrait, 30));
         assert_eq!(s.ui_language, None);
+        assert!(!s.background_mode && !s.open_at_login);
+        let b = db.update_settings(json!({"backgroundMode": true, "openAtLogin": true})).unwrap();
+        assert!(b.background_mode && b.open_at_login);
+        assert!(db.get_settings(&home).background_mode);
+        db.update_settings(json!({"backgroundMode": false, "openAtLogin": false})).unwrap();
         let l = db.update_settings(json!({"uiLanguage": "id"})).unwrap();
         assert_eq!(l.ui_language, Some(UiLanguage::Id));
         assert_eq!(db.get_settings(&home).ui_language, Some(UiLanguage::Id));

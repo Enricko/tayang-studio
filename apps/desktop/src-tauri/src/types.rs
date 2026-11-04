@@ -402,6 +402,12 @@ pub struct Settings {
     /// system language and saves it.
     #[serde(default)]
     pub ui_language: Option<UiLanguage>,
+    /// Closing the window hides it to the tray instead of quitting.
+    #[serde(default)]
+    pub background_mode: bool,
+    /// Start Tayang when the user logs in; only meaningful while `background_mode` is on.
+    #[serde(default)]
+    pub open_at_login: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

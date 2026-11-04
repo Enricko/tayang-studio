@@ -92,6 +92,8 @@ const settings: Settings = {
   autoMode: false,
   lastPingAt: null,
   uiLanguage: 'en',
+  backgroundMode: false,
+  openAtLogin: false,
 };
 
 describe('Indonesian interface', () => {

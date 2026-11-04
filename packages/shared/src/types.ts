@@ -198,6 +198,10 @@ export interface Settings {
   autoMode: boolean;
   /** Interface language; null until the first run picks one from the system language. */
   uiLanguage: UiLanguage | null;
+  /** Closing the window hides it to the tray (menu bar) instead of quitting. */
+  backgroundMode: boolean;
+  /** Start Tayang at login; only available while backgroundMode is on. */
+  openAtLogin: boolean;
 }
 
 /** Defaults; workingFolder is `<home>/Tayang`, resolved at runtime. */
@@ -214,6 +218,8 @@ export const DEFAULT_SETTINGS: Omit<Settings, 'workingFolder'> = {
   lastPingAt: null,
   autoMode: false,
   uiLanguage: null,
+  backgroundMode: false,
+  openAtLogin: false,
 };
 
 export type AgentUpdate =
