@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { buildSessionPreamble, languageHint, sessionFacts, stripFramesToken } from '@tayang/skills';
-import type { AgentId, AgentUpdate, ChatMessage, JobStatus, MessagePart, PermissionRequest } from '@tayang/shared';
+import type { AgentId, AgentUpdate, ChatMessage, FileInfo, JobStatus, MessagePart, PermissionRequest } from '@tayang/shared';
 import {
   addMessage,
   agentCancel,
@@ -12,6 +12,7 @@ import {
   getChat,
   latestRenderInfo,
   listMessages,
+  recentImages,
   updateChatAgent,
   upsertJob,
 } from '@/lib/ipc';
@@ -232,6 +233,38 @@ const CLOCK_SLACK_MS = 1000;
 export const renderedSince = (info: { size: number; modifiedAt: string } | null, since: number) =>
   !!info && info.size > 0 && Date.parse(info.modifiedAt) >= since - CLOCK_SLACK_MS;
 
+/** Images an agent may make; the mime type of a found image comes from its extension. */
+const IMAGE_MIME: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif' };
+export const imageMime = (name: string) => IMAGE_MIME[name.split('.').pop()?.toLowerCase() ?? ''] ?? 'application/octet-stream';
+
+/**
+ * `parts` with the images found added: a new path goes at the end (oldest first), a path already
+ * there whose file was rewritten is updated in place (its new time reloads it). Null when nothing changed.
+ */
+export function withImages(parts: MessagePart[], found: FileInfo[]): MessagePart[] | null {
+  const out = [...parts];
+  let changed = false;
+  for (const f of [...found].reverse()) {
+    const part: MessagePart = { type: 'file', path: f.path, name: f.name, mime: imageMime(f.name), size: f.size, modifiedAt: f.modifiedAt };
+    const i = out.findIndex((p) => p.type === 'file' && p.path === f.path);
+    if (i < 0) {
+      out.push(part);
+      changed = true;
+    } else if ((out[i] as { modifiedAt?: string }).modifiedAt !== f.modifiedAt) {
+      out[i] = part;
+      changed = true;
+    }
+  }
+  return changed ? out : null;
+}
+
+/** When each chat's latest turn started (RFC 3339), for the images it made; kept after the turn ends. */
+const imageSince = new Map<string, string>();
+const imageTimers = new Map<string, ReturnType<typeof setTimeout>>();
+/** The image lookup running per chat; the next one waits for it. */
+const imageRuns = new Map<string, Promise<void>>();
+const IMAGE_DEBOUNCE_MS = 500;
+
 let seq = 0;
 const localMessage = (chatId: string, role: ChatMessage['role'], parts: MessagePart[]): ChatMessage => ({
   id: `local-${++seq}`,
@@ -325,6 +358,53 @@ export const useChat = create<ChatState>((set, get) => {
     }
   };
 
+  /** Adds the images the turn made so far to the agent's message of this turn. */
+  const scanImages = async (chatId: string) => {
+    const since = imageSince.get(chatId);
+    if (!since) return;
+    let found: FileInfo[] = [];
+    try {
+      found = await recentImages(chatId, since, 50);
+    } catch {
+      return;
+    }
+    if (!found.length) return;
+    const list = get().messages[chatId] ?? [];
+    const last = list.at(-1);
+    if (!last || last.role !== 'agent' || Date.parse(last.createdAt) < Date.parse(since) - 1000) return;
+    const parts = withImages(last.parts, found);
+    if (parts) replaceLast(chatId, (m) => (m.id === last.id ? { ...m, parts } : m));
+  };
+
+  /** One lookup at a time per chat: a new one starts once the running one is over. */
+  const runImages = (chatId: string): Promise<void> => {
+    const before = imageRuns.get(chatId) ?? Promise.resolve();
+    const run = before.then(() => scanImages(chatId));
+    imageRuns.set(chatId, run);
+    void run.finally(() => imageRuns.get(chatId) === run && imageRuns.delete(chatId));
+    return run;
+  };
+
+  /** A step finished: look for new images once things settle (500 ms). */
+  const queueImages = (chatId: string) => {
+    if (isScratchChat(chatId)) return;
+    clearTimeout(imageTimers.get(chatId));
+    imageTimers.set(
+      chatId,
+      setTimeout(() => {
+        imageTimers.delete(chatId);
+        void runImages(chatId);
+      }, IMAGE_DEBOUNCE_MS),
+    );
+  };
+
+  /** The turn is over: one last look for images, then the agent's message is stored with them. */
+  const endTurnImages = async (chatId: string) => {
+    clearTimeout(imageTimers.get(chatId));
+    imageTimers.delete(chatId);
+    if (!isScratchChat(chatId)) await runImages(chatId);
+  };
+
   /**
    * A project chat's turn is over: its build job is done only when the turn left a video. Otherwise it
    * needs the user, saying whether the agent asked them something or stopped before rendering.
@@ -375,7 +455,10 @@ export const useChat = create<ChatState>((set, get) => {
         }
         return { ...m, parts };
       });
-      if (u.kind === 'tool') trackRender(chatId, u.toolCallId, u.title, u.status);
+      if (u.kind === 'tool') {
+        trackRender(chatId, u.toolCallId, u.title, u.status);
+        if (u.status === 'done') queueImages(chatId);
+      }
       return;
     }
     if (u.kind === 'done') {
@@ -388,13 +471,17 @@ export const useChat = create<ChatState>((set, get) => {
       else writeJob(chatId, 'done');
       settleTools(chatId, u.stopReason === 'cancelled' ? 'failed' : 'done');
       finish(chatId);
-      const last = (get().messages[chatId] ?? []).at(-1);
-      if (last && last.role === 'agent' && isLocal(last)) void persist(chatId, last);
+      // The message is stored once, with every image the turn made.
+      void endTurnImages(chatId).finally(() => {
+        const last = (get().messages[chatId] ?? []).at(-1);
+        if (last && last.role === 'agent' && isLocal(last)) void persist(chatId, last);
+      });
       return;
     }
     // error: the session is gone, so the next send must start a new one
     settleTools(chatId, 'failed');
     finish(chatId);
+    void endTurnImages(chatId);
     set((s) => ({ started: { ...s.started, [chatId]: false } }));
     // Saved in English; the chat and the job board say it in the user's language when they show it.
     const text = agentErrorText(u.message, chatAgent.get(chatId) ?? 'claude', 'en');
@@ -477,6 +564,7 @@ export const useChat = create<ChatState>((set, get) => {
       const attached = opts?.keepAttachments ? [] : (get().attachments[chatId] ?? []);
       const visible = [...attached, ...parts];
       turnSeq.set(chatId, (turnSeq.get(chatId) ?? 0) + 1);
+      if (!get().streaming[chatId]) imageSince.set(chatId, new Date().toISOString());
       set((s) => ({
         attachments: opts?.keepAttachments ? s.attachments : { ...s.attachments, [chatId]: [] },
         streaming: { ...s.streaming, [chatId]: true },
@@ -619,6 +707,10 @@ export const useChat = create<ChatState>((set, get) => {
       clientKeys.clear();
       turnSeq.clear();
       agentNotes.clear();
+      imageSince.clear();
+      imageTimers.forEach((t) => clearTimeout(t));
+      imageTimers.clear();
+      imageRuns.clear();
       useRender.setState({ runs: {} });
       set({ messages: {}, streaming: {}, turnStartedAt: {}, permissions: {}, attachments: {}, started: {}, auto: {}, pendingAuto: null, autoBusy: {} });
     },
