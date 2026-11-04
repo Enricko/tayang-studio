@@ -6,7 +6,7 @@ import { Composer, type MentionRef } from '@/components/Composer';
 import { MessageList } from '@/components/MessageList';
 import { PermissionCard } from '@/components/PermissionCard';
 import { ScrollToBottom } from '@/components/ScrollToBottom';
-import { TemplateChip, templateOf, useChipTemplate, useStyles } from '@/components/TemplateChip';
+import { stylesFor, TemplateChip, templateOf, useChipTemplate, useStyles } from '@/components/TemplateChip';
 import { TurnRail } from '@/components/TurnRail';
 import { listProjects } from '@/lib/ipc';
 import { mentionContext, mentionedIn, styleContext } from '@/lib/mentions';
@@ -94,10 +94,11 @@ export function ChatThread({ chatId, draft, styleId: routeStyleId }: { chatId: s
     setError(null);
     const sentMention = mention;
     setMention(null);
-    const ctx = [...(await mentionContext(parts, seen, projects, settings)), ...styleContext(parts, styles)];
+    const known = await stylesFor(parts, styles);
+    const ctx = [...(await mentionContext(parts, seen, projects, settings)), ...styleContext(parts, known)];
     // A style with a starter template, once sent, is what a topic picked here starts from.
     const sentStyle = parts.find((p) => p.type === 'style-mention');
-    const sentTemplate = templateOf(sentStyle?.type === 'style-mention' ? sentStyle : null, styles);
+    const sentTemplate = templateOf(sentStyle?.type === 'style-mention' ? sentStyle : null, known);
     if (sentTemplate) setStyleId(sentTemplate);
     const failure = await useChat
       .getState()

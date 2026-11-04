@@ -545,6 +545,20 @@ describe('@mentioning a style in the chat screens', () => {
     expect(sentText()).toContain('Use the style \\"Mine\\" for this video:');
   });
 
+  it('New chat: a restored chip sent before the styles load still sends the style and sets the template', async () => {
+    const user = userEvent.setup();
+    let reads = 0;
+    // The screen's own read hangs; the one the send makes answers.
+    vi.mocked(ipc.listStyles).mockImplementation(() => (++reads <= 1 ? new Promise(() => {}) : Promise.resolve([atlas, paper, mine])));
+    useChat.getState().setDraft('new', { text: 'bikin', style: { styleId: 'builtin-atlas', name: 'Atlas journey' } });
+    render(<Shell />);
+    expect(await screen.findByText('@Atlas journey')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(useApp.getState().route).toEqual({ name: 'chat', chatId: 'c-new', styleId: 'builtin-atlas' }));
+    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
+    expect(sentText()).toContain('Use the style \\"Atlas journey\\" for this video:');
+  });
+
   it('New chat: the style chip survives going elsewhere and back', async () => {
     const user = userEvent.setup();
     render(<Shell />);

@@ -5,7 +5,7 @@ import type { AgentId, MessagePart, Project, Style, VideoKind } from '@tayang/sh
 import { buildTopicIdeasPrompt } from '@tayang/skills';
 import oyen from '@/assets/brand/oyen-expr-default.svg';
 import { Composer, type MentionRef } from '@/components/Composer';
-import { TemplateChip, templateOf, useChipTemplate, useStyles } from '@/components/TemplateChip';
+import { stylesFor, TemplateChip, templateOf, useChipTemplate, useStyles } from '@/components/TemplateChip';
 import { createChat, listProjects, listStyles } from '@/lib/ipc';
 import { mentionContext, styleContext } from '@/lib/mentions';
 import { useApp } from '@/state/app';
@@ -40,8 +40,8 @@ export function ChatNew() {
   // A mentioned style with a starter template is the chat's template: it wins over the Style screen's.
   const chipTemplate = useChipTemplate(NEW_CHAT_DRAFT, styles);
   /** The chat's template: the mentioned one (`ref`, else the chip waiting in the composer), else the Style screen's. */
-  const templateFor = (ref?: { styleId: string } | null) =>
-    templateOf(ref === undefined ? useChat.getState().drafts[NEW_CHAT_DRAFT]?.style : ref, styles) ?? styleId;
+  const templateFor = (ref?: { styleId: string } | null, known = styles) =>
+    templateOf(ref === undefined ? useChat.getState().drafts[NEW_CHAT_DRAFT]?.style : ref, known) ?? styleId;
 
   // An unsent Auto choice belongs to this screen only.
   useEffect(() => {
@@ -103,13 +103,14 @@ export function ChatNew() {
     try {
       const text = parts.find((p) => p.type === 'text');
       const id = await ensureChat(text?.type === 'text' ? text.text.slice(0, 48) : t('chat.newChat'));
-      const ctx = [...(await mentionContext(parts, [], projects, settings)), ...styleContext(parts, styles)];
+      const known = await stylesFor(parts, styles);
+      const ctx = [...(await mentionContext(parts, [], projects, settings)), ...styleContext(parts, known)];
       // The message is in the chat as soon as send starts; the chat screen shows the rest of the turn.
       void useChat
         .getState()
         .send(id, parts, { agentId: agent, ...(ctx.length ? { promptParts: [...ctx, ...parts] } : {}) });
       const sentStyle = parts.find((p) => p.type === 'style-mention');
-      openChat(id, templateFor(sentStyle?.type === 'style-mention' ? sentStyle : null));
+      openChat(id, templateFor(sentStyle?.type === 'style-mention' ? sentStyle : null, known));
       return true;
     } catch (e) {
       setError(t('chat.couldntStartChat', { message: e instanceof Error ? e.message : String(e) }));

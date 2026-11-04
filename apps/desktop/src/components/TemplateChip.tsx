@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X } from 'lucide-react';
-import type { Style } from '@tayang/shared';
+import type { MessagePart, Style } from '@tayang/shared';
 import { listStyles } from '@/lib/ipc';
 import { useChat } from '@/state/chat';
 
@@ -19,6 +19,12 @@ export function useStyles(): Style[] {
     };
   }, []);
   return styles;
+}
+
+/** The styles a message's context is built from: the loaded ones, or a fresh read when a restored chip is sent before they load. */
+export async function stylesFor(parts: MessagePart[], styles: Style[]): Promise<Style[]> {
+  if (styles.length || !parts.some((p) => p.type === 'style-mention')) return styles;
+  return listStyles().catch(() => styles);
 }
 
 /** `ref`'s style when it has a starter template, else null. */
