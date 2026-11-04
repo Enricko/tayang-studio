@@ -36,8 +36,8 @@ import { useAuth } from '@/state/auth';
 import { useBilling } from '@/state/billing';
 
 const NOW = new Date('2026-11-04T12:00:00.000Z');
-const free: BillingStatus = { plan: 'free', lastPlan: null, currentPeriodEnd: null, active: false, pending: null };
-const creator: BillingStatus = { plan: 'creator', lastPlan: 'creator', currentPeriodEnd: '2026-12-04T12:00:00.000Z', active: true, pending: null };
+const free: BillingStatus = { plan: 'free', lastPlan: null, currentPeriodEnd: null, active: false, pending: null, lastPaidOrderId: null };
+const creator: BillingStatus = { plan: 'creator', lastPlan: 'creator', currentPeriodEnd: '2026-12-04T12:00:00.000Z', active: true, pending: null, lastPaidOrderId: null };
 const checkout = { orderId: 'TYG-A', paymentLinkUrl: 'https://pay.sumopod.com/p/1', expiresAt: '2026-11-04T13:00:00.000Z', amount: 50000 };
 const signedIn: AuthStatus = {
   state: 'signed-in',
@@ -155,6 +155,24 @@ describe('plans screen: choose', () => {
     render(<Plans from="settings" plan="lite" />);
     await screen.findByText('Your plan');
     expect(screen.getByRole('radio', { name: 'Creator' })).toBeChecked();
+  });
+
+  it('an existing subscriber signing in at the gate renews, and an unchanged plan is not a success (review2 I-A)', async () => {
+    useAuth.setState({ status: signedOut });
+    vi.mocked(billing.billingStatus).mockRejectedValue('billing:signed-out');
+    vi.mocked(auth.authStart).mockReturnValue(new Promise(() => {}));
+    const u = user();
+    render(<Plans from="settings" />);
+    await u.click(await screen.findByRole('button', { name: 'Sign in with Google first' }));
+    vi.mocked(billing.billingStatus).mockResolvedValue({ ...creator, lastPaidOrderId: 'TYG-OLD' });
+    act(() => useAuth.getState().apply(signedIn));
+    expect(await screen.findByRole('heading', { level: 1, name: 'Pay with QRIS' })).toBeInTheDocument();
+    expect(screen.getByText('Extended until Jan 3, 2027')).toBeInTheDocument();
+    await u.click(screen.getByRole('button', { name: 'Open the QRIS page' }));
+    await screen.findByText(/this page changes by itself/);
+    await act(() => vi.advanceTimersByTimeAsync(POLL_MS * 2));
+    expect(screen.getByText(/this page changes by itself/)).toBeInTheDocument();
+    expect(fireConfetti).not.toHaveBeenCalled();
   });
 
   it('the API refusing a downgrade shows the same note (B3)', async () => {
@@ -327,7 +345,7 @@ describe('plans screen: done', () => {
     const u = await toPayStep();
     await u.click(screen.getByRole('button', { name: 'Open the QRIS page' }));
     await screen.findByText(/this page changes by itself/);
-    vi.mocked(billing.billingStatus).mockResolvedValue(creator);
+    vi.mocked(billing.billingStatus).mockResolvedValue({ ...creator, lastPaidOrderId: 'TYG-A' });
     await act(() => vi.advanceTimersByTimeAsync(POLL_MS));
     return u;
   }
@@ -363,6 +381,46 @@ describe('plans screen: done', () => {
     }
   });
 
+  it('confetti waits until the window is in front again, fires once, and is dropped after 10 minutes (review2 I-B)', async () => {
+    const focus = vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+    try {
+      await payAndSucceed();
+      await screen.findByRole('heading', { level: 1, name: 'Creator plan active', hidden: true });
+      expect(fireConfetti).not.toHaveBeenCalled();
+      focus.mockReturnValue(true);
+      act(() => void window.dispatchEvent(new Event('focus')));
+      expect(fireConfetti).toHaveBeenCalledTimes(1);
+      act(() => void window.dispatchEvent(new Event('focus')));
+      act(() => void document.dispatchEvent(new Event('visibilitychange')));
+      expect(fireConfetti).toHaveBeenCalledTimes(1);
+    } finally {
+      focus.mockRestore();
+    }
+  });
+
+  it('a queued confetti is dropped when the window comes back after 10 minutes', async () => {
+    const focus = vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+    try {
+      await payAndSucceed();
+      await screen.findByRole('heading', { level: 1, name: 'Creator plan active', hidden: true });
+      vi.setSystemTime(Date.now() + 10 * 60_000 + 1);
+      focus.mockReturnValue(true);
+      act(() => void window.dispatchEvent(new Event('focus')));
+      expect(fireConfetti).not.toHaveBeenCalled();
+    } finally {
+      focus.mockRestore();
+    }
+  });
+
+  it('opening the screen with a plan already active never celebrates', async () => {
+    vi.mocked(billing.billingStatus).mockResolvedValue({ ...creator, lastPaidOrderId: 'TYG-OLD' });
+    render(<Plans from="settings" />);
+    await screen.findByText('Your plan');
+    await act(() => vi.advanceTimersByTimeAsync(POLL_MS * 2));
+    expect(fireConfetti).not.toHaveBeenCalled();
+    expect(screen.getByRole('heading', { level: 1, name: 'Let Tayang do the posting' })).toBeInTheDocument();
+  });
+
   it('in Indonesian', async () => {
     setUiLanguage('id');
     vi.mocked(billing.billingStatus).mockResolvedValue(free);
@@ -372,7 +430,7 @@ describe('plans screen: done', () => {
     await u.click(screen.getByRole('button', { name: 'Lanjut bayar' }));
     await u.click(await screen.findByRole('button', { name: 'Buka halaman QRIS' }));
     expect(await screen.findByText(/halaman ini berubah sendiri begitu pembayaranmu masuk/)).toBeInTheDocument();
-    vi.mocked(billing.billingStatus).mockResolvedValue(creator);
+    vi.mocked(billing.billingStatus).mockResolvedValue({ ...creator, lastPaidOrderId: 'TYG-A' });
     await act(() => vi.advanceTimersByTimeAsync(POLL_MS));
     expect(await screen.findByRole('heading', { level: 1, name: 'Paket Creator aktif' })).toBeInTheDocument();
     expect(screen.getByText('Sampai 4 Des 2026')).toBeInTheDocument();

@@ -16,10 +16,10 @@ import { useApp } from '@/state/app';
 import { useAuth } from '@/state/auth';
 import { useBilling } from '@/state/billing';
 
-const free: BillingStatus = { plan: 'free', lastPlan: null, currentPeriodEnd: null, active: false, pending: null };
-const creator: BillingStatus = { plan: 'creator', lastPlan: 'creator', currentPeriodEnd: '2026-12-04T12:00:00.000Z', active: true, pending: null };
+const free: BillingStatus = { plan: 'free', lastPlan: null, currentPeriodEnd: null, active: false, pending: null, lastPaidOrderId: null };
+const creator: BillingStatus = { plan: 'creator', lastPlan: 'creator', currentPeriodEnd: '2026-12-04T12:00:00.000Z', active: true, pending: null, lastPaidOrderId: null };
 /** The row the owner paid for in Sandbox: Lite until 4 Dec 2026, 15:09 UTC. */
-const lite: BillingStatus = { plan: 'lite', lastPlan: 'lite', currentPeriodEnd: '2026-12-04T15:09:15.000Z', active: true, pending: null };
+const lite: BillingStatus = { plan: 'lite', lastPlan: 'lite', currentPeriodEnd: '2026-12-04T15:09:15.000Z', active: true, pending: null, lastPaidOrderId: null };
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -111,6 +111,15 @@ describe("plan card when the plan state can't be read", () => {
     vi.mocked(billing.billingStatus).mockResolvedValue(lite);
     await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(await screen.findByText('Active until Dec 4, 2026')).toBeInTheDocument();
+  });
+
+  it('a signed-out read while the app says signed in shows unknown, never Free + Upgrade (review2)', async () => {
+    withAccount('lite');
+    vi.mocked(billing.billingStatus).mockRejectedValue('billing:signed-out');
+    render(<PlanCard />);
+    expect(await screen.findByText("Couldn't check your plan just now")).toBeInTheDocument();
+    expect(screen.queryByText('Free')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Upgrade' })).not.toBeInTheDocument();
   });
 
   it('says it is checking before the first answer, not Free', async () => {

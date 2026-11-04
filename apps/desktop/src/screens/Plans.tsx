@@ -21,6 +21,8 @@ import { useAuth } from '@/state/auth';
 import { useBilling, stepOf, type PayFlow } from '@/state/billing';
 
 const POPULAR: PaidPlanId = 'creator';
+/** Confetti waiting for the window to come back is dropped after this long. */
+const CONFETTI_WAIT_MS = 10 * 60_000;
 const DAY_MS = 86_400_000;
 /** How long a payment link stays open (the API's CHECKOUT_TTL_HOURS). */
 const LINK_HOURS = 1;
@@ -245,7 +247,30 @@ function DoneStep({ plan, end }: { plan: Plan; end: string | null }) {
   useEffect(() => {
     // Under reduced motion there is no confetti at all; a still picture stands in.
     if (still) return;
-    return fireConfetti();
+    const seen = () => !document.hidden && document.hasFocus();
+    let stop: (() => void) | undefined;
+    if (seen()) {
+      stop = fireConfetti();
+      return () => stop?.();
+    }
+    // The payment usually lands while the browser is in front: keep the confetti for when the
+    // window is back (once, within 10 minutes), so someone actually sees it.
+    const since = Date.now();
+    const off = () => {
+      window.removeEventListener('focus', back);
+      document.removeEventListener('visibilitychange', back);
+    };
+    const back = () => {
+      if (!seen()) return;
+      off();
+      if (Date.now() - since <= CONFETTI_WAIT_MS) stop = fireConfetti();
+    };
+    window.addEventListener('focus', back);
+    document.addEventListener('visibilitychange', back);
+    return () => {
+      off();
+      stop?.();
+    };
   }, [still]);
   return (
     <div className="flex flex-col items-center gap-5 text-center">
@@ -296,12 +321,18 @@ export function Plans({ from, plan: initialPlan }: { from?: 'settings' | 'autopi
   useEffect(() => {
     heading.current?.focus();
   }, [step]);
-  // Signed in from the gate: carry on to paying.
+  // Signed in from the gate: read this account's plan first (and pick up a payment it left
+  // waiting), then carry on to paying, never for a plan lower than the one it has.
   useEffect(() => {
-    if (wantPay && signedIn) {
-      setWantPay(false);
-      useBilling.getState().choose(chosen);
-    }
+    if (!wantPay || !signedIn) return;
+    setWantPay(false);
+    void (async () => {
+      await useBilling.getState().enter();
+      const b = useBilling.getState();
+      if (b.flow.phase !== 'picking') return;
+      const cur = b.status?.active && b.status.plan !== 'free' ? b.status.plan : null;
+      b.choose(cur && isLowerPlan(chosen, cur) ? cur : chosen);
+    })();
   }, [wantPay, signedIn, chosen]);
 
   const done = flow.phase === 'done' ? flow : null;

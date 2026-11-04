@@ -8,6 +8,7 @@ const status = (over: Partial<BillingStatus> = {}): BillingStatus => ({
   currentPeriodEnd: '2026-12-04T12:00:00.000Z',
   active: true,
   pending: null,
+  lastPaidOrderId: null,
   ...over,
 });
 
