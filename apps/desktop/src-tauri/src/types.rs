@@ -351,6 +351,9 @@ pub struct Settings {
     pub share_install_stats: bool,
     /// RFC 3339 time of the last successful ping.
     pub last_ping_at: Option<String>,
+    /// Chats start in auto mode: the agent runs commands without asking.
+    #[serde(default)]
+    pub auto_mode: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

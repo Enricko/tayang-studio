@@ -187,6 +187,7 @@ impl Db {
             "installId": "",
             "shareInstallStats": true,
             "lastPingAt": null,
+            "autoMode": false,
         })
     }
 

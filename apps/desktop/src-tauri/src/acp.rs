@@ -240,6 +240,40 @@ const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 pub struct SessionOptions {
     pub meta: Option<Value>,
     pub env: Vec<(String, String)>,
+    /// Start in auto mode: commands run without asking (see `AcpManager::set_auto`).
+    pub auto: bool,
+}
+
+/// How auto mode was applied to a session.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AutoMethod {
+    /// The agent's own `auto` mode (`session/set_mode`).
+    Mode,
+    /// Tayang answers permission requests with the allow-once option.
+    Approve,
+    /// Auto mode is off: every request is shown to the user.
+    Off,
+}
+
+/// The agent's session modes, as reported by `session/new` (`modes`).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct ModeState {
+    available: Vec<String>,
+    current: Option<String>,
+}
+
+fn parse_modes(created: &Value) -> ModeState {
+    let Some(modes) = created.get("modes") else { return ModeState::default() };
+    ModeState {
+        available: modes
+            .get("availableModes")
+            .and_then(Value::as_array)
+            .map(|m| {
+                m.iter().filter_map(|x| x.get("id")?.as_str().map(str::to_string)).collect()
+            })
+            .unwrap_or_default(),
+        current: modes.get("currentModeId").and_then(Value::as_str).map(str::to_string),
+    }
 }
 
 fn spawn_agent(command: &[String], cwd: &Path, env: &[(String, String)]) -> Result<Child> {
@@ -372,6 +406,9 @@ struct SessionCore {
     sink: Arc<dyn AcpSink>,
     permissions: Arc<Permissions>,
     session_id: OnceLock<String>,
+    modes: Mutex<ModeState>,
+    /// Answer permission requests with allow-once instead of asking the user.
+    auto_approve: AtomicBool,
     tools: Mutex<HashMap<String, ToolState>>,
     prompting: AtomicBool,
     stopping: AtomicBool,
@@ -436,6 +473,22 @@ impl SessionCore {
                     .collect()
             })
             .unwrap_or_default();
+
+        if self.auto_approve.load(Ordering::SeqCst) {
+            if let Some(allow) = options.iter().find(|o| o.kind == PermissionOptionKind::AllowOnce) {
+                let what = command.clone().unwrap_or_else(|| title.clone());
+                self.rpc.respond(
+                    id,
+                    Ok(json!({ "outcome": { "outcome": "selected", "optionId": allow.id } })),
+                );
+                self.emit(AgentUpdate::Tool {
+                    tool_call_id: format!("auto-{}", uuid::Uuid::new_v4()),
+                    title: format!("Ran without asking: {what}"),
+                    status: ToolCallStatus::Done,
+                });
+                return;
+            }
+        }
 
         let request_id = uuid::Uuid::new_v4().to_string();
         let (tx, rx) = oneshot::channel();
@@ -583,7 +636,61 @@ impl SessionCore {
             .and_then(Value::as_str)
             .ok_or_else(|| AcpError("The agent did not open a session".into()))?;
         let _ = self.session_id.set(session_id.to_string());
+        *self.modes.lock().unwrap() = parse_modes(&created);
         Ok(())
+    }
+
+    /// `session/set_mode`; the error text is the agent's message.
+    async fn set_mode(&self, mode_id: &str) -> Result<()> {
+        self.rpc
+            .request("session/set_mode", json!({ "sessionId": self.session_id(), "modeId": mode_id }))
+            .await
+            .map_err(|e| {
+                if e.is_closed() {
+                    AcpError("The agent is not running".into())
+                } else {
+                    AcpError(e.message)
+                }
+            })?;
+        self.modes.lock().unwrap().current = Some(mode_id.to_string());
+        Ok(())
+    }
+
+    fn has_mode(&self, mode_id: &str) -> bool {
+        self.modes.lock().unwrap().available.iter().any(|m| m == mode_id)
+    }
+
+    async fn set_auto(&self, on: bool) -> AutoMethod {
+        if on {
+            if self.has_mode("auto") {
+                match self.set_mode("auto").await {
+                    Ok(()) => {
+                        self.auto_approve.store(false, Ordering::SeqCst);
+                        return AutoMethod::Mode;
+                    }
+                    Err(e) => eprintln!(
+                        "[agent {}] auto mode unavailable ({e}); approving requests from Tayang",
+                        self.chat_id
+                    ),
+                }
+            } else {
+                eprintln!(
+                    "[agent {}] agent has no auto mode; approving requests from Tayang",
+                    self.chat_id
+                );
+            }
+            self.auto_approve.store(true, Ordering::SeqCst);
+            AutoMethod::Approve
+        } else {
+            self.auto_approve.store(false, Ordering::SeqCst);
+            let was_auto = self.modes.lock().unwrap().current.as_deref() == Some("auto");
+            if was_auto && self.has_mode("default") {
+                if let Err(e) = self.set_mode("default").await {
+                    eprintln!("[agent {}] could not leave auto mode: {e}", self.chat_id);
+                }
+            }
+            AutoMethod::Off
+        }
     }
 
     fn session_id(&self) -> &str {
@@ -804,6 +911,8 @@ impl AgentSession {
             sink,
             permissions,
             session_id: OnceLock::new(),
+            modes: Mutex::new(ModeState::default()),
+            auto_approve: AtomicBool::new(false),
             tools: Mutex::new(HashMap::new()),
             prompting: AtomicBool::new(false),
             stopping: AtomicBool::new(false),
@@ -915,6 +1024,7 @@ impl AcpManager {
         options: SessionOptions,
     ) -> Result<()> {
         let _ = self.stop(chat_id).await;
+        let auto = options.auto;
         let uid = self.next_uid.fetch_add(1, Ordering::SeqCst);
         let session =
             AgentSession::launch(
@@ -936,7 +1046,28 @@ impl AcpManager {
         if let Some(previous) = previous {
             previous.shutdown().await;
         }
+        if auto {
+            self.set_auto(chat_id, true).await?;
+        }
         Ok(())
+    }
+
+    /// Turns auto mode on or off for a running session. On: the agent's `auto`
+    /// mode when it lists one, otherwise (or when switching fails) Tayang approves
+    /// each request with its allow-once option. Off: asking again.
+    pub async fn set_auto(&self, chat_id: &str, on: bool) -> Result<AutoMethod> {
+        let session = self.session(chat_id)?;
+        Ok(session.core.set_auto(on).await)
+    }
+
+    /// Sends `session/set_mode`; the error is the agent's message.
+    pub async fn set_mode(&self, chat_id: &str, mode_id: &str) -> Result<()> {
+        self.session(chat_id)?.core.set_mode(mode_id).await
+    }
+
+    /// Mode ids the agent listed in `session/new`.
+    pub fn available_modes(&self, chat_id: &str) -> Result<Vec<String>> {
+        Ok(self.session(chat_id)?.core.modes.lock().unwrap().available.clone())
     }
 
     /// Sends a prompt; the turn runs in the background and streams to the sink,
@@ -1034,6 +1165,15 @@ mod tests {
         );
         assert_eq!(parse_message("not json"), None);
         assert_eq!(parse_message("[1,2]"), None);
+    }
+
+    #[test]
+    fn parses_session_modes() {
+        let m = parse_modes(&json!({"modes": {"currentModeId": "default",
+            "availableModes": [{"id": "default", "name": "Default"}, {"id": "auto", "name": "Auto"}]}}));
+        assert_eq!(m.available, vec!["default".to_string(), "auto".to_string()]);
+        assert_eq!(m.current.as_deref(), Some("default"));
+        assert_eq!(parse_modes(&json!({})), ModeState::default());
     }
 
     #[test]

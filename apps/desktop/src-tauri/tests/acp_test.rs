@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use tayang_studio_lib::acp::{AcpManager, AcpSink, PromptPart, SessionOptions};
+use tayang_studio_lib::acp::{AcpManager, AcpSink, AutoMethod, PromptPart, SessionOptions};
 use tayang_studio_lib::types::{AgentUpdate, PermissionOptionKind, PermissionRequest, ToolCallStatus};
 
 #[derive(Default)]
@@ -462,6 +462,7 @@ async fn session_options_reach_the_agent_as_meta_and_env() {
     let options = SessionOptions {
         meta: Some(meta.clone()),
         env: vec![("TAYANG_STUDIO".into(), "1".into())],
+        ..Default::default()
     };
     manager
         .start_with("c1", &fake_agent(), &ws.cwd, sink.clone(), options)
@@ -486,5 +487,138 @@ async fn plain_start_sends_no_meta_and_no_env() {
     let json: serde_json::Value = serde_json::from_str(reply.strip_prefix("whoami ").unwrap()).unwrap();
     assert!(json["meta"].is_null());
     assert!(json["env"].is_null());
+    manager.stop("c1").await.unwrap();
+}
+
+// ---- auto mode ----
+
+async fn started_with_args(chat: &str, ws: &Workspace, args: &[&str]) -> (AcpManager, Arc<RecordingSink>) {
+    let manager = AcpManager::new();
+    let sink = Arc::new(RecordingSink::default());
+    let mut command = fake_agent();
+    command.extend(args.iter().map(|a| a.to_string()));
+    manager.start(chat, &command, &ws.cwd, sink.clone()).await.expect("agent starts");
+    (manager, sink)
+}
+
+async fn ask(manager: &AcpManager, sink: &RecordingSink, prompt: &str) {
+    manager.prompt("c1", vec![PromptPart::Text(prompt.into())]).await.unwrap();
+    sink.wait_finished().await;
+}
+
+fn ran_without_asking(sink: &RecordingSink) -> Vec<String> {
+    sink.updates()
+        .into_iter()
+        .filter_map(|u| match u {
+            AgentUpdate::Tool { title, status: ToolCallStatus::Done, .. }
+                if title.starts_with("Ran without asking: ") =>
+            {
+                Some(title)
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn session_modes_are_tracked_and_set_mode_is_sent() {
+    let ws = workspace();
+    let (manager, sink) = started("c1", &ws).await;
+    let modes = manager.available_modes("c1").unwrap();
+    assert!(modes.contains(&"auto".to_string()) && modes.contains(&"default".to_string()));
+    manager.set_mode("c1", "plan").await.unwrap();
+    ask(&manager, &sink, "mode").await;
+    assert_eq!(sink.texts(), vec!["mode plan".to_string()]);
+    manager.stop("c1").await.unwrap();
+}
+
+#[tokio::test]
+async fn auto_on_uses_the_agents_auto_mode() {
+    let ws = workspace();
+    let (manager, sink) = started("c1", &ws).await;
+    assert_eq!(manager.set_auto("c1", true).await.unwrap(), AutoMethod::Mode);
+    ask(&manager, &sink, "mode").await;
+    assert_eq!(sink.texts(), vec!["mode auto".to_string()]);
+    // Mode handles it, so Tayang doesn't approve on its own: the card still shows.
+    manager.prompt("c1", vec![PromptPart::Text("ask".into())]).await.unwrap();
+    let req = sink.wait_permission().await;
+    manager.respond_permission(&req.request_id, None).unwrap();
+    manager.stop("c1").await.unwrap();
+}
+
+#[tokio::test]
+async fn auto_off_restores_default_mode() {
+    let ws = workspace();
+    let (manager, sink) = started("c1", &ws).await;
+    manager.set_auto("c1", true).await.unwrap();
+    assert_eq!(manager.set_auto("c1", false).await.unwrap(), AutoMethod::Off);
+    ask(&manager, &sink, "mode").await;
+    assert_eq!(sink.texts(), vec!["mode default".to_string()]);
+    manager.stop("c1").await.unwrap();
+}
+
+#[tokio::test]
+async fn auto_falls_back_to_approving_when_auto_mode_is_missing() {
+    let ws = workspace();
+    let (manager, sink) = started_with_args("c1", &ws, &["--no-auto-mode"]).await;
+    assert_eq!(manager.set_auto("c1", true).await.unwrap(), AutoMethod::Approve);
+    ask(&manager, &sink, "ask").await;
+    assert!(sink.permissions.lock().unwrap().is_empty());
+    assert_eq!(sink.texts(), vec!["ran".to_string()]);
+    assert_eq!(ran_without_asking(&sink), vec!["Ran without asking: ls -la".to_string()]);
+    manager.stop("c1").await.unwrap();
+}
+
+#[tokio::test]
+async fn auto_falls_back_to_approving_when_set_mode_fails() {
+    let ws = workspace();
+    let (manager, sink) = started_with_args("c1", &ws, &["--bad-set-mode"]).await;
+    assert_eq!(manager.set_auto("c1", true).await.unwrap(), AutoMethod::Approve);
+    ask(&manager, &sink, "ask").await;
+    assert!(sink.permissions.lock().unwrap().is_empty());
+    assert_eq!(sink.texts(), vec!["ran".to_string()]);
+    assert!(manager.set_mode("c1", "plan").await.unwrap_err().0.contains("mode not allowed"));
+    manager.stop("c1").await.unwrap();
+}
+
+#[tokio::test]
+async fn auto_approve_without_allow_once_shows_the_normal_card() {
+    let ws = workspace();
+    let (manager, sink) = started_with_args("c1", &ws, &["--no-modes"]).await;
+    assert_eq!(manager.set_auto("c1", true).await.unwrap(), AutoMethod::Approve);
+    manager.prompt("c1", vec![PromptPart::Text("ask-reject-only".into())]).await.unwrap();
+    let req = sink.wait_permission().await;
+    assert_eq!(req.options.len(), 1);
+    assert!(ran_without_asking(&sink).is_empty());
+    manager.respond_permission(&req.request_id, None).unwrap();
+    sink.wait_finished().await;
+    assert_eq!(sink.texts(), vec!["denied".to_string()]);
+    manager.stop("c1").await.unwrap();
+}
+
+#[tokio::test]
+async fn turning_auto_off_restores_asking() {
+    let ws = workspace();
+    let (manager, sink) = started_with_args("c1", &ws, &["--no-modes"]).await;
+    manager.set_auto("c1", true).await.unwrap();
+    assert_eq!(manager.set_auto("c1", false).await.unwrap(), AutoMethod::Off);
+    manager.prompt("c1", vec![PromptPart::Text("ask".into())]).await.unwrap();
+    let req = sink.wait_permission().await;
+    assert!(ran_without_asking(&sink).is_empty());
+    manager.respond_permission(&req.request_id, Some(req.options[0].id.clone())).unwrap();
+    sink.wait_finished().await;
+    assert_eq!(sink.texts(), vec!["ran".to_string()]);
+    manager.stop("c1").await.unwrap();
+}
+
+#[tokio::test]
+async fn starting_with_auto_applies_it_before_the_first_prompt() {
+    let ws = workspace();
+    let manager = AcpManager::new();
+    let sink = Arc::new(RecordingSink::default());
+    let options = SessionOptions { auto: true, ..Default::default() };
+    manager.start_with("c1", &fake_agent(), &ws.cwd, sink.clone(), options).await.unwrap();
+    ask(&manager, &sink, "mode").await;
+    assert_eq!(sink.texts(), vec!["mode auto".to_string()]);
     manager.stop("c1").await.unwrap();
 }

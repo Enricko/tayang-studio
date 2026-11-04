@@ -391,7 +391,7 @@ pub fn wants_skills(chat_id: &str) -> bool {
 fn session_options(agent: AgentId, plugin: Option<&Path>, skills: bool) -> crate::acp::SessionOptions {
     let env = vec![("TAYANG_STUDIO".to_string(), "1".to_string())];
     if agent != AgentId::Claude || !skills {
-        return crate::acp::SessionOptions { meta: None, env };
+        return crate::acp::SessionOptions { meta: None, env, auto: false };
     }
     let mut meta = serde_json::json!({ "systemPrompt": { "append": TAYANG_APPEND } });
     if let Some(path) = plugin {
@@ -399,7 +399,7 @@ fn session_options(agent: AgentId, plugin: Option<&Path>, skills: bool) -> crate
             "options": { "plugins": [{ "type": "local", "path": path.to_string_lossy() }] }
         });
     }
-    crate::acp::SessionOptions { meta: Some(meta), env }
+    crate::acp::SessionOptions { meta: Some(meta), env, auto: false }
 }
 
 /// Starts the chat's agent. Resolves `true` when Claude started without the Tayang
@@ -411,6 +411,7 @@ pub async fn agent_start(
     state: State<'_, AppState>,
     chat_id: String,
     agent_id: AgentId,
+    auto: Option<bool>,
 ) -> CmdResult<bool> {
     let mut command = system::acp_command(agent_id)
         .ok_or("Pick an agent first: custom agents have no start command yet")?;
@@ -427,7 +428,8 @@ pub async fn agent_start(
     } else {
         None
     };
-    let options = session_options(agent_id, plugin.as_deref(), skills);
+    let mut options = session_options(agent_id, plugin.as_deref(), skills);
+    options.auto = wants_auto(&chat_id, auto.unwrap_or(false));
     let skills_as_text = skills && needs_skills_text(agent_id, plugin.as_deref());
     state
         .acp
@@ -435,6 +437,15 @@ pub async fn agent_start(
         .await
         .map_err(err)?;
     Ok(skills_as_text)
+}
+
+/// Style studies always run in auto mode; the install chat never does (installs need
+/// the user's approval); other chats follow the chat's Auto toggle.
+fn wants_auto(chat_id: &str, requested: bool) -> bool {
+    if chat_id == "setup" {
+        return false;
+    }
+    chat_id.starts_with("study-") || requested
 }
 
 /// Claude without the plugin has no skills unless the first prompt carries them.
@@ -711,6 +722,17 @@ pub async fn agent_prompt(
     state.acp.prompt(&chat_id, prompt).await.map_err(err)
 }
 
+/// Turns auto mode on or off for the chat's running agent. The setup chat can't.
+#[tauri::command]
+pub async fn agent_set_auto(
+    state: State<'_, AppState>,
+    chat_id: String,
+    on: bool,
+) -> CmdResult<()> {
+    let on = wants_auto(&chat_id, on);
+    state.acp.set_auto(&chat_id, on).await.map(|_| ()).map_err(err)
+}
+
 #[tauri::command]
 pub async fn agent_cancel(state: State<'_, AppState>, chat_id: String) -> CmdResult<()> {
     state.acp.cancel(&chat_id).await.map_err(err)
@@ -923,6 +945,18 @@ mod tests {
         assert!(!wants_skills("study-abc"));
         assert!(wants_skills("ideas-2026-11-04"));
         assert!(wants_skills("c1"));
+    }
+
+    #[test]
+    fn auto_mode_rules() {
+        assert!(wants_auto("study-abc", false));
+        assert!(!wants_auto("setup", true));
+        assert!(wants_auto("c1", true));
+        assert!(!wants_auto("c1", false));
+    }
+
+    #[test]
+    fn internal_sessions_get_no_meta_options() {
         let o = session_options(AgentId::Claude, Some(Path::new("/p")), false);
         assert!(o.meta.is_none());
         assert_eq!(o.env, vec![("TAYANG_STUDIO".to_string(), "1".to_string())]);

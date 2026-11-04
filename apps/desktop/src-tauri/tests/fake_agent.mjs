@@ -12,9 +12,15 @@
 //   fs-inside  -> writes then reads line 2 of notes/inside.txt, reports "read: <JSON content>"
 //   pids       -> starts a long-lived helper process, reports "pids <agent pid> <helper pid>"
 //   fail       -> session/prompt error -32603 "Internal error" with data.details "quota exceeded"
+//   ask        -> tool_call + session/request_permission (allow-once / reject-once) for
+//                 "ls -la"; reports "ran" when allowed, otherwise "denied"
+//   ask-reject-only -> same request with only a reject-once option; reports "ran" / "denied"
+//   mode       -> reports "mode <current mode id>"
 //   whoami     -> reports "whoami <JSON {meta, env}>": the session/new `_meta` and TAYANG_STUDIO
 //   any prompt with an image block -> text "image <mimeType> <data>"
 //
+// session/new reports `modes` (default, acceptEdits, plan, auto); --no-auto-mode leaves "auto"
+// out, --bad-set-mode makes session/set_mode fail, --no-modes omits `modes` altogether.
 // With the --hang argument, initialize is never answered.
 // With the --needs-auth argument, session/new fails with -32000 "Authentication required".
 import { createInterface } from "node:readline";
@@ -28,6 +34,7 @@ let sessionCwd = null;
 let sessionMeta = null;
 let cancelWaiter = null;
 let cancelled = false;
+let currentMode = "default";
 
 function send(msg) {
   process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...msg }) + "\n");
@@ -100,6 +107,24 @@ async function runPrompt(params) {
       text("skipped");
       return cancelled ? "cancelled" : "end_turn";
     }
+    case "ask":
+    case "ask-reject-only": {
+      const rawInput = { command: "ls -la" };
+      update({ sessionUpdate: "tool_call", toolCallId: "a1", title: "Run ls", kind: "execute", status: "pending", rawInput });
+      const options = [{ optionId: "reject", name: "Reject", kind: "reject_once" }];
+      if (prompt === "ask") options.unshift({ optionId: "allow", name: "Allow", kind: "allow_once" });
+      const res = await request("session/request_permission", {
+        sessionId,
+        toolCall: { toolCallId: "a1", title: "Run ls", rawInput },
+        options,
+      });
+      const outcome = res.result?.outcome;
+      text(outcome?.outcome === "selected" && outcome.optionId === "allow" ? "ran" : "denied");
+      return "end_turn";
+    }
+    case "mode":
+      text(`mode ${currentMode}`);
+      return "end_turn";
     case "crash":
       text("about to crash");
       setTimeout(() => process.exit(1), 50);
@@ -184,7 +209,27 @@ function handle(msg) {
       sessionCwd = params.cwd;
       sessionMeta = params._meta ?? null;
       sessionId = "sess-1";
-      send({ id, result: { sessionId } });
+      {
+        const result = { sessionId };
+        if (!process.argv.includes("--no-modes")) {
+          const ids = ["default", "acceptEdits", "plan", "auto"].filter(
+            (m) => m !== "auto" || !process.argv.includes("--no-auto-mode"),
+          );
+          result.modes = {
+            currentModeId: "default",
+            availableModes: ids.map((id) => ({ id, name: id })),
+          };
+        }
+        send({ id, result });
+      }
+      return;
+    case "session/set_mode":
+      if (process.argv.includes("--bad-set-mode") || typeof params?.modeId !== "string") {
+        send({ id, error: { code: -32602, message: "mode not allowed" } });
+        return;
+      }
+      currentMode = params.modeId;
+      send({ id, result: {} });
       return;
     case "session/prompt":
       if (params?.sessionId !== sessionId) {

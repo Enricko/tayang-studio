@@ -70,6 +70,7 @@ pub fn run() {
             commands::attach_file,
             commands::agent_start,
             commands::agent_prompt,
+            commands::agent_set_auto,
             commands::agent_cancel,
             commands::agent_stop,
             commands::agent_respond_permission,
