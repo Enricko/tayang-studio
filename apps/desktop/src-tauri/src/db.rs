@@ -1038,6 +1038,7 @@ mod tests {
             name: Some("Ana".into()),
             plan: "pro".into(),
             features: vec!["voiceover".into()],
+            credits: 310,
         };
         assert_eq!(db.auth_account("api:https://studio.tayang.app/api"), None);
         db.set_auth_account("api:https://studio.tayang.app/api", Some(&a)).unwrap();

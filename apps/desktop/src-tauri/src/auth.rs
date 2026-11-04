@@ -1046,7 +1046,7 @@ pub(crate) mod tests {
 
     pub(crate) const DEVICE: &str = r#"{"deviceCode":"dev-secret","userCode":"ABCD-EFGH","verificationUri":"http://x/api/auth/device","verificationUriComplete":"http://x/api/auth/device?code=ABCD-EFGH","expiresIn":600,"interval":1}"#;
     pub(crate) const ISSUED: &str = r#"{"token":"tyg_abc","account":{"id":"acc_1","email":"a@b.c","name":"Ana","plan":"free","features":[]}}"#;
-    pub(crate) const ME: &str = r#"{"id":"acc_1","email":"a@b.c","name":"Ana","plan":"pro","features":["voiceover"]}"#;
+    pub(crate) const ME: &str = r#"{"id":"acc_1","email":"a@b.c","name":"Ana","plan":"pro","features":["voiceover"],"credits":310}"#;
     pub(crate) fn err(code: &str) -> (u16, String) {
         (400, format!(r#"{{"error":"{code}"}}"#))
     }
@@ -1155,7 +1155,7 @@ pub(crate) mod tests {
         let c = http_client().unwrap();
         let f = fake(|r, _| if r.auth.as_deref() == Some("Bearer tyg_ok") { (200, ME.into()) } else { (401, r#"{"error":"unauthorized"}"#.into()) }).await;
         let Me::Account(a) = fetch_me(&c, &f.base, "tyg_ok").await else { panic!("expected the account") };
-        assert_eq!((a.plan.as_str(), a.features.as_slice()), ("pro", ["voiceover".to_string()].as_slice()));
+        assert_eq!((a.plan.as_str(), a.features.as_slice(), a.credits), ("pro", ["voiceover".to_string()].as_slice(), 310));
         assert_eq!(f.hits("/api/v1/me")[0].method, "GET");
         assert!(matches!(fetch_me(&c, &f.base, "tyg_old").await, Me::Unauthorized));
         let f = fake(|_, _| (503, "{}".into())).await;
@@ -1221,7 +1221,7 @@ pub(crate) mod tests {
     }
 
     fn account(plan: &str) -> Account {
-        Account { id: "acc_1".into(), email: Some("a@b.c".into()), name: Some("Ana".into()), plan: plan.into(), features: vec![] }
+        Account { id: "acc_1".into(), email: Some("a@b.c".into()), name: Some("Ana".into()), plan: plan.into(), features: vec![], credits: 0 }
     }
 
     fn key(base: &str) -> String {

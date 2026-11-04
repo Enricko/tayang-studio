@@ -749,6 +749,9 @@ pub struct Account {
     pub plan: String,
     #[serde(default)]
     pub features: Vec<String>,
+    /// AI credits a month that come with the plan. Missing in accounts cached before credits existed.
+    #[serde(default)]
+    pub credits: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
