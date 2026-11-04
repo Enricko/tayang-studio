@@ -492,8 +492,9 @@ pub fn build_prompt(
                     .file_name()
                     .map(|f| format!("attachments/{}", f.to_string_lossy()))
                     .unwrap_or_else(|| name.clone());
+                let inline = is_image_name(name) && *size <= MAX_IMAGE_BLOCK;
                 let size = human_size(*size);
-                if is_image_name(name) {
+                if inline {
                     out.push(PromptPart::Image { path: PathBuf::from(path) });
                     out.push(PromptPart::Text(format!("Attached image: {rel} ({name}, {size})")));
                 } else {
@@ -510,6 +511,8 @@ pub fn build_prompt(
 }
 
 pub const MAX_ATTACHMENT: u64 = 50 * 1024 * 1024;
+/// Larger images go to the agent as the "Attached file" line: agents refuse big inline images.
+pub const MAX_IMAGE_BLOCK: u64 = 5 * 1024 * 1024;
 
 /// Mime type from the file extension; unknown ones are generic binary.
 fn mime_for(name: &str) -> &'static str {
@@ -535,11 +538,9 @@ fn mime_for(name: &str) -> &'static str {
     }
 }
 
+/// Images the agent gets as an image block (the types ACP's `image_block` sends). A gif is a file.
 fn is_image_name(name: &str) -> bool {
-    matches!(
-        mime_for(name),
-        "image/png" | "image/jpeg" | "image/webp" | "image/gif"
-    )
+    matches!(mime_for(name), "image/png" | "image/jpeg" | "image/webp")
 }
 
 fn human_size(bytes: u64) -> String {
@@ -1190,6 +1191,26 @@ mod tests {
                 ),
             ]
         );
+    }
+
+    #[test]
+    fn gifs_and_big_images_are_sent_as_file_lines() {
+        let file = |name: &str, size: u64| MessagePart::File {
+            path: format!("/w/c/attachments/{name}"),
+            name: name.into(),
+            mime: mime_for(name).into(),
+            size,
+        };
+        let parts = vec![
+            file("loop.gif", 10),
+            file("big.jpg", MAX_IMAGE_BLOCK + 1),
+            file("edge.webp", MAX_IMAGE_BLOCK),
+        ];
+        let out = build_prompt(&parts, 30, |_| None, |_| None);
+        assert_eq!(out[0], PromptPart::Text("Attached file: attachments/loop.gif (loop.gif, 10 B)".into()));
+        assert_eq!(out[1], PromptPart::Text("Attached file: attachments/big.jpg (big.jpg, 5.0 MB)".into()));
+        assert_eq!(out[2], PromptPart::Image { path: PathBuf::from("/w/c/attachments/edge.webp") });
+        assert_eq!(out.len(), 4);
     }
 
     #[test]
