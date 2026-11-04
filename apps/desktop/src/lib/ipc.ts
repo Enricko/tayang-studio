@@ -62,6 +62,9 @@ export const deleteStyle = (id: string) => invoke<void>('delete_style', { id });
 export const readStyleResult = (studyId: string) =>
   invoke<string | null>('read_style_result', { studyId });
 export const studyDir = (studyId: string) => invoke<string>('study_dir', { studyId });
+/** Cuts a short silent clip and a poster from the study's downloaded video, then deletes that video. */
+export const makeStylePreview = (studyId: string, styleId: string) =>
+  invoke<{ previewPath: string | null; posterPath: string } | null>('make_style_preview', { studyId, styleId });
 
 // ---- jobs ----
 export const listJobs = () => invoke<Job[]>('list_jobs');

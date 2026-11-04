@@ -74,8 +74,8 @@ function sourceLabel(s: StyleT): string {
 function StudyBox() {
   const study = useStudy();
   const agent = useApp((s) => s.settings?.defaultAgent) ?? 'claude';
-  const steps = ['Downloaded', 'Frames sampled', 'Reading camera, pacing and type', 'Writing the style prompt'];
-  const active = Math.min(study.toolCalls, steps.length - 1);
+  const steps = ['Downloaded', 'Frames sampled', 'Reading camera, pacing and type', 'Writing the style prompt', 'Making a preview'];
+  const active = study.finishing ? steps.length - 1 : Math.min(study.toolCalls, steps.length - 2);
 
   if (study.phase === 'idle') return null;
   if (study.phase === 'failed')

@@ -7,7 +7,9 @@ import {
   agentRespondPermission,
   agentStart,
   agentStop,
+  assetUrl,
   deleteJob,
+  makeStylePreview,
   readStyleResult,
   saveStyle,
   studyDir,
@@ -31,6 +33,8 @@ interface StudyState {
   /** Requests that arrived while `request` was open, oldest first. */
   queue: PermissionRequest[];
   error: string | null;
+  /** True while the finished study's preview is being made. */
+  finishing: boolean;
   /** Bumped when a style was saved so the library reloads. */
   savedVersion: number;
   /** `replaceJobId`: a failed study's job, deleted once this study's own job is written. */
@@ -110,7 +114,7 @@ export const useStudy = create<StudyState>((set, get) => {
   const fail = async (message: string) => {
     dropRequests();
     stopAgent();
-    set({ phase: 'failed', error: message });
+    set({ phase: 'failed', finishing: false, error: message });
     if (await writeJob('failed', message)) await dropStaleJob();
   };
 
@@ -123,8 +127,23 @@ export const useStudy = create<StudyState>((set, get) => {
       const raw = await readStyleResult(studyId);
       const parsed = raw ? parseStyleResult(raw, url) : null;
       if (!parsed) return fail('The agent did not write a style Tayang could read. Try another video.');
-      await saveStyle({ ...parsed, id: `copied-${studyId}`, createdAt: new Date().toISOString() });
-      set((s) => ({ phase: 'done', request: null, error: null, savedVersion: s.savedVersion + 1 }));
+      const style = { ...parsed, id: `copied-${studyId}`, createdAt: new Date().toISOString() };
+      await saveStyle(style);
+      // A short silent preview from the downloaded video. Never fails the study.
+      set({ finishing: true });
+      try {
+        const made = await makeStylePreview(studyId, style.id);
+        if (made) {
+          await saveStyle({
+            ...style,
+            previewUrl: assetUrl(made.posterPath),
+            previewVideoUrl: made.previewPath ? assetUrl(made.previewPath) : null,
+          });
+        }
+      } catch {
+        /* the style is saved without a preview */
+      }
+      set((s) => ({ phase: 'done', finishing: false, request: null, error: null, savedVersion: s.savedVersion + 1 }));
       await writeJob('done', parsed.name);
     } catch (e) {
       await fail(e instanceof Error ? e.message : String(e));
@@ -162,13 +181,14 @@ export const useStudy = create<StudyState>((set, get) => {
     request: null,
     queue: [],
     error: null,
+    finishing: false,
     savedVersion: 0,
 
     async start(url, agentId, replaceJobId) {
       if (get().phase === 'running') return;
       agent = agentId;
       const studyId = newId();
-      set({ phase: 'running', url, studyId, toolCalls: 0, ranLog: [], request: null, queue: [], error: null });
+      set({ phase: 'running', finishing: false, url, studyId, toolCalls: 0, ranLog: [], request: null, queue: [], error: null });
       staleJobId = replaceJobId ?? null;
       listen();
       try {

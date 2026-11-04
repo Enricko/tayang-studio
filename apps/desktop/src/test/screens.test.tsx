@@ -14,6 +14,8 @@ vi.mock('@/lib/ipc', () => ({
   deleteStyle: vi.fn(),
   readStyleResult: vi.fn(),
   studyDir: vi.fn(),
+  makeStylePreview: vi.fn(),
+  assetUrl: vi.fn((p: string) => `asset://localhost/${p}`),
   listJobs: vi.fn(),
   upsertJob: vi.fn(),
   deleteJob: vi.fn().mockResolvedValue(undefined),
@@ -639,6 +641,62 @@ describe('Style popup', () => {
     render(<Style />);
     const dialog = await openCard('Atlas journey');
     expect(within(dialog).queryByRole('button', { name: 'Delete' })).toBeNull();
+  });
+});
+
+describe('Study preview', () => {
+  const good = JSON.stringify({ name: 'Zoom cut', notes: { camera: 'Punch-in' }, prompt: 'Cut on every beat' });
+  const runStudy = async () => {
+    vi.mocked(ipc.studyDir).mockResolvedValue('/w/s');
+    vi.mocked(ipc.readStyleResult).mockResolvedValue(good);
+    vi.mocked(ipc.saveStyle).mockClear();
+    vi.mocked(ipc.upsertJob).mockClear();
+    vi.mocked(ipc.agentPrompt).mockClear();
+    const view = render(<Style />);
+    await userEvent.type(screen.getByLabelText('Video link'), 'https://youtu.be/abc');
+    await userEvent.click(screen.getByRole('button', { name: 'Study video' }));
+    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
+    const chatId = vi.mocked(ipc.agentPrompt).mock.calls[0]![0];
+    updateHandlers.forEach((h) => h({ chatId, update: { kind: 'done', stopReason: 'end_turn' } }));
+    await waitFor(() => expect(vi.mocked(ipc.upsertJob).mock.calls.at(-1)![0].status).toBe('done'));
+    return { view, chatId };
+  };
+
+  it('makes the preview after saving and re-saves the style with the asset URLs', async () => {
+    vi.mocked(ipc.makeStylePreview).mockResolvedValue({ previewPath: '/data/style-media/x/preview.mp4', posterPath: '/data/style-media/x/poster.jpg' });
+    const { view } = await runStudy();
+    const studyId = useStudy.getState().studyId!;
+    expect(ipc.makeStylePreview).toHaveBeenCalledWith(studyId, `copied-${studyId}`);
+    expect(ipc.saveStyle).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(ipc.saveStyle).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(ipc.makeStylePreview).mock.invocationCallOrder[0]!);
+    expect(vi.mocked(ipc.saveStyle).mock.calls[1]![0]).toMatchObject({
+      id: `copied-${studyId}`,
+      previewUrl: 'asset://localhost//data/style-media/x/poster.jpg',
+      previewVideoUrl: 'asset://localhost//data/style-media/x/preview.mp4',
+    });
+    view.unmount();
+    useStudy.getState().dismiss();
+  });
+
+  it('keeps only the poster when the clip was too big', async () => {
+    vi.mocked(ipc.makeStylePreview).mockResolvedValue({ previewPath: null, posterPath: '/d/poster.jpg' });
+    const { view } = await runStudy();
+    expect(vi.mocked(ipc.saveStyle).mock.calls[1]![0]).toMatchObject({ previewUrl: 'asset://localhost//d/poster.jpg' });
+    expect(vi.mocked(ipc.saveStyle).mock.calls[1]![0].previewVideoUrl).toBeFalsy();
+    view.unmount();
+    useStudy.getState().dismiss();
+  });
+
+  it('a failing or empty preview never fails the study', async () => {
+    for (const result of [() => Promise.reject(new Error('ffmpeg missing')), () => Promise.resolve(null)]) {
+      vi.mocked(ipc.makeStylePreview).mockImplementation(result);
+      const { view } = await runStudy();
+      expect(useStudy.getState().phase).toBe('done');
+      expect(ipc.saveStyle).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(ipc.saveStyle).mock.calls[0]![0]).toMatchObject({ name: 'Zoom cut', source: 'copied' });
+      view.unmount();
+      useStudy.getState().dismiss();
+    }
   });
 });
 
