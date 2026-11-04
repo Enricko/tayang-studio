@@ -490,6 +490,14 @@ export const en = {
         cantSave: "Couldn't save the autopilot. Try again",
       },
     },
+    slot: {
+      stopped: 'Stopped',
+      noTopic: "The agent didn't suggest a topic Tayang could use",
+      noRender: 'No video file was rendered',
+      timedOut: 'The agent took longer than 45 minutes, so Tayang stopped it',
+      buildMessage: 'Make "{{title}}", about {{seconds}} seconds, and render it',
+      renderNowMessage: 'Render it now',
+    },
   },
   preview: {
     rendering: 'Rendering…',

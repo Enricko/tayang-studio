@@ -485,6 +485,14 @@ export const id: Translations = {
         cantSave: 'Autopilot belum bisa disimpan. Coba lagi',
       },
     },
+    slot: {
+      stopped: 'Dihentikan',
+      noTopic: 'Agen belum memberi topik yang bisa dipakai Tayang',
+      noRender: 'Tidak ada file video yang dirender',
+      timedOut: 'Agen bekerja lebih dari 45 menit, jadi Tayang menghentikannya',
+      buildMessage: 'Buat "{{title}}", sekitar {{seconds}} detik, lalu render',
+      renderNowMessage: 'Render sekarang',
+    },
   },
   preview: {
     rendering: 'Merender…',

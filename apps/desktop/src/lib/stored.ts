@@ -25,6 +25,10 @@ export const STORED_KEYS = [
   'chat.templateFilesMissing',
   'chat.settingTemplate',
   'chat.templateFailed',
+  'autopilot.slot.stopped',
+  'autopilot.slot.noTopic',
+  'autopilot.slot.noRender',
+  'autopilot.slot.timedOut',
 ] as const;
 export type StoredKey = (typeof STORED_KEYS)[number];
 
