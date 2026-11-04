@@ -1,4 +1,4 @@
-import type { Chat, MessagePart, Project, Settings, Style, VideoKind } from '@tayang/shared';
+import type { Chat, MessagePart, NewProject, Project, Settings, Style, VideoKind } from '@tayang/shared';
 import { buildProjectBrief, SKIP_FRAME_CHECK, splitTopicJson, topicIdeaFromAction } from '@tayang/skills';
 import { extractA2ui } from '@/a2ui/parse';
 import { createChat, createProject, installStyleTemplate, listStyles, syncStyles, writeBrief } from '@/lib/ipc';
@@ -47,6 +47,43 @@ export interface TopicProjectOpts {
   onStatus?: (text: string) => void;
 }
 
+/** What `createProject` takes for a new video, and the not-yet-saved project its brief is written from. */
+function projectDraft(title: string, kind: VideoKind, settings: Pick<Settings, 'format' | 'language'>, style: Style | null) {
+  const input: NewProject = {
+    title,
+    kind,
+    format: settings.format,
+    language: settings.language,
+    ...(style ? { styleId: style.id } : {}),
+  };
+  const draft: Project = {
+    id: '',
+    slug: '',
+    folder: '',
+    status: 'draft',
+    styleId: style?.id ?? null,
+    scheduledAt: null, reviewState: 'none', postedAt: null, remindedAt: null, reviewRemindedAt: null,
+    durationSec: null,
+    createdAt: '',
+    updatedAt: '',
+    ...input,
+  };
+  return { input, draft };
+}
+
+/**
+ * A draft video with the plain brief and no chat or agent turn (a schedule the agent proposed names
+ * topics that aren't made yet). Its chat is created when the user opens it.
+ */
+export async function createDraftProject(
+  title: string,
+  kind: VideoKind,
+  settings: Pick<Settings, 'format' | 'language' | 'fps' | 'frameCheck'>,
+): Promise<Project> {
+  const { input, draft } = projectDraft(title, kind, settings, null);
+  return createProject(input, buildProjectBrief(draft, null, settings));
+}
+
 /**
  * Creates the project and its chat for a picked idea and sets up the style's template when it has one.
  * It neither opens the chat nor sends anything: `startTopic` does that for the screens, the autopilot
@@ -79,25 +116,7 @@ export async function createTopicProject(idea: TopicIdea, opts: TopicProjectOpts
       styleProblem = e instanceof Error ? e.message : String(e);
     }
   }
-  const input = {
-    title: idea.title,
-    kind: idea.kind,
-    format: settings.format,
-    language: settings.language,
-    ...(style ? { styleId: style.id } : {}),
-  };
-  const draft: Project = {
-    id: '',
-    slug: '',
-    folder: '',
-    status: 'draft',
-    styleId: style?.id ?? null,
-    scheduledAt: null, reviewState: 'none', postedAt: null, remindedAt: null, reviewRemindedAt: null,
-    durationSec: null,
-    createdAt: '',
-    updatedAt: '',
-    ...input,
-  };
+  const { input, draft } = projectDraft(idea.title, idea.kind, settings, style);
   const project = await createProject(input, buildProjectBrief(draft, style, settings));
   useApp.getState().bumpProjects();
   const chat = await createChat(project.id, agent, idea.title);
