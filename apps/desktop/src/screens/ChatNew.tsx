@@ -125,6 +125,7 @@ export function ChatNew() {
       const style = styles.find((s) => s.id === p.styleId) ?? null;
       out.push({
         type: 'text',
+        // i18n-ignore: this goes to the agent, not the user
         text: `The user attached the video "${p.title}". Its project folder is ${p.folder}.\n\n${buildProjectBrief(p, style, settings)}`,
       });
     }

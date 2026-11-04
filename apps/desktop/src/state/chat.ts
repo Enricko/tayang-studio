@@ -381,6 +381,7 @@ export const useChat = create<ChatState>((set, get) => {
         }
         const recap = pendingRecap.get(chatId);
         if (recap) {
+          // i18n-ignore: this goes to the agent, not the user
           lead.push({ type: 'text', text: `Earlier in this chat, with another agent:\n${recap}\n\nContinue from here.` });
         }
         await agentPrompt(chatId, [...lead, ...sent]);
