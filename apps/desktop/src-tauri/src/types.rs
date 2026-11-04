@@ -180,6 +180,12 @@ pub enum MessagePart {
         project_id: String,
         title: String,
     },
+    File {
+        path: String,
+        name: String,
+        mime: String,
+        size: u64,
+    },
     Frame {
         project_id: String,
         frame: u32,
@@ -374,6 +380,15 @@ mod tests {
             "imagePath":"/x.png","marks":[{"x":0.5,"y":0.25}]});
         let part: MessagePart = serde_json::from_value(v.clone()).unwrap();
         assert!(matches!(&part, MessagePart::Frame { frame: 12, .. }));
+        assert_eq!(serde_json::to_value(&part).unwrap(), v);
+    }
+
+    #[test]
+    fn message_part_file_round_trips() {
+        let v = json!({"type":"file","path":"/w/attachments/a.pdf","name":"a.pdf",
+            "mime":"application/pdf","size":2048});
+        let part: MessagePart = serde_json::from_value(v.clone()).unwrap();
+        assert!(matches!(&part, MessagePart::File { size: 2048, .. }));
         assert_eq!(serde_json::to_value(&part).unwrap(), v);
     }
 

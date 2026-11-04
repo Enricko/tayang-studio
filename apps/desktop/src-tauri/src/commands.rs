@@ -434,6 +434,7 @@ pub fn build_prompt(
                     format_timecode(*time_sec, fps)
                 )));
             }
+            MessagePart::File { .. } => {}
             MessagePart::Tool { .. } => {}
         }
     }

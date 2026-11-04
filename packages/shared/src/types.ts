@@ -76,6 +76,7 @@ export interface Mark {
 export type MessagePart =
   | { type: 'text'; text: string }
   | { type: 'mention'; projectId: string; title: string }
+  | { type: 'file'; path: string; name: string; mime: string; size: number }
   | {
       type: 'frame';
       projectId: string;
