@@ -15,6 +15,7 @@ import {
   manualInstallUrl,
   needsSudo,
   parseStyleResult,
+  parseStarterTemplate,
   parseTopicIdeas,
   topicIdeaFromAction,
   splitTopicJson,
@@ -166,6 +167,22 @@ describe('style', () => {
     expect(p).toContain('Copy the look, never the footage');
     expect(buildStudyStylePrompt('https://v', 'C:\\Users\\a b\\x')).toContain('-o "C:\\Users\\a b\\x\\source.%(ext)s"');
   });
+  it('study prompt asks for the closest starter template from the list it is given', () => {
+    const p = buildStudyStylePrompt('https://v', '/out', [
+      { id: 'cartoon-3d-world', name: 'Cartoon 3D world' },
+      { id: 'atlas-journey', name: 'Atlas journey' },
+    ]);
+    expect(p).toContain('"starterTemplate"');
+    expect(p).toContain('cartoon-3d-world (Cartoon 3D world)');
+    expect(p).toContain('atlas-journey (Atlas journey)');
+    expect(buildStudyStylePrompt('https://v', '/out')).not.toContain('starterTemplate');
+  });
+  it('parseStarterTemplate reads only a non-empty string', () => {
+    expect(parseStarterTemplate(JSON.stringify({ starterTemplate: 'cartoon-3d-world' }))).toBe('cartoon-3d-world');
+    expect(parseStarterTemplate(JSON.stringify({ starterTemplate: '' }))).toBeNull();
+    expect(parseStarterTemplate(JSON.stringify({ name: 'x' }))).toBeNull();
+    expect(parseStarterTemplate('nope')).toBeNull();
+  });
   it('study prompt quotes folders with spaces', () => {
     const p = buildStudyStylePrompt('https://v', '/Users/a b/Tayang/.tayang/style-study/x');
     expect(p).toContain('into the folder `"/Users/a b/Tayang/.tayang/style-study/x"`');
@@ -203,6 +220,14 @@ describe('brief', () => {
     expect(b).not.toContain('Use HyperFrames');
     expect(b).toContain('Follow STYLE.md for the toolchain; install and render with the commands in tayang.json.');
     expect(buildProjectBrief(project, STYLE, { fps: 30, frameCheck: false })).not.toContain('template');
+  });
+
+  it('a copied style on a starter template keeps its own look over the template\'s', () => {
+    const project = { title: 'Krakatoa', kind: 'explainer', format: '9:16', language: 'en' } as Project;
+    const onTemplate: Style = { ...STYLE, basedOn: 'cartoon-3d-world', template: { sha256: 'a', size: 1, version: 2 } };
+    const b = buildProjectBrief(project, onTemplate, { fps: 30, frameCheck: false });
+    expect(b).toContain('This project starts from the cartoon-3d-world starter template');
+    expect(b).toContain('the style above wins where they differ');
   });
   it('contains style prompt and Frames checked', () => {
     const project = { title: 'Promo', kind: 'promo', format: '9:16', language: 'id' } as Project;

@@ -144,7 +144,13 @@ export function parseTopicIdeas(agentText: string): { title: string; kind: Video
   }
 }
 
-export function buildStudyStylePrompt(url: string, outDir: string): string {
+/** A built-in style with a starter template: the engine a copied style can be built on. */
+export interface StarterTemplate {
+  id: string;
+  name: string;
+}
+
+export function buildStudyStylePrompt(url: string, outDir: string, templates: StarterTemplate[] = []): string {
   // Paths are in backticks and quoted for the shell: the folder can contain spaces.
   const sep = outDir.includes('\\') && !outDir.includes('/') ? '\\' : '/';
   const base = outDir.replace(/[\\/]+$/, '');
@@ -157,6 +163,13 @@ export function buildStudyStylePrompt(url: string, outDir: string): string {
     '3. Look at the frames and describe the camera, pacing, type, color, captions and transitions.',
     `4. Write \`"${stylePath}"\` as: { "name": string, "notes": { "camera": string, "pacing": string, "type": string, "color": string, "captions": string, "transitions": string }, "prompt": string }.`,
     '   "name" is a short style name. "prompt" is a few short lines of direct instructions another agent can follow to recreate the look with HyperFrames.',
+    ...(templates.length
+      ? [
+          '   Also add "starterTemplate": the id of the starter template whose engine fits this look best, or "" when none fits. A starter template is a working project (engine, rig, render pipeline) that a new video is built on; the style notes still decide the look. Choose from:',
+          ...templates.map((t) => `   - ${t.id} (${t.name})${STYLE_FIT[t.id] ? `: ${STYLE_FIT[t.id]}` : ''}`),
+          '   Pick a 3D cartoon template only for 3D or cartoon looks, a map template only for map looks; otherwise "".',
+        ]
+      : []),
     '5. Delete the frames. Leave source.* in place; Tayang makes a short preview from it and then deletes it.',
     'Copy the look, never the footage: no text, logos, music or clips from the source in the prompt.',
   ].join('\n');
@@ -176,6 +189,18 @@ export function parseStyleResult(json: string, url: string): Omit<Style, 'id' | 
       if (typeof v === 'string' && v.trim()) notes[a] = v;
     }
     return { name: o.name, source: 'copied', sourceUrl: url, notes, prompt: o.prompt };
+  } catch {
+    return null;
+  }
+}
+
+/** The starter template id a study wrote into style.json, or null. Checked against real templates by the caller. */
+export function parseStarterTemplate(json: string): string | null {
+  try {
+    const d: unknown = JSON.parse(json);
+    if (!d || typeof d !== 'object') return null;
+    const t = (d as Record<string, unknown>).starterTemplate;
+    return typeof t === 'string' && t.trim() ? t.trim() : null;
   } catch {
     return null;
   }

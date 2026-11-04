@@ -57,7 +57,9 @@ export function buildProjectBrief(
     ...(style?.template
       ? [
           '',
-          `This project starts from the ${style.name} template. Read STYLE.md first, then run the install command in tayang.json once. Render with the command in tayang.json.`,
+          style.basedOn && style.basedOn !== style.id && style.source !== 'builtin'
+            ? `This project starts from the ${style.basedOn} starter template. Its STYLE.md describes the engine and its own base look: read it first, then run the install command in tayang.json once and render with the command in tayang.json. Build on that engine, but the style above wins where they differ (characters, colours, camera, captions).`
+            : `This project starts from the ${style.name} template. Read STYLE.md first, then run the install command in tayang.json once. Render with the command in tayang.json.`,
         ]
       : []),
     '',
