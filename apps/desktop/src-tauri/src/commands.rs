@@ -4,10 +4,11 @@ use crate::db::Db;
 use crate::media::MediaTools;
 use crate::system::{self, RealExec};
 use crate::types::*;
-use crate::acp::AcpManager;
+use crate::acp::{AcpManager, AcpSink, PromptPart};
 use crate::projects;
 use std::path::{Path, PathBuf};
-use tauri::{AppHandle, State};
+use std::sync::Arc;
+use tauri::{AppHandle, Emitter, State};
 use tauri_plugin_dialog::DialogExt;
 
 pub type CmdResult<T> = Result<T, String>;
@@ -227,4 +228,260 @@ pub fn list_jobs(state: State<'_, AppState>) -> CmdResult<Vec<Job>> {
 #[tauri::command]
 pub fn upsert_job(state: State<'_, AppState>, job: Job) -> CmdResult<()> {
     state.db.upsert_job(&job).map_err(err)
+}
+
+// ---- agent ----
+
+struct TauriSink(AppHandle);
+
+impl AcpSink for TauriSink {
+    fn update(&self, chat_id: &str, u: AgentUpdate) {
+        let _ = self.0.emit("agent://update", serde_json::json!({ "chatId": chat_id, "update": u }));
+    }
+
+    fn permission(&self, req: PermissionRequest) {
+        let _ = self.0.emit("agent://permission", req);
+    }
+}
+
+/// A chat id that is safe to use as a single folder name.
+fn safe_segment(s: &str) -> bool {
+    !s.is_empty() && s != "." && s != ".." && !s.contains(['/', '\\'])
+}
+
+/// Where this chat's agent runs. Always inside `working`.
+/// `project_folder` is the folder of the chat's project, when it has one.
+pub fn resolve_cwd(
+    working: &Path,
+    chat_id: &str,
+    project_folder: Option<&Path>,
+) -> CmdResult<PathBuf> {
+    let cwd = if let Some(folder) = project_folder {
+        folder.to_path_buf()
+    } else if chat_id == "setup" {
+        working.join(".tayang").join("setup")
+    } else if let Some(rest) = chat_id.strip_prefix("study-") {
+        if !safe_segment(rest) {
+            return Err("That chat isn't valid".into());
+        }
+        working.join(".tayang").join("style-study").join(rest)
+    } else {
+        if !safe_segment(chat_id) {
+            return Err("That chat isn't valid".into());
+        }
+        working.join(".tayang").join("chats").join(chat_id)
+    };
+    std::fs::create_dir_all(working).map_err(|e| format!("Can't create the working folder: {e}"))?;
+    if !projects::ensure_inside(working, &cwd) {
+        return Err("The agent can only work inside your working folder".into());
+    }
+    std::fs::create_dir_all(&cwd).map_err(|e| format!("Can't create {}: {e}", cwd.display()))?;
+    Ok(cwd)
+}
+
+fn project_folder_for_chat(state: &AppState, chat_id: &str) -> CmdResult<Option<PathBuf>> {
+    let chat = state
+        .db
+        .list_chats(None)
+        .map_err(err)?
+        .into_iter()
+        .find(|c| c.id == chat_id);
+    let Some(project_id) = chat.and_then(|c| c.project_id) else {
+        return Ok(None);
+    };
+    let project = state
+        .db
+        .get_project(&project_id)
+        .map_err(err)?
+        .ok_or("This chat's project no longer exists")?;
+    Ok(Some(PathBuf::from(project.folder)))
+}
+
+#[tauri::command]
+pub async fn agent_start(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    chat_id: String,
+    agent_id: AgentId,
+) -> CmdResult<()> {
+    let mut command = system::acp_command(agent_id)
+        .ok_or("Pick an agent first: custom agents have no start command yet")?;
+    let program = command[0].clone();
+    let found = system::Exec::which(&RealExec, &program)
+        .ok_or_else(|| format!("Can't find {program} on this computer"))?;
+    command[0] = found.to_string_lossy().into_owned();
+    let folder = project_folder_for_chat(&state, &chat_id)?;
+    let cwd = resolve_cwd(&state.working(), &chat_id, folder.as_deref())?;
+    state
+        .acp
+        .start(&chat_id, &command, &cwd, Arc::new(TauriSink(app)))
+        .await
+        .map_err(err)
+}
+
+/// m:ss.cc, same as `formatTimecode` in `@tayang/shared`.
+pub fn format_timecode(sec: f64, fps: u32) -> String {
+    let fps = fps.max(1);
+    let total = sec.max(0.0);
+    let whole = total.floor();
+    let frame = (((total - whole) * fps as f64).round() as u32).min(fps - 1);
+    let cc = (frame as f64 / fps as f64 * 100.0).floor() as u32;
+    let whole = whole as u64;
+    format!("{}:{:02}.{:02}", whole / 60, whole % 60, cc)
+}
+
+/// Turns chat parts into what the agent sees. Tool parts are skipped.
+pub fn build_prompt(
+    parts: &[MessagePart],
+    fps: u32,
+    project: impl Fn(&str) -> Option<Project>,
+) -> Vec<PromptPart> {
+    let mut out = Vec::new();
+    for part in parts {
+        match part {
+            MessagePart::Text { text } => out.push(PromptPart::Text(text.clone())),
+            MessagePart::Mention { project_id, title } => {
+                let (title, folder) = match project(project_id) {
+                    Some(p) => (p.title, p.folder),
+                    None => (title.clone(), String::new()),
+                };
+                out.push(PromptPart::Text(format!(
+                    "Context: video project \"{title}\" in folder {folder} (read its AGENTS.md first)."
+                )));
+            }
+            MessagePart::Frame { project_id, frame, time_sec, image_path, marks } => {
+                let title = project(project_id).map(|p| p.title).unwrap_or_default();
+                let marks = if marks.is_empty() {
+                    "none".to_string()
+                } else {
+                    marks
+                        .iter()
+                        .map(|m| format!("({:.2}, {:.2})", m.x, m.y))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                };
+                out.push(PromptPart::Image { path: PathBuf::from(image_path) });
+                out.push(PromptPart::Text(format!(
+                    "Frame {frame} at {} of {title}. Marks (x,y relative): {marks}",
+                    format_timecode(*time_sec, fps)
+                )));
+            }
+            MessagePart::Tool { .. } => {}
+        }
+    }
+    out
+}
+
+#[tauri::command]
+pub async fn agent_prompt(
+    state: State<'_, AppState>,
+    chat_id: String,
+    parts: Vec<MessagePart>,
+) -> CmdResult<()> {
+    let fps = state.db.get_settings(&state.home).fps;
+    let prompt = build_prompt(&parts, fps, |id| state.db.get_project(id).ok().flatten());
+    state.acp.prompt(&chat_id, prompt).await.map_err(err)
+}
+
+#[tauri::command]
+pub async fn agent_cancel(state: State<'_, AppState>, chat_id: String) -> CmdResult<()> {
+    state.acp.cancel(&chat_id).await.map_err(err)
+}
+
+#[tauri::command]
+pub fn agent_respond_permission(
+    state: State<'_, AppState>,
+    request_id: String,
+    option_id: Option<String>,
+) -> CmdResult<()> {
+    state.acp.respond_permission(&request_id, option_id).map_err(err)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn timecode_matches_ts() {
+        assert_eq!(format_timecode(0.0, 30), "0:00.00");
+        assert_eq!(format_timecode(65.5, 30), "1:05.50");
+        assert_eq!(format_timecode(1.999, 30), "0:01.96");
+    }
+
+    #[test]
+    fn cwd_rules() {
+        let tmp = tempfile::tempdir().unwrap();
+        let w = tmp.path();
+        let setup = resolve_cwd(w, "setup", None).unwrap();
+        assert!(setup.ends_with(".tayang/setup") || setup.ends_with(r".tayang\setup"));
+        assert!(setup.is_dir());
+        let study = resolve_cwd(w, "study-abc", None).unwrap();
+        assert_eq!(study, w.join(".tayang").join("style-study").join("abc"));
+        let chat = resolve_cwd(w, "c1", None).unwrap();
+        assert_eq!(chat, w.join(".tayang").join("chats").join("c1"));
+        let proj = w.join("my-video");
+        std::fs::create_dir(&proj).unwrap();
+        assert_eq!(resolve_cwd(w, "c2", Some(&proj)).unwrap(), proj);
+    }
+
+    #[test]
+    fn cwd_rejects_escapes() {
+        let tmp = tempfile::tempdir().unwrap();
+        let w = tmp.path().join("work");
+        let outside = tmp.path().join("elsewhere");
+        std::fs::create_dir(&outside).unwrap();
+        assert!(resolve_cwd(&w, "../x", None).is_err());
+        assert!(resolve_cwd(&w, "study-../x", None).is_err());
+        assert!(resolve_cwd(&w, "c", Some(&outside)).is_err());
+    }
+
+    #[test]
+    fn prompt_conversion() {
+        let project = Project {
+            id: "p1".into(),
+            title: "Launch".into(),
+            slug: "launch".into(),
+            folder: "/w/launch".into(),
+            kind: VideoKind::Promo,
+            format: VideoFormat::Portrait,
+            language: VideoLanguage::En,
+            status: ProjectStatus::Draft,
+            style_id: None,
+            scheduled_at: None,
+            duration_sec: None,
+            created_at: String::new(),
+            updated_at: String::new(),
+        };
+        let parts = vec![
+            MessagePart::Text { text: "hi".into() },
+            MessagePart::Mention { project_id: "p1".into(), title: "old".into() },
+            MessagePart::Frame {
+                project_id: "p1".into(),
+                frame: 45,
+                time_sec: 1.5,
+                image_path: "/w/f.png".into(),
+                marks: vec![Mark { x: 0.5, y: 0.25 }],
+            },
+            MessagePart::Tool {
+                tool_call_id: "t".into(),
+                title: "x".into(),
+                status: ToolCallStatus::Done,
+            },
+        ];
+        let out = build_prompt(&parts, 30, |id| (id == "p1").then(|| project.clone()));
+        assert_eq!(
+            out,
+            vec![
+                PromptPart::Text("hi".into()),
+                PromptPart::Text(
+                    "Context: video project \"Launch\" in folder /w/launch (read its AGENTS.md first)."
+                        .into()
+                ),
+                PromptPart::Image { path: PathBuf::from("/w/f.png") },
+                PromptPart::Text(
+                    "Frame 45 at 0:01.50 of Launch. Marks (x,y relative): (0.50, 0.25)".into()
+                ),
+            ]
+        );
+    }
 }

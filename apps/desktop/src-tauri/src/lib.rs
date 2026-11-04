@@ -50,8 +50,19 @@ pub fn run() {
             commands::study_dir,
             commands::list_jobs,
             commands::upsert_job,
+            commands::agent_start,
+            commands::agent_prompt,
+            commands::agent_cancel,
+            commands::agent_respond_permission,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Tayang Studio");
-    app.run(|_handle, _event| {});
+    app.run(|handle, event| {
+        if matches!(event, tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit) {
+            // Don't leave agent processes behind.
+            if let Some(state) = handle.try_state::<AppState>() {
+                tauri::async_runtime::block_on(state.acp.stop_all());
+            }
+        }
+    });
 }

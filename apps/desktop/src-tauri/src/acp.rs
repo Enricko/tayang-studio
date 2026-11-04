@@ -909,6 +909,14 @@ impl AcpManager {
         session.shutdown().await;
         Ok(())
     }
+
+    /// Kills every running agent. Called when the app quits.
+    pub async fn stop_all(&self) {
+        let ids: Vec<String> = self.sessions.lock().unwrap().keys().cloned().collect();
+        for id in ids {
+            let _ = self.stop(&id).await;
+        }
+    }
 }
 
 #[cfg(test)]
