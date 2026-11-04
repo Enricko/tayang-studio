@@ -19,7 +19,7 @@ import { useBilling } from '@/state/billing';
 
 const free: BillingStatus = { plan: 'free', lastPlan: null, currentPeriodEnd: null, active: false, pending: null };
 const creator: BillingStatus = { plan: 'creator', lastPlan: 'creator', currentPeriodEnd: '2026-12-04T12:00:00.000Z', active: true, pending: null };
-const checkout = { orderId: 'TYG-A', paymentLinkUrl: 'https://pay.example/p/1', expiresAt: '2026-11-04T13:00:00.000Z', amount: 50000 };
+const checkout = { orderId: 'TYG-A', paymentLinkUrl: 'https://pay.sumopod.com/p/1', expiresAt: '2026-11-04T13:00:00.000Z', amount: 50000 };
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -118,6 +118,28 @@ describe('plan dialog', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('says payments are not available yet when billing is off (I2)', async () => {
+    setUiLanguage('id');
+    vi.mocked(billing.billingCheckout).mockRejectedValueOnce('billing:unavailable');
+    render(<PlanCard />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Upgrade' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Bayar dengan QRIS' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Pembayaran belum tersedia');
+  });
+
+  it('Open again never opens a link off the payment hosts (M5)', async () => {
+    render(<PlanCard />);
+    await screen.findByText('Free');
+    act(() =>
+      useBilling.setState({
+        flow: { phase: 'waiting', plan: 'lite', checkout: { ...checkout, paymentLinkUrl: 'https://pay.example/p/1' }, endBefore: null },
+      }),
+    );
+    await userEvent.click(await screen.findByRole('button', { name: 'Open again' }));
+    expect(openUrl).not.toHaveBeenCalled();
+    expect(await screen.findByRole('alert')).toHaveTextContent("isn't SumoPod's");
   });
 
   it('shows a failed checkout and lets you try again', async () => {

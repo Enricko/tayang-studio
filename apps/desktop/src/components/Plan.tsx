@@ -7,7 +7,7 @@ import { Button } from '@/components/Button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { uiLanguage } from '@/i18n';
-import { formatDay, formatIdr, planCard, type BillingErrorCode } from '@/lib/billing';
+import { formatDay, formatIdr, isPaymentLink, planCard, type BillingErrorCode } from '@/lib/billing';
 import { cn } from '@/lib/utils';
 import { useBilling } from '@/state/billing';
 
@@ -17,6 +17,9 @@ const ERROR_KEYS = {
   network: 'billing.errors.network',
   server: 'billing.errors.server',
   'payment-provider': 'billing.errors.paymentProvider',
+  unavailable: 'billing.errors.unavailable',
+  'rate-limited': 'billing.errors.rateLimited',
+  bad_link: 'billing.errors.badLink',
 } as const satisfies Record<BillingErrorCode, string>;
 
 const planName = (id: PlanId, free: string) => findPlan(id)?.name ?? free;
@@ -53,15 +56,18 @@ export function PlanDialog({ initialPlan }: { initialPlan: PaidPlanId }) {
   const close = useBilling((s) => s.close);
   const checkAgain = useBilling((s) => s.checkAgain);
   const [chosen, setChosen] = useState<PaidPlanId>(initialPlan);
+  const [linkError, setLinkError] = useState(false);
   const open = flow.phase !== 'closed';
   useEffect(() => {
     if (open) setChosen(initialPlan);
+    setLinkError(false);
   }, [open, initialPlan]);
 
   const current = status?.active && status.plan !== 'free' ? status.plan : null;
   const picking = flow.phase === 'picking' || flow.phase === 'starting' || flow.phase === 'failed';
-  const error =
-    flow.phase !== 'failed'
+  const error = linkError
+    ? t(ERROR_KEYS.bad_link)
+    : flow.phase !== 'failed'
       ? null
       : typeof flow.error === 'string'
         ? t(ERROR_KEYS[flow.error])
@@ -143,7 +149,14 @@ export function PlanDialog({ initialPlan }: { initialPlan: PaidPlanId }) {
             </Button>
           )}
           {(flow.phase === 'waiting' || flow.phase === 'timeout') && (
-            <Button variant="secondary" onClick={() => void openUrl(flow.checkout.paymentLinkUrl).catch(() => {})}>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                // Same check as Rust: only SumoPod's payment pages are opened.
+                if (isPaymentLink(flow.checkout.paymentLinkUrl)) void openUrl(flow.checkout.paymentLinkUrl).catch(() => {});
+                else setLinkError(true);
+              }}
+            >
               {t('billing.dialog.openAgain')}
             </Button>
           )}

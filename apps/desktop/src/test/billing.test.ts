@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { BillingStatus } from '@tayang/shared';
-import { billingErrorCode, billingReminderDue, formatDay, formatIdr, planCard } from '@/lib/billing';
+import { billingErrorCode, billingReminderDue, formatDay, formatIdr, isPaymentLink, planCard } from '@/lib/billing';
 
 const status = (over: Partial<BillingStatus> = {}): BillingStatus => ({
   plan: 'creator',
@@ -31,6 +31,9 @@ describe('billingErrorCode', () => {
   it('reads billing:<code> rejections only', () => {
     expect(billingErrorCode('billing:signed-out')).toBe('signed-out');
     expect(billingErrorCode(new Error('billing:payment-provider'))).toBe('payment-provider');
+    expect(billingErrorCode('billing:unavailable')).toBe('unavailable');
+    expect(billingErrorCode('billing:rate-limited')).toBe('rate-limited');
+    expect(billingErrorCode('billing:bad_link')).toBe('bad_link');
     expect(billingErrorCode('billing:whatever')).toBeNull();
     expect(billingErrorCode('auth:network')).toBeNull();
   });
@@ -65,5 +68,21 @@ describe('billingReminderDue', () => {
     expect(billingReminderDue(status({ active: false }), at(-DAY), null)).toBe(false);
     expect(billingReminderDue(status({ currentPeriodEnd: null }), at(DAY), null)).toBe(false);
     expect(billingReminderDue(null, at(DAY), null)).toBe(false);
+  });
+});
+
+describe('isPaymentLink', () => {
+  it('only SumoPod payment pages over https', () => {
+    for (const ok of ['https://pay.sumopod.com/p/1', 'https://sumopod.com/pay/1', 'https://checkout.pymnt.global/x']) expect(isPaymentLink(ok)).toBe(true);
+    for (const bad of [
+      'http://pay.sumopod.com/p/1',
+      'https://pay.example/p/1',
+      'https://evil-sumopod.com/p',
+      'https://sumopod.com.evil.net/p',
+      'https://pymnt.global/p',
+      'javascript:alert(1)',
+      'not a url',
+    ])
+      expect(isPaymentLink(bad)).toBe(false);
   });
 });

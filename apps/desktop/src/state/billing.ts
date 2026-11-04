@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { BillingStatus, CheckoutResponse, PaidPlanId } from '@tayang/shared';
-import { POLL_LIMIT_MS, POLL_MS, billingCheckout, billingErrorCode, billingStatus, type BillingErrorCode } from '@/lib/billing';
+import { POLL_LIMIT_MS, POLL_MS, billingCheckout, billingErrorCode, billingStatus, isPaymentLink, type BillingErrorCode } from '@/lib/billing';
 
 /** The plan dialog. `failed` holds an error code, or the raw message of an unexpected failure. */
 export type PayFlow =
@@ -95,11 +95,18 @@ export const useBilling = create<BillingStore>((set, get) => {
     async pay(plan) {
       stopPolling();
       const attempt = get().attempt + 1;
-      const endBefore = get().status?.currentPeriodEnd ?? null;
       set({ attempt, flow: { phase: 'starting', plan } });
+      // The end before paying is what "paid" is measured against, so it must be known first.
+      if (!get().loadedAt) await get().refresh();
+      if (get().attempt !== attempt) return;
+      const endBefore = get().status?.currentPeriodEnd ?? null;
       try {
         const checkout = await billingCheckout(plan);
         if (get().attempt !== attempt) return;
+        if (!isPaymentLink(checkout.paymentLinkUrl)) {
+          set({ flow: { phase: 'failed', plan, error: 'bad_link' } });
+          return;
+        }
         set({ flow: { phase: 'waiting', plan, checkout, endBefore } });
         poll(attempt, plan, endBefore, checkout);
       } catch (e) {

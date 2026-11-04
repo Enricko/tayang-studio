@@ -9,12 +9,20 @@ export const billingCheckout = (plan: PaidPlanId) => invoke<CheckoutResponse>('b
 /** The signed-in account's plan and any payment in progress. Rejects with `billing:<code>`. */
 export const billingStatus = () => invoke<BillingStatus>('billing_status');
 
-export type BillingErrorCode = 'signed-out' | 'invalid-plan' | 'network' | 'server' | 'payment-provider';
-const CODES: readonly string[] = ['signed-out', 'invalid-plan', 'network', 'server', 'payment-provider'];
+export type BillingErrorCode =
+  | 'signed-out'
+  | 'invalid-plan'
+  | 'network'
+  | 'server'
+  | 'payment-provider'
+  | 'unavailable'
+  | 'rate-limited'
+  | 'bad_link';
+const CODES: readonly string[] = ['signed-out', 'invalid-plan', 'network', 'server', 'payment-provider', 'unavailable', 'rate-limited', 'bad_link'];
 
 /** The code in a `billing:<code>` rejection, or null for anything else. */
 export function billingErrorCode(e: unknown): BillingErrorCode | null {
-  const m = /^billing:([a-z-]+)$/.exec(e instanceof Error ? e.message : String(e));
+  const m = /^billing:([a-z_-]+)$/.exec(e instanceof Error ? e.message : String(e));
   const code = m?.[1];
   return code && CODES.includes(code) ? (code as BillingErrorCode) : null;
 }
@@ -50,4 +58,15 @@ export function billingReminderDue(s: BillingStatus | null, now: Date, remindedF
   const end = Date.parse(s.currentPeriodEnd);
   if (Number.isNaN(end) || now.getTime() >= end) return false;
   return end - now.getTime() <= REMINDER_LEAD_MS && remindedFor !== s.currentPeriodEnd;
+}
+
+/** Only SumoPod's payment pages are opened: https on pay.sumopod.com, sumopod.com or *.pymnt.global (as Rust checks). */
+export function isPaymentLink(url: string): boolean {
+  try {
+    const u = new URL(url.trim());
+    const host = u.hostname.toLowerCase();
+    return u.protocol === 'https:' && (host === 'pay.sumopod.com' || host === 'sumopod.com' || host.endsWith('.pymnt.global'));
+  } catch {
+    return false;
+  }
 }

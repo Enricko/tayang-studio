@@ -13,7 +13,7 @@ import { useBilling } from '@/state/billing';
 
 const free: BillingStatus = { plan: 'free', lastPlan: null, currentPeriodEnd: null, active: false, pending: null };
 const creator: BillingStatus = { plan: 'creator', lastPlan: 'creator', currentPeriodEnd: '2026-12-04T12:00:00.000Z', active: true, pending: null };
-const checkout = { orderId: 'TYG-A', paymentLinkUrl: 'https://pay.example/p/1', expiresAt: '2026-11-04T13:00:00.000Z', amount: 50000 };
+const checkout = { orderId: 'TYG-A', paymentLinkUrl: 'https://pay.sumopod.com/p/1', expiresAt: '2026-11-04T13:00:00.000Z', amount: 50000 };
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -101,6 +101,7 @@ describe('paying', () => {
   });
 
   it('a checkout answered after the dialog closed is dropped', async () => {
+    await useBilling.getState().refresh();
     let answer!: (c: typeof checkout) => void;
     vi.mocked(billing.billingCheckout).mockReturnValueOnce(new Promise((r) => (answer = r)));
     const p = useBilling.getState().pay('lite');
@@ -108,6 +109,21 @@ describe('paying', () => {
     answer(checkout);
     await p;
     expect(useBilling.getState().flow.phase).toBe('closed');
+  });
+
+  it('a link off the payment hosts fails as bad_link and is never waited on (M5)', async () => {
+    vi.mocked(billing.billingCheckout).mockResolvedValueOnce({ ...checkout, paymentLinkUrl: 'https://pay.example/p/1' });
+    await useBilling.getState().pay('lite');
+    expect(useBilling.getState().flow).toEqual({ phase: 'failed', plan: 'lite', error: 'bad_link' });
+  });
+
+  it('reads the status before paying, so a renewal is not seen as paid at once (M8)', async () => {
+    vi.mocked(billing.billingStatus).mockResolvedValue(creator);
+    // Pay pressed before anything was read.
+    await useBilling.getState().pay('creator');
+    expect(billing.billingStatus).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(POLL_MS);
+    expect(useBilling.getState().flow.phase).toBe('waiting');
   });
 
   it('signed out clears the status', async () => {
