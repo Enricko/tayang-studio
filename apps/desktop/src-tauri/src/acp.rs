@@ -3,7 +3,9 @@
 //! Hand-rolled newline-delimited JSON-RPC 2.0 following the ACP v1 schema
 //! (https://agentclientprotocol.com). One agent process per chat.
 
-use crate::types::{AgentUpdate, PermissionRequest, ToolCallStatus};
+use crate::types::{
+    AgentUpdate, PermissionOption, PermissionOptionKind, PermissionRequest, ToolCallStatus,
+};
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use serde_json::{json, Value};
@@ -246,6 +248,7 @@ const DRAIN_GRACE: Duration = Duration::from_secs(2);
 struct ToolState {
     title: String,
     status: ToolCallStatus,
+    raw_input: Option<Value>,
 }
 
 fn map_tool_status(s: &str) -> Option<ToolCallStatus> {
@@ -258,6 +261,66 @@ fn map_tool_status(s: &str) -> Option<ToolCallStatus> {
     }
 }
 
+fn map_option_kind(s: &str) -> Option<PermissionOptionKind> {
+    match s {
+        "allow_once" => Some(PermissionOptionKind::AllowOnce),
+        "allow_always" => Some(PermissionOptionKind::AllowAlways),
+        "reject_once" => Some(PermissionOptionKind::RejectOnce),
+        "reject_always" => Some(PermissionOptionKind::RejectAlways),
+        _ => None,
+    }
+}
+
+/// The shell command a tool call wants to run: `rawInput.command` as a string,
+/// or an argv array joined with spaces.
+fn raw_command(raw_input: &Value) -> Option<String> {
+    match raw_input.get("command")? {
+        Value::String(s) if !s.trim().is_empty() => Some(s.clone()),
+        Value::Array(items) => {
+            let words: Vec<&str> = items.iter().filter_map(Value::as_str).collect();
+            (!words.is_empty()).then(|| words.join(" "))
+        }
+        _ => None,
+    }
+}
+
+struct PendingPermission {
+    session_uid: u64,
+    option_ids: Vec<String>,
+    answer: oneshot::Sender<Option<String>>,
+}
+
+/// Permission requests waiting for the user, keyed by request id.
+#[derive(Default)]
+struct Permissions {
+    pending: Mutex<HashMap<String, PendingPermission>>,
+}
+
+impl Permissions {
+    fn answer(&self, request_id: &str, option_id: Option<String>) -> Result<()> {
+        let mut pending = self.pending.lock().unwrap();
+        let entry = pending
+            .get(request_id)
+            .ok_or_else(|| AcpError("This permission request is no longer open".into()))?;
+        if let Some(option) = &option_id {
+            if !entry.option_ids.contains(option) {
+                return Err(AcpError(format!("Unknown permission option: {option}")));
+            }
+        }
+        let entry = pending.remove(request_id).expect("entry checked above");
+        entry
+            .answer
+            .send(option_id)
+            .map_err(|_| AcpError("This permission request is no longer open".into()))
+    }
+
+    /// Answers every open request of one session with `cancelled`.
+    fn cancel_session(&self, session_uid: u64) {
+        // Dropping the senders resolves the waiting tasks with `cancelled`.
+        self.pending.lock().unwrap().retain(|_, p| p.session_uid != session_uid);
+    }
+}
+
 fn content_text(content: &Value) -> Option<String> {
     (content.get("type")?.as_str()? == "text")
         .then(|| content.get("text")?.as_str().map(str::to_string))
@@ -266,10 +329,12 @@ fn content_text(content: &Value) -> Option<String> {
 
 /// State shared by the reader, the supervisor and prompt tasks of one agent process.
 struct SessionCore {
+    uid: u64,
     chat_id: String,
     cwd: PathBuf,
     rpc: Rpc,
     sink: Arc<dyn AcpSink>,
+    permissions: Arc<Permissions>,
     session_id: OnceLock<String>,
     tools: Mutex<HashMap<String, ToolState>>,
     prompting: AtomicBool,
@@ -294,11 +359,76 @@ impl SessionCore {
         }
     }
 
-    fn on_request(self: &Arc<Self>, id: Value, method: &str, _params: Value) {
-        self.rpc.respond(
-            id,
-            Err(RpcError::new(METHOD_NOT_FOUND, format!("Method not found: {method}"))),
+    fn on_request(self: &Arc<Self>, id: Value, method: &str, params: Value) {
+        match method {
+            "session/request_permission" => self.on_permission(id, &params),
+            _ => self.rpc.respond(
+                id,
+                Err(RpcError::new(METHOD_NOT_FOUND, format!("Method not found: {method}"))),
+            ),
+        }
+    }
+
+    /// Forwards a permission request to the user and answers the agent once
+    /// they choose (or with `cancelled` if the request is dropped).
+    fn on_permission(self: &Arc<Self>, id: Value, params: &Value) {
+        let empty = json!({});
+        let call = params.get("toolCall").unwrap_or(&empty);
+        let tool = self.merge_tool(call).map(|(_, state)| state);
+        let title = call
+            .get("title")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .or_else(|| tool.as_ref().map(|t| t.title.clone()))
+            .unwrap_or_else(|| "The agent wants to use a tool".into());
+        let command = call
+            .get("rawInput")
+            .and_then(raw_command)
+            .or_else(|| tool.as_ref()?.raw_input.as_ref().and_then(raw_command));
+        let options: Vec<PermissionOption> = params
+            .get("options")
+            .and_then(Value::as_array)
+            .map(|opts| {
+                opts.iter()
+                    .filter_map(|o| {
+                        Some(PermissionOption {
+                            id: o.get("optionId")?.as_str()?.to_string(),
+                            label: o.get("name")?.as_str()?.to_string(),
+                            kind: map_option_kind(o.get("kind")?.as_str()?)?,
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let request_id = uuid::Uuid::new_v4().to_string();
+        let (tx, rx) = oneshot::channel();
+        self.permissions.pending.lock().unwrap().insert(
+            request_id.clone(),
+            PendingPermission {
+                session_uid: self.uid,
+                option_ids: options.iter().map(|o| o.id.clone()).collect(),
+                answer: tx,
+            },
         );
+        if self.rpc.is_closed() {
+            self.permissions.cancel_session(self.uid);
+        }
+        let core = self.clone();
+        tokio::spawn(async move {
+            let outcome = match rx.await.ok().flatten() {
+                Some(option_id) => json!({ "outcome": "selected", "optionId": option_id }),
+                None => json!({ "outcome": "cancelled" }),
+            };
+            core.rpc.respond(id, Ok(json!({ "outcome": outcome })));
+        });
+        self.sink.permission(PermissionRequest {
+            chat_id: self.chat_id.clone(),
+            request_id,
+            commands: vec![command.unwrap_or_else(|| title.clone())],
+            title,
+            options,
+        });
     }
 
     fn on_session_update(&self, params: &Value) {
@@ -321,8 +451,12 @@ impl SessionCore {
                 });
             }
             "tool_call" | "tool_call_update" => {
-                if let Some(u) = self.track_tool(update) {
-                    self.emit(u);
+                if let Some((id, state)) = self.merge_tool(update) {
+                    self.emit(AgentUpdate::Tool {
+                        tool_call_id: id,
+                        title: state.title,
+                        status: state.status,
+                    });
                 }
             }
             _ => {}
@@ -330,13 +464,14 @@ impl SessionCore {
     }
 
     /// Merges a `tool_call` / `tool_call_update` (or a permission's `toolCall`)
-    /// into the remembered state and returns the resulting `tool` update.
-    fn track_tool(&self, call: &Value) -> Option<AgentUpdate> {
+    /// into the remembered state of that tool call and returns it.
+    fn merge_tool(&self, call: &Value) -> Option<(String, ToolState)> {
         let id = call.get("toolCallId")?.as_str()?;
         let mut tools = self.tools.lock().unwrap();
         let state = tools.entry(id.to_string()).or_insert_with(|| ToolState {
             title: "Tool call".into(),
             status: ToolCallStatus::Pending,
+            raw_input: None,
         });
         if let Some(title) = call.get("title").and_then(Value::as_str) {
             state.title = title.to_string();
@@ -344,11 +479,10 @@ impl SessionCore {
         if let Some(status) = call.get("status").and_then(Value::as_str).and_then(map_tool_status) {
             state.status = status;
         }
-        Some(AgentUpdate::Tool {
-            tool_call_id: id.to_string(),
-            title: state.title.clone(),
-            status: state.status,
-        })
+        if let Some(raw) = call.get("rawInput").filter(|v| !v.is_null()) {
+            state.raw_input = Some(raw.clone());
+        }
+        Some((id.to_string(), state.clone()))
     }
 
     async fn handshake(&self) -> Result<()> {
@@ -422,6 +556,7 @@ impl SessionCore {
     /// Called once the agent's output is finished (or the process is gone).
     fn on_closed(&self) {
         self.rpc.close();
+        self.permissions.cancel_session(self.uid);
     }
 }
 
@@ -487,6 +622,8 @@ pub struct AgentSession {
 
 impl AgentSession {
     async fn launch(
+        uid: u64,
+        permissions: Arc<Permissions>,
         chat_id: &str,
         command: &[String],
         cwd: &Path,
@@ -501,10 +638,12 @@ impl AgentSession {
         };
         let (out_tx, out_rx) = mpsc::unbounded_channel();
         let core = Arc::new(SessionCore {
+            uid,
             chat_id: chat_id.to_string(),
             cwd,
             rpc: Rpc::new(out_tx),
             sink,
+            permissions,
             session_id: OnceLock::new(),
             tools: Mutex::new(HashMap::new()),
             prompting: AtomicBool::new(false),
@@ -551,6 +690,8 @@ impl AgentSession {
 #[derive(Default)]
 pub struct AcpManager {
     sessions: Mutex<HashMap<String, Arc<AgentSession>>>,
+    permissions: Arc<Permissions>,
+    next_uid: AtomicU64,
 }
 
 impl AcpManager {
@@ -577,7 +718,10 @@ impl AcpManager {
         sink: Arc<dyn AcpSink>,
     ) -> Result<()> {
         let _ = self.stop(chat_id).await;
-        let session = AgentSession::launch(chat_id, command, cwd, sink).await?;
+        let uid = self.next_uid.fetch_add(1, Ordering::SeqCst);
+        let session =
+            AgentSession::launch(uid, self.permissions.clone(), chat_id, command, cwd, sink)
+                .await?;
         let previous = self
             .sessions
             .lock()
@@ -611,8 +755,10 @@ impl AcpManager {
         Ok(())
     }
 
-    pub fn respond_permission(&self, _request_id: &str, _option_id: Option<String>) -> Result<()> {
-        Err(AcpError("not implemented".into()))
+    /// Answers a permission request: `Some(option_id)` selects that option,
+    /// `None` answers `cancelled`.
+    pub fn respond_permission(&self, request_id: &str, option_id: Option<String>) -> Result<()> {
+        self.permissions.answer(request_id, option_id)
     }
 
     /// Asks the agent to stop the current turn (`session/cancel`).
@@ -621,7 +767,10 @@ impl AcpManager {
         let core = &session.core;
         core.rpc
             .notify("session/cancel", json!({ "sessionId": core.session_id() }))
-            .map_err(|_| AcpError("The agent is not running".into()))
+            .map_err(|_| AcpError("The agent is not running".into()))?;
+        // ACP: the client answers every open permission request with `cancelled`.
+        self.permissions.cancel_session(core.uid);
+        Ok(())
     }
 
     /// Kills the agent process for this chat.
