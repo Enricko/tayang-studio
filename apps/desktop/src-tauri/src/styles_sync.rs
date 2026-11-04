@@ -139,9 +139,19 @@ pub async fn install_template<F: Fetcher>(
         .ok_or("That project no longer exists")?;
     let Some(style_id) = project.style_id else { return Ok(false) };
     let Some(style) = db.get_style(&style_id).map_err(|e| e.to_string())? else { return Ok(false) };
-    let Some(template) = style.template else { return Ok(false) };
-    // A clone has no template of its own: it downloads the original's.
-    let template_id = style.based_on.unwrap_or(style_id);
+    // A clone downloads its original's template, and checks it against the original's current hash when the
+    // original is still a built-in (the server serves its newest). Otherwise it uses its own snapshot and id.
+    let original = style
+        .based_on
+        .as_deref()
+        .filter(|id| !id.is_empty() && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_'))
+        .and_then(|id| db.get_style(id).ok().flatten())
+        .filter(|o| o.source == StyleSource::Builtin);
+    let (template_id, template) = match original {
+        Some(o) => (o.id.clone(), o.template.or(style.template)),
+        None => (style_id.clone(), style.template),
+    };
+    let Some(template) = template else { return Ok(false) };
     let folder = PathBuf::from(&project.folder);
     std::fs::create_dir_all(&folder).map_err(|e| e.to_string())?;
     if !is_fresh_folder(&folder) {
@@ -478,6 +488,54 @@ mod tests {
         assert!(install_template(&s.db, &f, "https://api.test", &s.templates, "p1").await.unwrap());
         assert_eq!(f.calls.lock().unwrap().as_slice(), ["https://api.test/v1/styles/atlas/template"]);
         assert!(s.folder.join("src").join("index.ts").exists());
+    }
+
+    fn clone_of_atlas(s: &Setup, based_on: Option<&str>, template: StyleTemplate) {
+        let original = s.db.get_style("atlas").unwrap().unwrap();
+        let clone = Style {
+            id: "mine-9".into(),
+            source: StyleSource::Mine,
+            based_on: based_on.map(str::to_string),
+            template: Some(template),
+            ..original
+        };
+        s.db.save_style(&clone).unwrap();
+        s.db.update_project("p1", serde_json::json!({"styleId": "mine-9"})).unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_clone_takes_the_originals_current_template_after_an_update() {
+        let old = zip_bytes(&[("tayang.json", b"{}"), ("src/old.ts", b"1")]);
+        let new = zip_bytes(&[("tayang.json", b"{}"), ("src/new.ts", b"2")]);
+        // The built-in (and the server) are at the new template; the clone froze the old one.
+        let (s, f) = setup(&new, &new);
+        clone_of_atlas(&s, Some("atlas"), StyleTemplate { sha256: sha256_hex(&old), size: old.len() as u64, version: 1 });
+        assert!(install_template(&s.db, &f, "https://api.test", &s.templates, "p1").await.unwrap());
+        assert!(s.folder.join("src").join("new.ts").exists());
+    }
+
+    #[tokio::test]
+    async fn a_clone_whose_original_is_gone_uses_its_own_snapshot_and_id() {
+        let z = zip_bytes(&[("tayang.json", b"{}"), ("src/index.ts", b"export {}")]);
+        let (s, mut f) = setup(&z, &z);
+        clone_of_atlas(&s, Some("atlas"), StyleTemplate { sha256: sha256_hex(&z), size: z.len() as u64, version: 1 });
+        s.db.replace_builtin_styles(&[]).unwrap();
+        f.routes.insert("https://api.test/v1/styles/mine-9/template".into(), (200, z.clone()));
+        // Not a built-in any more: its own id is asked, and the snapshot hash is checked.
+        assert!(install_template(&s.db, &f, "https://api.test", &s.templates, "p1").await.unwrap());
+        assert_eq!(f.calls.lock().unwrap().as_slice(), ["https://api.test/v1/styles/mine-9/template"]);
+    }
+
+    #[tokio::test]
+    async fn a_based_on_that_is_not_a_plain_built_in_id_is_ignored() {
+        let z = zip_bytes(&[("tayang.json", b"{}"), ("src/index.ts", b"export {}")]);
+        for bad in ["..", "../atlas", "a/b", "a b", ""] {
+            let (s, mut f) = setup(&z, &z);
+            clone_of_atlas(&s, Some(bad), StyleTemplate { sha256: sha256_hex(&z), size: z.len() as u64, version: 1 });
+            f.routes.insert("https://api.test/v1/styles/mine-9/template".into(), (200, z.clone()));
+            assert!(install_template(&s.db, &f, "https://api.test", &s.templates, "p1").await.unwrap(), "{bad}");
+            assert_eq!(f.calls.lock().unwrap().as_slice(), ["https://api.test/v1/styles/mine-9/template"], "{bad}");
+        }
     }
 
     #[tokio::test]
