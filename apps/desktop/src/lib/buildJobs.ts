@@ -2,6 +2,7 @@ import type { Job } from '@tayang/shared';
 import { listJobs, updateSettings, upsertJob } from '@/lib/ipc';
 import { stored } from '@/lib/stored';
 import { finishedRender } from '@/lib/renderCheck';
+import { advanceProject } from '@/lib/projectStatus';
 import { dropRenderBaseline, turnCount, useChat } from '@/state/chat';
 import { refreshJobs, useJobs } from '@/state/jobs';
 
@@ -36,7 +37,9 @@ export async function settleLateRenders(now: number = Date.now(), jobs?: Job[]):
     const since = Date.parse(job.renderBaselineAt ?? job.updatedAt);
     const info = await finishedRender(job.projectId!, since);
     // A turn that started while it looked (even one that already ended) owns the job now.
-    if (!info || turnRunning(job) || (job.chatId && turnCount(job.chatId) !== turns)) continue;
+    if (!info) continue;
+    void advanceProject(job.projectId!, 'rendered');
+    if (turnRunning(job) || (job.chatId && turnCount(job.chatId) !== turns)) continue;
     try {
       await upsertJob({ ...job, status: 'done', note: info.name, renderBaselineAt: null, updatedAt: new Date(now).toISOString() });
       if (job.chatId) dropRenderBaseline(job.chatId);

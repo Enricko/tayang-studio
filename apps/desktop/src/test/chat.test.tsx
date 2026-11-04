@@ -7,6 +7,7 @@ vi.mock('@/lib/ipc', () => ({
   listProjects: vi.fn(),
   createProject: vi.fn(),
   updateProject: vi.fn(),
+  setProjectStatus: vi.fn(),
   listChats: vi.fn(),
   getChat: vi.fn(),
   createChat: vi.fn(),
@@ -63,6 +64,7 @@ import { buildRecap, useChat } from '@/state/chat';
 import { useUsage } from '@/state/usage';
 import { UsageBar } from '@/components/UsageBar';
 import { renderTiming } from '@/lib/renderCheck';
+import { useRender } from '@/state/render';
 
 /** What the agent got, without the session facts line a new session starts with. */
 const noFacts = <T,>(parts: T[]): T[] =>
@@ -881,10 +883,37 @@ describe('ChatProject render and jobs', () => {
     render(<ChatProject chatId="c1" />);
     await screen.findByText('Kenapa rupiah melemah?', { selector: 'span' });
     await user.click(screen.getByRole('button', { name: 'Render video' }));
-    await waitFor(() => expect(ipc.updateProject).toHaveBeenCalledWith('p1', { status: 'rendered', durationSec: 12.5 }));
+    await waitFor(() => expect(ipc.updateProject).toHaveBeenCalledWith('p1', { durationSec: 12.5 }));
+    // Through the forward-only status move, never straight onto the row.
+    expect(ipc.setProjectStatus).toHaveBeenCalledWith('p1', 'rendered');
     expect(ipc.mediaRender).toHaveBeenCalledWith('p1');
     // the preview reloads after the render
     await waitFor(() => expect(vi.mocked(ipc.mediaLatestRender).mock.calls.length).toBeGreaterThan(1));
+  });
+
+  it('the step bar shows Render while a render of this project runs, and moves on when the project does', async () => {
+    const user = userEvent.setup();
+    const step = (name: string) => screen.getByText(name, { selector: '[data-step-name]' }).closest('li');
+    vi.mocked(ipc.listProjects).mockResolvedValue([{ ...projects[0]!, status: 'draft' }, projects[1]!]);
+    vi.mocked(ipc.setProjectStatus).mockImplementation(async (id, status) => ({ ...projects[0]!, id, status }));
+    render(<ChatProject chatId="c1" />);
+    await screen.findByText('Kenapa rupiah melemah?', { selector: 'span' });
+    expect(step('Script')).toHaveAttribute('aria-current', 'step');
+    await user.type(screen.getByRole('textbox', { name: 'Message' }), 'go');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
+    // The first edit finishes: the project is building, and the header follows.
+    vi.mocked(ipc.listProjects).mockResolvedValue(projects);
+    await emit('c1', { kind: 'tool', toolCallId: 't1', title: 'Edit scenes.ts', status: 'done', toolKind: 'edit' });
+    expect(ipc.setProjectStatus).toHaveBeenCalledWith('p1', 'building');
+    await waitFor(() => expect(step('Build')).toHaveAttribute('aria-current', 'step'));
+    act(() => useRender.getState().start('p1', { source: 'agent', chatId: 'c1', toolCallId: 't2' }));
+    expect(step('Render')).toHaveAttribute('aria-current', 'step');
+    expect(within(step('Render')!).getByText('Rendering now')).toBeInTheDocument();
+    // Another project's render is not this one's.
+    act(() => useRender.getState().end('p1'));
+    act(() => useRender.getState().start('p2', { source: 'agent' }));
+    expect(step('Build')).toHaveAttribute('aria-current', 'step');
   });
 
   it('shows the exact command a tayang.json project will run', async () => {

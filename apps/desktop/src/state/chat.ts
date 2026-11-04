@@ -22,6 +22,7 @@ import { uiLanguage } from '@/i18n';
 import { stored } from '@/lib/stored';
 import { finishedRender } from '@/lib/renderCheck';
 import { isRenderTool } from '@/lib/renderTool';
+import { advanceProject, isWorkTool, resetProjectStatus } from '@/lib/projectStatus';
 import { localClock } from '@/lib/time';
 import { useApp } from '@/state/app';
 import { refreshJobs, useJobs } from '@/state/jobs';
@@ -487,6 +488,8 @@ export const useChat = create<ChatState>((set, get) => {
     // it. Any finished render since the job's baseline counts, also one that finished between turns.
     const baseline = baselines.get(chatId);
     const info = await finishedRender(job.projectId, baseline ? Date.parse(baseline) : startedAt);
+    // The video exists whatever happens to the job: the project is rendered.
+    if (info) void advanceProject(job.projectId, 'rendered');
     // A newer turn has started since: its own end decides.
     if ((turnSeq.get(chatId) ?? 0) !== seq || get().streaming[chatId]) return;
     if (info) {
@@ -530,6 +533,11 @@ export const useChat = create<ChatState>((set, get) => {
       if (u.kind === 'tool') {
         trackRender(chatId, u.toolCallId, u.title, u.status);
         if (u.status === 'done') queueImages(chatId);
+        // The first edit or command that finishes in a video's chat: it is being built.
+        const projectId = chatJobs.get(chatId)?.projectId;
+        if (projectId && isWorkTool({ type: 'tool', toolCallId: u.toolCallId, title: u.title, status: u.status, toolKind: u.toolKind })) {
+          void advanceProject(projectId, 'building');
+        }
       }
       return;
     }
@@ -791,6 +799,7 @@ export const useChat = create<ChatState>((set, get) => {
       imageRuns.clear();
       pendingSaves.clear();
       baselines.clear();
+      resetProjectStatus();
       useRender.setState({ runs: {} });
       set({ messages: {}, streaming: {}, turnStartedAt: {}, permissions: {}, attachments: {}, started: {}, auto: {}, pendingAuto: null, autoBusy: {} });
     },
