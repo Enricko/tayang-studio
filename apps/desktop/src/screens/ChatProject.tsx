@@ -6,6 +6,7 @@ import { Composer } from '@/components/Composer';
 import { MessageList } from '@/components/MessageList';
 import { PermissionCard } from '@/components/PermissionCard';
 import { Preview } from '@/screens/preview/Preview';
+import { TurnRail } from '@/components/TurnRail';
 import { StepBar } from '@/components/StepBar';
 import { getChat, listProjects, mediaProbe, mediaRender, renderCommand, updateProject, type RenderCommand } from '@/lib/ipc';
 import { useApp } from '@/state/app';
@@ -85,6 +86,7 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
 
   // When a turn ends well the agent may have rendered a new version: reload the preview.
   const wasStreaming = useRef(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (wasStreaming.current && !streaming && messages.at(-1)?.role !== 'system') setReloadKey((k) => k + 1);
     wasStreaming.current = streaming;
@@ -161,8 +163,9 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
 
       <div className="flex min-h-0 flex-1">
         <section aria-label="Conversation" className="flex min-w-0 flex-1 flex-col">
-          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
-            <MessageList messages={messages} streaming={streaming} sendOptions={sendOptions} agentId={agent}>
+          <div className="relative min-h-0 flex-1">
+          <div ref={scrollRef} className="no-scrollbar h-full overflow-y-auto px-6 py-6">
+            <MessageList messages={messages} streaming={streaming} sendOptions={sendOptions} agentId={agent} scrollRef={scrollRef}>
               {permission && (
                 <PermissionCard
                   request={permission}
@@ -172,6 +175,8 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
                 />
               )}
             </MessageList>
+          </div>
+          <TurnRail messages={messages} scrollRef={scrollRef} />
           </div>
           <div className="px-6 pb-6 pt-2">
             <Composer

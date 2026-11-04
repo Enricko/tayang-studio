@@ -5,6 +5,7 @@ import { buildProjectBrief, buildTopicIdeasPrompt, topicIdeaFromAction } from '@
 import oyen from '@/assets/brand/oyen-expr-default.svg';
 import { Composer, type MentionRef } from '@/components/Composer';
 import { MessageList } from '@/components/MessageList';
+import { TurnRail } from '@/components/TurnRail';
 import { PermissionCard } from '@/components/PermissionCard';
 import { createChat, listProjects, listStyles } from '@/lib/ipc';
 import { useApp } from '@/state/app';
@@ -40,6 +41,7 @@ export function ChatNew() {
   const [setupLine, setSetupLine] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const topicPending = useRef(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   const messages = useChat((s) => (chatId ? s.messages[chatId] : undefined)) ?? NO_MESSAGES;
   const streaming = useChat((s) => (chatId ? !!s.streaming[chatId] : false));
@@ -198,7 +200,8 @@ export function ChatNew() {
       </header>
 
       <div className="flex min-h-0 flex-1 flex-col items-center px-6">
-        <div className="flex min-h-0 w-full max-w-[720px] flex-1 flex-col justify-center gap-6 overflow-y-auto py-6">
+        <div className="relative flex min-h-0 w-full flex-1 justify-center">
+        <div ref={scrollRef} className="no-scrollbar flex min-h-0 w-full max-w-[720px] flex-1 flex-col justify-center gap-6 overflow-y-auto py-6">
           {!started ? (
             <>
               <div className="flex flex-col items-start gap-3">
@@ -221,6 +224,7 @@ export function ChatNew() {
                 streaming={streaming}
                 busy={busy}
                 agentId={agent}
+                scrollRef={scrollRef}
                 onA2uiAction={onA2uiAction}
                 sendOptions={() => ({ agentId: agent })}
               >
@@ -258,6 +262,8 @@ export function ChatNew() {
               </MessageList>
             </div>
           )}
+        </div>
+        <TurnRail messages={messages} scrollRef={scrollRef} className="-right-6" />
         </div>
 
         <div className="w-full max-w-[720px] pb-6 pt-4">
