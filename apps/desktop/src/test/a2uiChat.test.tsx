@@ -25,9 +25,9 @@ vi.mock('@/lib/events', () => ({
   onPermission: vi.fn(async () => () => {}),
 }));
 vi.mock('@tauri-apps/plugin-opener', () => ({ openUrl: vi.fn() }));
-import { addMessage, agentPrompt, agentRespondPermission, agentStart, getChat, upsertJob } from '@/lib/ipc';
+import { addMessage, agentPrompt, agentRespondPermission, agentStart, agentStop, getChat, upsertJob } from '@/lib/ipc';
 import { MessageList } from '@/components/MessageList';
-import { BUSY_NOTE, useChat } from '@/state/chat';
+import { BUSY_NOTE, failChatJob, useChat } from '@/state/chat';
 import { setUiLanguage } from '@/i18n';
 
 const V = 'v0.9';
@@ -309,5 +309,51 @@ describe('send agent fallback', () => {
     await useChat.getState().stop('c1');
     await useChat.getState().send('c1', [{ type: 'text', text: 'again' }]);
     expect(vi.mocked(agentStart).mock.calls.map((c) => c[1])).toEqual(['codex', 'codex']);
+  });
+});
+
+describe('build jobs when a turn does not finish well', () => {
+  const emitTo = (chatId: string, update: AgentUpdate) => act(async () => updates.forEach((cb) => cb({ chatId, update })));
+  const lastJob = () => vi.mocked(upsertJob).mock.calls.at(-1)![0];
+
+  it('a cancelled turn marks the job failed with the stored Cancelled note', async () => {
+    useChat.getState().listen();
+    await useChat.getState().send('j1', [{ type: 'text', text: 'go' }], { agentId: 'claude', job: { projectId: 'p1', title: 'Video' } });
+    await emitTo('j1', { kind: 'done', stopReason: 'cancelled' });
+    await waitFor(() => expect(lastJob()).toMatchObject({ id: 'build-j1', status: 'failed', note: 'Cancelled' }));
+    await emitTo('j1', { kind: 'done', stopReason: 'end_turn' });
+    expect(lastJob()).toMatchObject({ status: 'done', note: null });
+  });
+
+  it('failChatJob marks the job failed and a late done no longer touches it', async () => {
+    useChat.getState().listen();
+    await useChat.getState().send('j2', [{ type: 'text', text: 'go' }], { agentId: 'claude', job: { projectId: 'p1', title: 'Video' } });
+    await failChatJob('j2', 'No video file was rendered');
+    expect(lastJob()).toMatchObject({ id: 'build-j2', status: 'failed', note: 'No video file was rendered', projectId: 'p1', title: 'Video' });
+    const writes = vi.mocked(upsertJob).mock.calls.length;
+    await emitTo('j2', { kind: 'done', stopReason: 'cancelled' });
+    expect(vi.mocked(upsertJob).mock.calls.length).toBe(writes);
+    // A chat with no job: nothing to write.
+    await failChatJob('none', 'x');
+    expect(vi.mocked(upsertJob).mock.calls.length).toBe(writes);
+  });
+
+  it('retire stops the session; the next message starts a new one with a recap of the chat', async () => {
+    useChat.getState().listen();
+    await useChat.getState().send('r1', [{ type: 'text', text: 'Make the video' }], { agentId: 'claude' });
+    await emitTo('r1', { kind: 'text', text: 'Rendered renders/a.mp4' });
+    await emitTo('r1', { kind: 'done', stopReason: 'end_turn' });
+    vi.mocked(agentStart).mockClear();
+    await useChat.getState().retire('r1');
+    expect(agentStop).toHaveBeenCalledWith('r1');
+    expect(useChat.getState().started.r1).toBe(false);
+    vi.mocked(agentPrompt).mockClear();
+    await useChat.getState().send('r1', [{ type: 'text', text: 'Make it shorter' }]);
+    expect(agentStart).toHaveBeenCalledWith('r1', 'claude');
+    const sent = JSON.stringify(vi.mocked(agentPrompt).mock.calls[0]![1]);
+    expect(sent).toContain('Earlier in this chat:');
+    expect(sent).not.toContain('another agent');
+    expect(sent).toContain('You: Make the video');
+    expect(sent).toContain('Agent: Rendered renders/a.mp4');
   });
 });

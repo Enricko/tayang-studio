@@ -70,6 +70,11 @@ interface ChatState {
   cancel(chatId: string): Promise<void>;
   /** Ends the chat's agent process; the next send starts a new one. */
   stop(chatId: string): Promise<void>;
+  /**
+   * Ends the chat's agent process once its work is done (the autopilot's videos). The chat stays as it is;
+   * the next message starts a new session that gets a recap of the chat first.
+   */
+  retire(chatId: string): Promise<void>;
   /** Moves the chat to another agent; it starts fresh on the next send. */
   switchAgent(chatId: string, agent: AgentId): Promise<void>;
   /** Adds a system line to the chat and stores it; resolves once it is stored (best effort). */
@@ -101,8 +106,8 @@ const clientKeys = new Map<string, string>();
 /** A key for a message that stays the same when the local copy is swapped for the stored one. */
 export const messageKey = (m: ChatMessage) => clientKeys.get(m.id) ?? m.id;
 
-/** Recaps waiting for the first prompt after an agent switch. */
-const pendingRecap = new Map<string, string>();
+/** Recaps waiting for the first prompt of a new session: after an agent switch, or a retired session. */
+const pendingRecap = new Map<string, { text: string; switched: boolean }>();
 
 /** What `agent_prompt` says when a turn is still running; that turn goes on untouched. */
 const BUSY = /still working/i;
@@ -137,6 +142,34 @@ export function buildRecap(messages: ChatMessage[]): string {
 export const appendSystem = (chatId: string, text: string) => useChat.getState().appendSystem(chatId, text);
 
 export const buildJobId = (chatId: string) => `build-${chatId}`;
+
+/**
+ * Marks the chat's build job failed with `note` (saved text) and stops tracking it, so a `done` that
+ * arrives later (a cancelled turn) can't turn it back. For the autopilot, whose slot failed.
+ */
+export async function failChatJob(chatId: string, note: string): Promise<void> {
+  const job = chatJobs.get(chatId);
+  if (!job) return;
+  chatJobs.delete(chatId);
+  try {
+    await upsertJob({
+      id: buildJobId(chatId),
+      kind: 'build',
+      title: job.title,
+      projectId: job.projectId,
+      chatId,
+      agentId: chatAgent.get(chatId) ?? 'claude',
+      status: 'failed',
+      progress: null,
+      sourceUrl: null,
+      note,
+      updatedAt: new Date().toISOString(),
+    });
+    await refreshJobs();
+  } catch {
+    /* the job board is best effort */
+  }
+}
 
 /** Best effort: the job board must never break a chat. */
 function writeJob(chatId: string, status: JobStatus, note: string | null = null) {
@@ -263,7 +296,8 @@ export const useChat = create<ChatState>((set, get) => {
       return;
     }
     if (u.kind === 'done') {
-      writeJob(chatId, 'done');
+      if (u.stopReason === 'cancelled') writeJob(chatId, 'failed', stored('agents.cancelled'));
+      else writeJob(chatId, 'done');
       settleTools(chatId, u.stopReason === 'cancelled' ? 'failed' : 'done');
       finish(chatId);
       const last = (get().messages[chatId] ?? []).at(-1);
@@ -385,9 +419,10 @@ export const useChat = create<ChatState>((set, get) => {
           else if (languageHint(uiLang)) lead.push({ type: 'text', text: languageHint(uiLang) });
         }
         const recap = pendingRecap.get(chatId);
-        if (recap) {
+        if (recap?.text) {
           // i18n-ignore: this goes to the agent, not the user
-          lead.push({ type: 'text', text: `Earlier in this chat, with another agent:\n${recap}\n\nContinue from here.` });
+          const intro = recap.switched ? 'Earlier in this chat, with another agent:' : 'Earlier in this chat:';
+          lead.push({ type: 'text', text: `${intro}\n${recap.text}\n\nContinue from here.` });
         }
         await agentPrompt(chatId, [...lead, ...sent]);
         pendingRecap.delete(chatId);
@@ -421,12 +456,17 @@ export const useChat = create<ChatState>((set, get) => {
       await agentStop(chatId).catch(() => {});
     },
 
+    async retire(chatId) {
+      pendingRecap.set(chatId, { text: buildRecap(get().messages[chatId] ?? []), switched: false });
+      await get().stop(chatId);
+    },
+
     async switchAgent(chatId, agent) {
       const earlier = get().messages[chatId] ?? [];
       const row = await updateChatAgent(chatId, agent);
       await get().stop(chatId);
       chatAgent.set(chatId, agent);
-      pendingRecap.set(chatId, buildRecap(earlier));
+      pendingRecap.set(chatId, { text: buildRecap(earlier), switched: true });
       const name = AGENT_NAMES[agent];
       const sys = localMessage(chatId, 'system', [
         {
