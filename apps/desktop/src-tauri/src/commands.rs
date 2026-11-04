@@ -784,3 +784,57 @@ mod tests {
         );
     }
 }
+
+// ---- agent usage ----
+
+#[tauri::command]
+pub async fn get_agent_usage(
+    state: State<'_, AppState>,
+    cache: State<'_, crate::usage::UsageCache>,
+    force: bool,
+) -> CmdResult<Vec<AgentUsage>> {
+    if !force {
+        if let Some((at, v)) = cache.0.lock().map_err(err)?.as_ref() {
+            if at.elapsed() < crate::usage::CACHE_TTL {
+                return Ok(v.clone());
+            }
+        }
+    }
+    let home = state.home.clone();
+    let (agents, token) = tauri::async_runtime::spawn_blocking(move || {
+        let agents = system::detect_agents(&RealExec);
+        let token = if agents.iter().any(|a| a.installed && a.id == AgentId::Claude) {
+            crate::usage::read_claude_token(&RealExec, &home)
+        } else {
+            None
+        };
+        (agents, token)
+    })
+    .await
+    .map_err(err)?;
+    let now = chrono::Utc::now();
+    let mut out = Vec::new();
+    for a in agents.iter().filter(|a| a.installed) {
+        if a.id != AgentId::Claude {
+            out.push(crate::usage::unavailable(a.id, &a.name, now));
+            continue;
+        }
+        let usage = match &token {
+            None => crate::usage::usage_from_response(401, "", now),
+            Some(t) => match crate::usage::fetch_claude_usage(t).await {
+                Ok(u) => u,
+                Err(m) => {
+                    let mut u = crate::usage::usage_from_response(0, "", now);
+                    u.message = Some(m);
+                    u
+                }
+            },
+        };
+        out.push(usage);
+    }
+    // Failures aren't cached, so the next poll retries.
+    if out.iter().all(|u| u.status != UsageStatus::Error) {
+        *cache.0.lock().map_err(err)? = Some((std::time::Instant::now(), out.clone()));
+    }
+    Ok(out)
+}

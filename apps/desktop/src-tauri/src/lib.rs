@@ -25,6 +25,7 @@ pub fn run() {
             // Also records the real home so later settings updates resolve defaults against it.
             let working = db.get_settings(&home).working_folder;
             commands::allow_asset_folders(app.handle(), &db, &working);
+            app.manage(usage::UsageCache::default());
             app.manage(AppState {
                 db,
                 acp: acp::AcpManager::new(),
@@ -65,6 +66,7 @@ pub fn run() {
             commands::media_extract_frame,
             commands::media_thumbnails,
             commands::media_render,
+            commands::get_agent_usage,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Tayang Studio");

@@ -117,6 +117,31 @@ pub fn usage_from_response(status: u16, body: &str, now: DateTime<Utc>) -> Agent
     }
 }
 
+/// One GET to the usage endpoint. Errors never include the token.
+pub async fn fetch_claude_usage(token: &str) -> Result<AgentUsage, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .user_agent(concat!("tayang-studio/", env!("CARGO_PKG_VERSION")))
+        .build()
+        .map_err(|_| "Couldn't start the usage request".to_string())?;
+    let res = client
+        .get(USAGE_URL)
+        .bearer_auth(token)
+        .header("anthropic-beta", "oauth-2025-04-20")
+        .send()
+        .await
+        .map_err(|_| "Couldn't reach Anthropic to load usage".to_string())?;
+    let status = res.status().as_u16();
+    let body = res.text().await.unwrap_or_default();
+    Ok(usage_from_response(status, &body, Utc::now()))
+}
+
+/// Last results, reused for five minutes unless the UI forces a refresh.
+#[derive(Default)]
+pub struct UsageCache(pub std::sync::Mutex<Option<(std::time::Instant, Vec<AgentUsage>)>>);
+
+pub const CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(300);
+
 pub fn unavailable(id: AgentId, name: &str, now: DateTime<Utc>) -> AgentUsage {
     AgentUsage {
         agent_id: id,
