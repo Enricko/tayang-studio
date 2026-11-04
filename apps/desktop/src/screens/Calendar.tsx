@@ -6,9 +6,13 @@ import type { MessagePart, Project, VideoKind } from '@tayang/shared';
 import { buildTopicIdeasPrompt } from '@tayang/skills';
 import { Button } from '@/components/Button';
 import { Oyen } from '@/components/Oyen';
+import { ScheduleDialog } from '@/components/ScheduleDialog';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { PermissionCard } from '@/components/PermissionCard';
 import { locale } from '@/i18n';
-import { listProjects, listStyles } from '@/lib/ipc';
+import { calendarState, type CalendarState } from '@/lib/calendarState';
+import { approveProject, listProjects, listStyles, setPosted, setSchedule } from '@/lib/ipc';
+import { openProjectChat } from '@/lib/openProject';
 import { ideasFromReply, startTopic, type TopicIdea } from '@/lib/topics';
 import { cn } from '@/lib/utils';
 import { useApp } from '@/state/app';
@@ -18,6 +22,14 @@ const KINDS: VideoKind[] = ['explainer', 'promo', 'quote', 'news', 'tutorial', '
 const NO_MESSAGES: never[] = [];
 
 type Idea = TopicIdea;
+
+const STATE_DOT: Record<CalendarState, string> = {
+  making: 'bg-primary',
+  'needs-review': 'bg-orange-light',
+  ready: 'bg-foreground',
+  posted: 'bg-text-3',
+  draft: 'border border-text-3',
+};
 
 /** Mon..Sun in the active language; 2024-01-01 is a Monday. */
 const weekdays = () =>
@@ -73,6 +85,10 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
   const makingRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const pending = useRef(false);
+  const [scheduleFor, setScheduleFor] = useState<Project | null>(null);
+  const [picking, setPicking] = useState(false);
+  const [openEntry, setOpenEntry] = useState<string | null>(null);
+  const dragId = useRef<string | null>(null);
 
   const messages = useChat((s) => (chatId ? s.messages[chatId] : undefined)) ?? NO_MESSAGES;
   const streaming = useChat((s) => (chatId ? !!s.streaming[chatId] : false));
@@ -164,6 +180,25 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
     return map;
   }, [projects]);
 
+  const replace = (p: Project) => setProjects((list) => list.map((x) => (x.id === p.id ? p : x)));
+  const update = async (job: Promise<Project>) => {
+    setError(null);
+    try {
+      replace(await job);
+    } catch {
+      setError(t('calendar.cantUpdate'));
+    }
+  };
+
+  /** Dropping an entry on another day keeps its time of day. */
+  const moveTo = (id: string, day: Date) => {
+    const p = projects.find((x) => x.id === id);
+    const from = p?.scheduledAt ? new Date(p.scheduledAt) : null;
+    if (!p || !from || Number.isNaN(from.getTime()) || dateKey(from) === dateKey(day)) return;
+    const next = new Date(day.getFullYear(), day.getMonth(), day.getDate(), from.getHours(), from.getMinutes());
+    void update(setSchedule(id, next.toISOString()));
+  };
+
   const go = (delta: number) =>
     setCursor((c) => {
       const d = new Date(c.y, c.m + delta, 1);
@@ -177,6 +212,9 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
           <h1 className="m-0 mr-auto text-[28px] font-semibold tracking-[-0.01em]">
             {monthName(cursor.m)} {cursor.y}
           </h1>
+          <Button variant="secondary" className="h-9 px-3 text-[13px]" onClick={() => setPicking(true)}>
+            {t('calendar.scheduleVideo')}
+          </Button>
           <Button variant="secondary" aria-label={t('calendar.previous')} className="size-9 px-0 text-text-2" onClick={() => go(-1)}>
             <ChevronLeft size={16} strokeWidth={1.5} aria-hidden="true" />
           </Button>
@@ -215,6 +253,13 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
                   key={key}
                   data-testid="cal-cell"
                   data-date={key}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    const id = dragId.current ?? e.dataTransfer?.getData('text/plain');
+                    dragId.current = null;
+                    if (id) moveTo(id, d);
+                  }}
                   className={cn(
                     'flex min-h-[92px] min-w-0 flex-col gap-1 border-r border-b border-[#1F1F1F] p-1',
                     !inMonth && 'bg-[#0B0B0B]',
@@ -229,24 +274,79 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
                     {d.getDate()}
                   </span>
                   {(events[key] ?? []).map(({ p, at }) => {
-                    const ready = p.status === 'rendered' || p.status === 'scheduled';
+                    const state = calendarState(p, today);
+                    const stateLabel = t(`calendar.states.${state}`);
+                    const time = `${pad(at.getHours())}:${pad(at.getMinutes())}`;
                     return (
-                      <div
-                        key={p.id}
-                        className={cn(
-                          'flex min-w-0 flex-col gap-0.5 rounded-sm px-2 py-1 text-foreground',
-                          ready ? 'bg-raised' : 'border border-dashed border-[#333]',
-                        )}
-                      >
-                        <span className="flex items-center gap-1 font-mono text-[10px] text-text-3">
-                          <span
-                            aria-hidden="true"
-                            className={cn('size-1.5 shrink-0 rounded-full', ready ? 'bg-primary' : 'border border-text-3')}
-                          />
-                          {pad(at.getHours())}:{pad(at.getMinutes())}
-                        </span>
-                        <span className="truncate text-[11px] font-medium">{p.title}</span>
-                      </div>
+                      <Popover key={p.id} open={openEntry === p.id} onOpenChange={(o) => setOpenEntry(o ? p.id : null)}>
+                        <PopoverTrigger asChild>
+                          <button
+                            type="button"
+                            draggable
+                            data-testid="cal-entry"
+                            aria-label={t('calendar.entryAria', { title: p.title, state: stateLabel, time })}
+                            onDragStart={(e) => {
+                              dragId.current = p.id;
+                              e.dataTransfer?.setData('text/plain', p.id);
+                            }}
+                            className={cn(
+                              'flex min-w-0 flex-col gap-0.5 rounded-sm px-2 py-1 text-left text-foreground',
+                              state === 'draft' ? 'border border-dashed border-[#333]' : 'bg-raised',
+                            )}
+                          >
+                            <span className="flex items-center gap-1 font-mono text-[10px] text-text-3">
+                              <span aria-hidden="true" className={cn('size-1.5 shrink-0 rounded-full', STATE_DOT[state])} />
+                              {time}
+                            </span>
+                            <span className="truncate text-[11px] font-medium">{p.title}</span>
+                            <span className="truncate text-[10px] text-text-3">{stateLabel}</span>
+                          </button>
+                        </PopoverTrigger>
+                        <PopoverContent align="start" className="flex w-56 flex-col gap-1 p-2">
+                          <Button
+                            variant="ghost"
+                            className="h-8 justify-start px-2 text-[13px]"
+                            onClick={() => {
+                              setOpenEntry(null);
+                              void openProjectChat(p).catch(() => setError(t('calendar.cantUpdate')));
+                            }}
+                          >
+                            {t('calendar.openVideo')}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            className="h-8 justify-start px-2 text-[13px]"
+                            onClick={() => {
+                              setOpenEntry(null);
+                              setScheduleFor(p);
+                            }}
+                          >
+                            {t('calendar.schedule')}
+                          </Button>
+                          {p.reviewState === 'pending' && (
+                            <Button
+                              variant="ghost"
+                              className="h-8 justify-start px-2 text-[13px]"
+                              onClick={() => {
+                                setOpenEntry(null);
+                                void update(approveProject(p.id));
+                              }}
+                            >
+                              {t('calendar.approve')}
+                            </Button>
+                          )}
+                          <Button
+                            variant="ghost"
+                            className="h-8 justify-start px-2 text-[13px]"
+                            onClick={() => {
+                              setOpenEntry(null);
+                              void update(setPosted(p.id, !p.postedAt));
+                            }}
+                          >
+                            {p.postedAt ? t('calendar.notPosted') : t('calendar.markPosted')}
+                          </Button>
+                        </PopoverContent>
+                      </Popover>
                     );
                   })}
                 </div>
@@ -309,6 +409,18 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
           </Button>
         </div>
       </aside>
+      <ScheduleDialog
+        open={scheduleFor !== null || picking}
+        onOpenChange={(o) => {
+          if (!o) {
+            setScheduleFor(null);
+            setPicking(false);
+          }
+        }}
+        project={scheduleFor}
+        choices={projects.filter((p) => !p.scheduledAt && !p.postedAt)}
+        onSaved={replace}
+      />
     </div>
   );
 }

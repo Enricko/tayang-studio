@@ -6,6 +6,9 @@ import type { AgentInfo, AgentUpdate, Job, PermissionRequest, Project, Settings,
 vi.mock('@/lib/ipc', () => ({
   listProjects: vi.fn(),
   updateProject: vi.fn(),
+  setSchedule: vi.fn(),
+  setPosted: vi.fn(),
+  approveProject: vi.fn(),
   listChats: vi.fn(),
   createChat: vi.fn(),
   listStyles: vi.fn(),
@@ -1291,6 +1294,145 @@ describe('Calendar', () => {
     expect(cells).toHaveLength(42);
     expect(cells[0]).toHaveAttribute('data-date', '2026-10-26');
     expect(screen.getByRole('heading', { name: 'November 2026' })).toBeInTheDocument();
+  });
+});
+
+describe('Calendar scheduling', () => {
+  const at = (h: number, m = 0) => new Date(2026, 10, 12, h, m).toISOString();
+  const today = new Date(2026, 10, 4);
+
+  it('shows each entry with its time and a state chip, in Indonesian too', async () => {
+    vi.mocked(ipc.listProjects).mockResolvedValue([
+      project('a', 'Alpha', 'rendered', at(9, 30)),
+      project('b', 'Beta', 'rendered', at(10), { reviewState: 'pending' }),
+      project('c', 'Gamma', 'building', at(11)),
+      project('d', 'Delta', 'rendered', at(12), { postedAt: '2026-11-12T05:00:00Z' }),
+      project('e', 'Epsilon', 'draft', at(13)),
+    ]);
+    render(<Calendar today={today} />);
+    const cell = (await screen.findByText('Alpha')).closest('[data-testid="cal-cell"]') as HTMLElement;
+    expect(cell).toHaveAttribute('data-date', '2026-11-12');
+    expect(within(cell).getByRole('button', { name: 'Alpha, Ready, 09:30' })).toBeInTheDocument();
+    expect(within(cell).getByRole('button', { name: 'Beta, Needs review, 10:00' })).toBeInTheDocument();
+    expect(within(cell).getByRole('button', { name: 'Gamma, Making, 11:00' })).toBeInTheDocument();
+    expect(within(cell).getByRole('button', { name: 'Delta, Posted, 12:00' })).toBeInTheDocument();
+    expect(within(cell).getByRole('button', { name: 'Epsilon, Draft, 13:00' })).toBeInTheDocument();
+    cleanup();
+    setUiLanguage('id');
+    try {
+      render(<Calendar today={today} />);
+      expect(await screen.findByRole('button', { name: 'Beta, Perlu ditinjau, 10:00' })).toBeInTheDocument();
+    } finally {
+      setUiLanguage('en');
+    }
+  });
+
+  it('the popover calls the right IPC for approve and mark as posted', async () => {
+    const p = project('a', 'Alpha', 'rendered', at(9), { reviewState: 'pending' });
+    vi.mocked(ipc.listProjects).mockResolvedValue([p]);
+    vi.mocked(ipc.approveProject).mockResolvedValue({ ...p, reviewState: 'approved' });
+    vi.mocked(ipc.setPosted).mockResolvedValue({ ...p, reviewState: 'approved', postedAt: '2026-11-12T02:00:00Z' });
+    render(<Calendar today={today} />);
+    await userEvent.click(await screen.findByRole('button', { name: /^Alpha,/ }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Approve' }));
+    expect(ipc.approveProject).toHaveBeenCalledWith('a');
+    await userEvent.click(await screen.findByRole('button', { name: 'Alpha, Ready, 09:00' }));
+    expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Mark as posted' }));
+    expect(ipc.setPosted).toHaveBeenCalledWith('a', true);
+    await userEvent.click(await screen.findByRole('button', { name: 'Alpha, Posted, 09:00' }));
+    expect(screen.getByRole('button', { name: 'Not posted' })).toBeInTheDocument();
+  });
+
+  it('Open video opens the project chat', async () => {
+    const p = project('a', 'Alpha', 'rendered', at(9));
+    vi.mocked(ipc.listProjects).mockResolvedValue([p]);
+    vi.mocked(ipc.listChats).mockResolvedValue([{ id: 'c1', projectId: 'a', agentId: 'claude', title: 'Alpha', createdAt: '' }]);
+    render(<Calendar today={today} />);
+    await userEvent.click(await screen.findByRole('button', { name: /^Alpha,/ }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Open video' }));
+    await waitFor(() => expect(useApp.getState().route).toEqual({ name: 'chat', chatId: 'c1' }));
+  });
+
+  it('Schedule… from the popover sets a local time and Clear removes it', async () => {
+    const p = project('a', 'Alpha', 'rendered', at(9));
+    vi.mocked(ipc.listProjects).mockResolvedValue([p]);
+    vi.mocked(ipc.setSchedule).mockImplementation(async (_id, when) => ({ ...p, scheduledAt: when }));
+    render(<Calendar today={today} />);
+    await userEvent.click(await screen.findByRole('button', { name: /^Alpha,/ }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Schedule…' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByLabelText('Date')).toHaveValue('2026-11-12');
+    expect(within(dialog).getByLabelText('Time')).toHaveValue('09:00');
+    fireEvent.change(within(dialog).getByLabelText('Date'), { target: { value: '2026-11-20' } });
+    fireEvent.change(within(dialog).getByLabelText('Time'), { target: { value: '18:45' } });
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(ipc.setSchedule).toHaveBeenCalledWith('a', new Date(2026, 10, 20, 18, 45).toISOString()));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    await userEvent.click(await screen.findByRole('button', { name: 'Alpha, Ready, 18:45' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Schedule…' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Clear schedule' }));
+    await waitFor(() => expect(ipc.setSchedule).toHaveBeenLastCalledWith('a', null));
+    expect(screen.queryByText('Alpha')).not.toBeInTheDocument();
+  });
+
+  it('the Calendar entry schedules an unscheduled video after choosing it', async () => {
+    const p = project('u', 'Unplanned', 'rendered');
+    vi.mocked(ipc.listProjects).mockResolvedValue([p, project('s', 'Planned', 'rendered', at(9))]);
+    vi.mocked(ipc.setSchedule).mockImplementation(async (_id, when) => ({ ...p, scheduledAt: when }));
+    render(<Calendar today={today} />);
+    await screen.findByText('Planned');
+    await userEvent.click(screen.getByRole('button', { name: 'Schedule a video' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByRole('button', { name: 'Save' })).toBeDisabled();
+    expect(within(dialog).queryByRole('option', { name: 'Planned' })).not.toBeInTheDocument();
+    await userEvent.selectOptions(within(dialog).getByLabelText('Video'), 'u');
+    fireEvent.change(within(dialog).getByLabelText('Date'), { target: { value: '2026-11-06' } });
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(ipc.setSchedule).toHaveBeenCalledWith('u', new Date(2026, 10, 6, 9, 0).toISOString()));
+  });
+
+  it('dragging an entry to another day keeps its time', async () => {
+    const p = project('a', 'Alpha', 'rendered', at(9, 30));
+    vi.mocked(ipc.listProjects).mockResolvedValue([p]);
+    vi.mocked(ipc.setSchedule).mockImplementation(async (_id, when) => ({ ...p, scheduledAt: when }));
+    render(<Calendar today={today} />);
+    const entry = await screen.findByRole('button', { name: /^Alpha,/ });
+    const target = screen.getAllByTestId('cal-cell').find((c) => c.getAttribute('data-date') === '2026-11-17')!;
+    const data = new Map<string, string>();
+    const dataTransfer = { setData: (k: string, v: string) => data.set(k, v), getData: (k: string) => data.get(k) ?? '' };
+    fireEvent.dragStart(entry, { dataTransfer });
+    fireEvent.dragOver(target, { dataTransfer });
+    fireEvent.drop(target, { dataTransfer });
+    await waitFor(() => expect(ipc.setSchedule).toHaveBeenCalledWith('a', new Date(2026, 10, 17, 9, 30).toISOString()));
+    await waitFor(() => expect(within(target).getByText('Alpha')).toBeInTheDocument());
+    // Dropping on the same day does nothing.
+    vi.mocked(ipc.setSchedule).mockClear();
+    const entry2 = within(target).getByRole('button', { name: /^Alpha,/ });
+    fireEvent.dragStart(entry2, { dataTransfer });
+    fireEvent.drop(target, { dataTransfer });
+    expect(ipc.setSchedule).not.toHaveBeenCalled();
+  });
+
+  it('no longer claims Tayang reminds you', async () => {
+    render(<Calendar today={today} />);
+    expect(screen.queryByText(/reminds you/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/tayang\.app plan/)).toBeInTheDocument();
+  });
+});
+
+describe('Videos schedule action', () => {
+  it('opens the dialog for that card and saves', async () => {
+    const p = project('a', 'Alpha', 'rendered');
+    vi.mocked(ipc.listProjects).mockResolvedValue([p]);
+    vi.mocked(ipc.setSchedule).mockImplementation(async (_id, when) => ({ ...p, scheduledAt: when }));
+    render(<Videos />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Schedule Alpha' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).queryByRole('button', { name: 'Clear schedule' })).not.toBeInTheDocument();
+    fireEvent.change(within(dialog).getByLabelText('Date'), { target: { value: '2026-12-01' } });
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(ipc.setSchedule).toHaveBeenCalledWith('a', new Date(2026, 11, 1, 9, 0).toISOString()));
   });
 });
 
