@@ -10,9 +10,12 @@ vi.mock('@/lib/ipc', () => ({
   syncStyles: vi.fn().mockResolvedValue({ styles: [], offline: false }),
 }));
 vi.mock('@/lib/events', () => ({ onAgentUpdate: vi.fn(), onPermission: vi.fn() }));
+const engine = vi.hoisted(() => ({ stop: vi.fn() }));
+vi.mock('@/state/autopilot', () => ({ startAutopilot: vi.fn(() => engine.stop) }));
 
 import { getSettings, syncStyles, systemLocale, updateSettings } from '@/lib/ipc';
 import App from '@/App';
+import { startAutopilot } from '@/state/autopilot';
 import { useApp } from '@/state/app';
 
 const base: Settings = {
@@ -47,6 +50,21 @@ describe('App start', () => {
     render(<App />);
     expect(await screen.findByText('What are we making?', { selector: 'h1' })).toBeInTheDocument();
     expect(useApp.getState().route.name).toBe('chat-new');
+  });
+
+  it('starts the autopilot engine once onboarded, and stops it on unmount', async () => {
+    vi.mocked(startAutopilot).mockClear();
+    vi.mocked(getSettings).mockResolvedValue(base);
+    const first = render(<App />);
+    await screen.findByText('Get started');
+    expect(startAutopilot).not.toHaveBeenCalled();
+    first.unmount();
+    useApp.setState({ settings: null });
+    vi.mocked(getSettings).mockResolvedValue({ ...base, onboarded: true });
+    const { unmount } = render(<App />);
+    await vi.waitFor(() => expect(startAutopilot).toHaveBeenCalledTimes(1));
+    unmount();
+    expect(engine.stop).toHaveBeenCalled();
   });
 });
 

@@ -6,6 +6,7 @@ import { setUiLanguage } from '@/i18n';
 import { systemLanguage } from '@/lib/language';
 import { getSettings, syncStyles, updateSettings } from '@/lib/ipc';
 import { startScheduler } from '@/lib/scheduler';
+import { startAutopilot } from '@/state/autopilot';
 import { useWindowDrag } from '@/lib/windowDrag';
 import { Agents } from '@/screens/Agents';
 import { Calendar } from '@/screens/Calendar';
@@ -79,18 +80,21 @@ export default function App() {
     load();
   }, [load]);
 
-  // Once set up, the scheduler listens for the Rust tick (reminders now, autopilots later).
+  // Once set up, the scheduler listens for the Rust tick (reminders and the autopilot engine). The engine
+  // registers first, so the scheduler's first pass already runs it.
   const onboarded = settings?.onboarded ?? false;
   useEffect(() => {
     if (!onboarded) return;
     let off: (() => void) | undefined;
     let gone = false;
+    const stopEngine = startAutopilot();
     startScheduler()
       .then((un) => (gone ? un() : (off = un)))
       .catch(() => {});
     return () => {
       gone = true;
       off?.();
+      stopEngine();
     };
   }, [onboarded]);
 
