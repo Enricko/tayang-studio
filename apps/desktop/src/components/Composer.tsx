@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
-import { ArrowUp, Check, ChevronDown, File as FileIcon, Paperclip, Square, X, Zap } from 'lucide-react';
+import { ArrowUp, AtSign, Check, ChevronDown, File as FileIcon, Paperclip, Square, X, Zap } from 'lucide-react';
 import type { AgentId, AgentInfo, MessagePart, Project } from '@tayang/shared';
 import { AgentLogo } from '@/components/AgentLogo';
 import { FrameChip } from '@/components/MessageList';
@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover';
 import { Textarea } from '@/components/ui/textarea';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { AGENT_NAMES } from '@/lib/agents';
 import { assetUrl, attachFile, detectAgents } from '@/lib/ipc';
 import { cn } from '@/lib/utils';
@@ -68,8 +69,27 @@ function FileChip({ part, onRemove }: { part: FilePart; onRemove(): void }) {
 
 const AGENT_ORDER: AgentId[] = ['claude', 'opencode', 'codex', 'gemini'];
 
-const TRIGGER =
-  'inline-flex h-7 cursor-pointer items-center gap-1 rounded-sm border border-hairline bg-transparent px-2 text-xs font-medium text-[#D9D9D9] hover:bg-raised disabled:cursor-default disabled:opacity-50';
+/** Every toolbar control: a 32×32 icon button, same radius and hover. */
+const ICON_BUTTON =
+  'inline-flex size-8 shrink-0 cursor-pointer items-center justify-center gap-0.5 rounded-md border-none bg-transparent p-0 text-text-2 transition-colors hover:bg-raised hover:text-foreground disabled:cursor-default disabled:opacity-50';
+
+/** A toolbar control with its full label as a tooltip. */
+function Tip({ label, children }: { label: string; children: React.ReactElement }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent side="top">{label}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+/** The agent's logo and a small chevron; the name is in the label and tooltip. */
+const AgentFace = ({ agent }: { agent: AgentId }) => (
+  <>
+    <AgentLogo id={agent} size={16} />
+    <ChevronDown size={12} strokeWidth={1.5} aria-hidden="true" />
+  </>
+);
 
 function AgentPicker({
   agent,
@@ -91,13 +111,18 @@ function AgentPicker({
   const listed = AGENT_ORDER.map((id) => agents.find((a) => a.id === id)).filter((a): a is AgentInfo => !!a);
   return (
     <DropdownMenu onOpenChange={load}>
-      <DropdownMenuTrigger asChild disabled={disabled}>
-        <button type="button" disabled={disabled} className={TRIGGER}>
-          <AgentLogo id={agent} size={14} />
-          {AGENT_NAMES[agent]}
-          <ChevronDown size={12} strokeWidth={1.5} aria-hidden="true" />
-        </button>
-      </DropdownMenuTrigger>
+      <Tip label={t('composer.agentLabel', { name: AGENT_NAMES[agent] })}>
+        <DropdownMenuTrigger asChild disabled={disabled}>
+          <button
+            type="button"
+            disabled={disabled}
+            aria-label={t('composer.agentLabel', { name: AGENT_NAMES[agent] })}
+            className={cn(ICON_BUTTON, 'w-auto min-w-8 px-1.5')}
+          >
+            <AgentFace agent={agent} />
+          </button>
+        </DropdownMenuTrigger>
+      </Tip>
       <DropdownMenuContent side="top" align="start" className="w-64 border-hairline bg-card">
         {listed.map((a) => (
           <DropdownMenuItem
@@ -394,56 +419,62 @@ export function Composer({
               onKeyDown={onKeyDown}
               className="min-h-12 resize-none rounded-none border-0 bg-transparent p-0 text-[14px] leading-[1.6] shadow-none focus-visible:border-transparent focus-visible:ring-0 dark:bg-transparent"
             />
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                aria-label={t('composer.attach')}
-                disabled={disabled}
-                onClick={() => void pickFiles()}
-                className="inline-flex size-7 cursor-pointer items-center justify-center rounded-sm border-none bg-transparent p-0 text-text-2 hover:text-foreground disabled:cursor-default disabled:opacity-50"
-              >
-                <Paperclip size={16} strokeWidth={1.5} aria-hidden="true" />
-              </button>
+            <TooltipProvider delayDuration={300}>
+            <div className="flex items-center gap-1">
+              <Tip label={t('composer.attach')}>
+                <button
+                  type="button"
+                  aria-label={t('composer.attach')}
+                  disabled={disabled}
+                  onClick={() => void pickFiles()}
+                  className={ICON_BUTTON}
+                >
+                  <Paperclip size={16} strokeWidth={1.5} aria-hidden="true" />
+                </button>
+              </Tip>
               {onAgentChange ? (
                 <AgentPicker agent={agent} disabled={disabled || autoBusy} onChange={onAgentChange} />
               ) : (
-                <button type="button" className={TRIGGER}>
-                  <AgentLogo id={agent} size={14} />
-                  {AGENT_NAMES[agent]}
-                  <ChevronDown size={12} strokeWidth={1.5} aria-hidden="true" />
-                </button>
+                <Tip label={t('composer.agentLabel', { name: AGENT_NAMES[agent] })}>
+                  <button
+                    type="button"
+                    aria-label={t('composer.agentLabel', { name: AGENT_NAMES[agent] })}
+                    className={cn(ICON_BUTTON, 'w-auto min-w-8 px-1.5')}
+                  >
+                    <AgentFace agent={agent} />
+                  </button>
+                </Tip>
               )}
               {onAgentChange && (
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={auto}
-                  aria-label={t('composer.auto')}
-                  title={t('composer.autoTitle')}
-                  disabled={disabled || autoBusy}
-                  onClick={() => void useChat.getState().setAuto(chatId, !auto)}
-                  className={cn(
-                    'inline-flex h-7 cursor-pointer items-center gap-1 rounded-sm border-none px-2 text-xs font-medium disabled:cursor-default disabled:opacity-50',
-                    auto ? 'bg-tint text-orange-light' : 'bg-transparent text-text-2 hover:text-foreground',
-                  )}
-                >
-                  <Zap size={14} strokeWidth={1.5} aria-hidden="true" />
-                  {t('composer.auto')}
-                </button>
+                <Tip label={`${auto ? t('composer.autoOn') : t('composer.autoOff')} · ${t('composer.autoTitle')}`}>
+                  <button
+                    type="button"
+                    aria-pressed={auto}
+                    aria-label={t('composer.auto')}
+                    disabled={disabled || autoBusy}
+                    onClick={() => void useChat.getState().setAuto(chatId, !auto)}
+                    className={cn(ICON_BUTTON, auto && 'bg-tint text-orange-light hover:bg-tint hover:text-orange-light')}
+                  >
+                    <Zap size={16} strokeWidth={1.5} aria-hidden="true" />
+                  </button>
+                </Tip>
               )}
               {projects && (
-                <button
-                  type="button"
-                  disabled={disabled}
-                  onClick={() => {
-                    setText((t) => (t && !/\s$/.test(t) ? `${t} @` : `${t}@`));
-                    setDismissed(null);
-                    ref.current?.focus();
-                  }}
-                  className="h-7 cursor-pointer rounded-sm border-none bg-transparent px-2 text-xs font-medium text-text-2 hover:text-foreground"
-                >
-                  {t('composer.mention')}
-                </button>
+                <Tip label={t('composer.mention')}>
+                  <button
+                    type="button"
+                    aria-label={t('composer.mention')}
+                    disabled={disabled}
+                    onClick={() => {
+                      setText((t) => (t && !/\s$/.test(t) ? `${t} @` : `${t}@`));
+                      setDismissed(null);
+                      ref.current?.focus();
+                    }}
+                    className={ICON_BUTTON}
+                  >
+                    <AtSign size={16} strokeWidth={1.5} aria-hidden="true" />
+                  </button>
+                </Tip>
               )}
               {sees && <span className="truncate text-xs text-text-3">{t('composer.sees', { title: sees })}</span>}
               {disabled && onStop ? (
@@ -467,6 +498,7 @@ export function Composer({
                 </button>
               )}
             </div>
+            </TooltipProvider>
           </div>
         </PopoverAnchor>
         <PopoverContent
