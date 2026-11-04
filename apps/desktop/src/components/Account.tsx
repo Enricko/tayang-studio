@@ -8,6 +8,11 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useApp } from '@/state/app';
 import { useAuth, type SignInFlow } from '@/state/auth';
+import { useBilling } from '@/state/billing';
+import { PlanCard } from '@/components/Plan';
+
+/** The badge for a plan id from the API; anything unknown reads as free. */
+const planKey = (plan: string) => (['lite', 'creator', 'pro'].includes(plan) ? (plan as 'lite' | 'creator' | 'pro') : 'free');
 
 const ERROR_KEYS = {
   expired: 'account.errors.expired',
@@ -150,8 +155,16 @@ export function AccountSection() {
     void useAuth.getState().init();
   }, []);
 
+  const signedIn = !!status?.signedIn;
+  const billing = useBilling((s) => s.status);
+  useEffect(() => {
+    if (!signedIn) useBilling.getState().reset();
+  }, [signedIn]);
+
   const apiUrl = status?.apiUrl || settingsApi || '';
   const account = status?.signedIn ? status.account : undefined;
+  // Billing status is fresher than the account (it moves as soon as a payment lands).
+  const shownPlan = billing ? (billing.active ? billing.plan : 'free') : planKey(account?.plan ?? 'free');
   return (
     <>
       {status?.signedIn ? (
@@ -166,9 +179,7 @@ export function AccountSection() {
             <div className="flex items-center gap-2">
               <span className="truncate text-sm font-medium">{account?.name || account?.email || t('account.yourAccount')}</span>
               {account && (
-                <Badge variant={account.plan === 'pro' ? 'default' : 'secondary'}>
-                  {account.plan === 'pro' ? t('account.plan.pro') : t('account.plan.free')}
-                </Badge>
+                <Badge variant={shownPlan === 'free' ? 'secondary' : 'default'}>{t(`account.plan.${shownPlan}`)}</Badge>
               )}
             </div>
             {account?.name && account.email && <span className="truncate text-[13px] text-text-2">{account.email}</span>}
@@ -178,12 +189,16 @@ export function AccountSection() {
             {t('account.signOut')}
           </Button>
         </div>
+      ) : null}
+      {status?.signedIn ? (
+        <PlanCard key={account?.id ?? 'account'} />
       ) : (
         <div className="flex flex-wrap items-center gap-4 rounded-xl border border-border bg-card p-4">
           <Oyen mood="default" size={40} />
           <div className="flex min-w-[280px] flex-1 flex-col gap-1">
             <span className="text-sm font-medium">{t('settings.freePlan')}</span>
             <span className="text-[13px] leading-normal text-text-2">{t('settings.planText')}</span>
+            <span className="text-xs text-text-3">{t('billing.signInToUpgrade')}</span>
           </div>
           <Button variant="secondary" className="gap-2" onClick={() => void signIn()}>
             <GoogleMark />

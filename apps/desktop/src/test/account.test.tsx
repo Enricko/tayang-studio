@@ -167,7 +167,8 @@ describe('Account card', () => {
   it('falls back to the email, and a free plan says Free', async () => {
     vi.mocked(auth.authStatus).mockResolvedValue({ ...signedIn, account: { ...signedIn.account!, name: null, plan: 'free' } });
     render(<AccountSection />);
-    expect(await screen.findByText('Free')).toBeInTheDocument();
+    // The badge, and the plan card under it.
+    expect(await screen.findAllByText('Free')).toHaveLength(2);
     expect(screen.getAllByText('ana@example.com').length).toBeGreaterThan(0);
     expect(screen.getByText('A')).toBeInTheDocument();
   });
