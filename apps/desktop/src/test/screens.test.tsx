@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentInfo, AgentUpdate, Job, PermissionRequest, Project, Settings, Style as StyleT } from '@tayang/shared';
@@ -325,19 +325,45 @@ describe('Failed job recovery', () => {
     ...over,
   });
 
-  it('a failed study card offers Try again and Dismiss, and Try again opens Style with the link', async () => {
-    vi.mocked(ipc.listJobs).mockResolvedValue([failed({})]);
+  it('Try again restarts the study with the job link and agent, then deletes the old job and opens Style', async () => {
+    vi.mocked(ipc.studyDir).mockResolvedValue('/w/s');
+    vi.mocked(ipc.listJobs).mockResolvedValue([failed({ agentId: 'gemini' })]);
+    useApp.setState({ route: { name: 'agents' } });
     render(<Agents />);
     const col = await screen.findByRole('region', { name: 'Needs you' });
     expect(within(col).queryByRole('button', { name: 'Fix it' })).not.toBeInTheDocument();
     expect(within(col).getByRole('button', { name: 'Dismiss' })).toBeInTheDocument();
     await userEvent.click(within(col).getByRole('button', { name: 'Try again' }));
-    expect(useApp.getState().route).toEqual({
-      name: 'style',
-      retryUrl: 'https://youtu.be/abc',
-      retryJobId: 'study-s1',
-      retryNote: 'Tayang was closed while this was running',
-    });
+    await waitFor(() => expect(ipc.deleteJob).toHaveBeenCalledWith('study-s1'));
+    expect(vi.mocked(ipc.agentStart).mock.calls[0]).toEqual([expect.stringMatching(/^study-/), 'gemini', true]);
+    expect(JSON.stringify(vi.mocked(ipc.agentPrompt).mock.calls[0]![1])).toContain('https://youtu.be/abc');
+    // The new job is written before the old one goes away.
+    const writeOrder = vi.mocked(ipc.upsertJob).mock.invocationCallOrder[0]!;
+    expect(writeOrder).toBeLessThan(vi.mocked(ipc.deleteJob).mock.invocationCallOrder[0]!);
+    expect(useApp.getState().route).toEqual({ name: 'style' });
+  });
+
+  it('Try again is disabled while another study is running', async () => {
+    vi.mocked(ipc.listJobs).mockResolvedValue([failed({})]);
+    useStudy.setState({ phase: 'running' });
+    render(<Agents />);
+    const btn = await screen.findByRole('button', { name: 'Try again' });
+    expect(btn).toBeDisabled();
+    expect(btn).toHaveAttribute('title', 'Another study is running');
+    useStudy.getState().dismiss();
+  });
+
+  it('a failed study without a saved link opens Style with the link input focused', async () => {
+    vi.mocked(ipc.listJobs).mockResolvedValue([failed({ sourceUrl: null })]);
+    useApp.setState({ route: { name: 'agents' } });
+    render(<Agents />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Try again' }));
+    expect(useApp.getState().route).toEqual({ name: 'style', focusLink: true });
+    expect(ipc.agentStart).not.toHaveBeenCalled();
+    cleanup();
+    render(<Style />);
+    expect(screen.getByLabelText('Video link')).toHaveValue('');
+    expect(screen.getByLabelText('Video link')).toHaveFocus();
   });
 
   it('Dismiss deletes the job and removes the card', async () => {
@@ -363,35 +389,6 @@ describe('Failed job recovery', () => {
     render(<Agents />);
     await userEvent.click(await screen.findByRole('button', { name: 'Fix it' }));
     expect(useApp.getState().route).toEqual({ name: 'chat', chatId: 'c1' });
-  });
-
-  it('Style prefills the link and the closed line, and starting deletes the old job', async () => {
-    vi.mocked(ipc.studyDir).mockResolvedValue('/w/s');
-    useApp.setState({
-      route: { name: 'style', retryUrl: 'https://youtu.be/abc', retryJobId: 'study-s1', retryNote: 'Tayang was closed while this was running' },
-    });
-    render(<Style />);
-    const input = screen.getByLabelText('Video link');
-    expect(input).toHaveValue('https://youtu.be/abc');
-    expect(input).toHaveFocus();
-    expect(screen.getByText('Tayang was closed before this study finished. Study it again?')).toBeInTheDocument();
-    // Never starts by itself.
-    expect(ipc.agentStart).not.toHaveBeenCalled();
-    await userEvent.click(screen.getByRole('button', { name: 'Study video' }));
-    expect(ipc.deleteJob).toHaveBeenCalledWith('study-s1');
-    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
-  });
-
-  it('Style shows the job note when it is not the closed message, and nothing without a link', async () => {
-    useApp.setState({ route: { name: 'style', retryUrl: 'https://youtu.be/abc', retryJobId: 'j', retryNote: 'Cancelled' } });
-    const { unmount } = render(<Style />);
-    expect(screen.getByText('Cancelled')).toBeInTheDocument();
-    unmount();
-    useApp.setState({ route: { name: 'style', retryUrl: null, retryJobId: 'j', retryNote: 'x' } });
-    render(<Style />);
-    expect(screen.getByLabelText('Video link')).toHaveValue('');
-    expect(screen.getByLabelText('Video link')).toHaveFocus();
-    expect(screen.queryByTestId('retry-note')).not.toBeInTheDocument();
   });
 });
 

@@ -9,6 +9,7 @@ import { deleteJob, detectAgents, listProjects } from '@/lib/ipc';
 import { ago } from '@/lib/time';
 import { cn } from '@/lib/utils';
 import { useApp } from '@/state/app';
+import { useStudy } from '@/state/study';
 import { refreshJobs } from '@/state/jobs';
 
 const COLUMNS: { name: string; mood: OyenMood; match(s: JobStatus): boolean }[] = [
@@ -20,13 +21,28 @@ const COLUMNS: { name: string; mood: OyenMood; match(s: JobStatus): boolean }[] 
 
 function JobCard({ job, project, onDismiss }: { job: Job; project: string; onDismiss(): void }) {
   const navigate = useApp((s) => s.navigate);
+  const studyRunning = useStudy((s) => s.phase === 'running');
+  const [starting, setStarting] = useState(false);
   const failed = job.status === 'failed';
   const working = job.status === 'working';
+  const tryDisabled = job.kind === 'study-style' && !!job.sourceUrl && (starting || studyRunning);
   const needs = failed || job.status === 'needs-you';
   const open = () => {
     if (job.kind === 'study-style') {
-      // Opens Style with the link filled in; the study only starts when the user presses Study video.
-      navigate({ name: 'style', retryUrl: job.sourceUrl, retryJobId: job.id, retryNote: job.note });
+      if (!job.sourceUrl) {
+        navigate({ name: 'style', focusLink: true });
+        return;
+      }
+      if (starting || studyRunning) return;
+      setStarting(true);
+      // The old job goes away once the new study's job is written; a failed start leaves its own failed job.
+      void useStudy
+        .getState()
+        .start(job.sourceUrl, job.agentId, job.id)
+        .finally(() => {
+          setStarting(false);
+          navigate({ name: 'style' });
+        });
     } else if (!job.chatId) navigate({ name: 'style' });
     else if (failed && job.note === CLOSED_NOTE) navigate({ name: 'chat', chatId: job.chatId, draft: CLOSED_DRAFT });
     else navigate({ name: 'chat', chatId: job.chatId });
@@ -66,7 +82,13 @@ function JobCard({ job, project, onDismiss }: { job: Job; project: string; onDis
             {job.note && <span className="text-xs leading-normal text-[#D9D9D9]">{job.note}</span>}
           </div>
           <div className="flex items-center gap-2 self-start">
-            <Button variant="secondary" className="h-8 rounded-sm px-3 text-[13px]" onClick={open}>
+            <Button
+              variant="secondary"
+              className="h-8 rounded-sm px-3 text-[13px]"
+              disabled={tryDisabled}
+              title={tryDisabled && studyRunning ? 'Another study is running' : undefined}
+              onClick={open}
+            >
               {failed ? (job.kind === 'study-style' ? 'Try again' : 'Fix it') : 'Review'}
             </Button>
             {failed && (

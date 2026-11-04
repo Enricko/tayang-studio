@@ -7,8 +7,7 @@ import { PermissionCard } from '@/components/PermissionCard';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
-import { deleteJob, deleteStyle, listStyles, saveStyle, syncStyles } from '@/lib/ipc';
-import { CLOSED_NOTE } from '@/lib/agents';
+import { deleteStyle, listStyles, saveStyle, syncStyles } from '@/lib/ipc';
 import { cn } from '@/lib/utils';
 import { useApp } from '@/state/app';
 import { useStudy } from '@/state/study';
@@ -318,18 +317,12 @@ export function Style() {
   const [version, setVersion] = useState(0);
   const [tab, setTab] = useState<Tab>('all');
   const [sel, setSel] = useState<string | null>(null);
-  const route = useApp((s) => s.route);
-  const retry = route.name === 'style' && route.retryJobId ? route : null;
-  const [url, setUrl] = useState(retry?.retryUrl ?? '');
-  /** A failed study this screen was opened from: its job goes away when the new study starts. */
-  const [retryJob, setRetryJob] = useState<string | null>(retry?.retryJobId ?? null);
-  const [retryLine, setRetryLine] = useState<string | null>(
-    retry?.retryUrl ? (retry.retryNote === CLOSED_NOTE ? 'Tayang was closed before this study finished. Study it again?' : (retry.retryNote ?? null)) : null,
-  );
+  const focusLink = useApp((s) => s.route.name === 'style' && !!s.route.focusLink);
+  const [url, setUrl] = useState('');
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => {
-    if (retry) input.current?.focus();
-    // Only when the screen opens from a failed card.
+    if (focusLink) input.current?.focus();
+    // Only when the screen opens.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const [urlError, setUrlError] = useState<string | null>(null);
@@ -373,11 +366,6 @@ export function Style() {
       return;
     }
     setUrlError(null);
-    if (retryJob) {
-      void deleteJob(retryJob).catch(() => {});
-      setRetryJob(null);
-      setRetryLine(null);
-    }
     void startStudy(url.trim(), agent);
   };
 
@@ -416,11 +404,6 @@ export function Style() {
             Study video
           </Button>
         </div>
-        {retryLine && !urlError && (
-          <p data-testid="retry-note" className="m-0 text-xs text-text-3">
-            {retryLine}
-          </p>
-        )}
         {urlError && (
           <p role="alert" className="m-0 text-xs text-orange-light">
             {urlError}

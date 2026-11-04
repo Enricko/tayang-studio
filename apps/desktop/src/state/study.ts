@@ -7,6 +7,7 @@ import {
   agentRespondPermission,
   agentStart,
   agentStop,
+  deleteJob,
   readStyleResult,
   saveStyle,
   studyDir,
@@ -32,7 +33,8 @@ interface StudyState {
   error: string | null;
   /** Bumped when a style was saved so the library reloads. */
   savedVersion: number;
-  start(url: string, agent: AgentId): Promise<void>;
+  /** `replaceJobId`: a failed study's job, deleted once this study's own job is written. */
+  start(url: string, agent: AgentId, replaceJobId?: string): Promise<void>;
   /** Allow once only. Null cancels the study. */
   respond(optionId: string | null): Promise<void>;
   /** Stop a running study; its job ends failed "Cancelled". */
@@ -148,7 +150,7 @@ export const useStudy = create<StudyState>((set, get) => {
     error: null,
     savedVersion: 0,
 
-    async start(url, agentId) {
+    async start(url, agentId, replaceJobId) {
       if (get().phase === 'running') return;
       agent = agentId;
       const studyId = newId();
@@ -157,6 +159,10 @@ export const useStudy = create<StudyState>((set, get) => {
       try {
         const dir = await studyDir(studyId);
         await writeJob('working', null);
+        if (replaceJobId) {
+          await deleteJob(replaceJobId).catch(() => {});
+          await refreshJobs().catch(() => {});
+        }
         // Style studies always run in auto mode (the app enforces it too).
         await agentStart(studyChatId(studyId), agentId, true);
         await agentPrompt(studyChatId(studyId), [{ type: 'text', text: buildStudyStylePrompt(url, dir) }]);

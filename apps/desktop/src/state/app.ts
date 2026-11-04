@@ -8,7 +8,7 @@ export type Route =
   | { name: 'chat-new'; styleId?: string }
   | { name: 'chat'; chatId: string; /** Prefilled in the composer, never sent. */ draft?: string }
   | { name: 'videos' }
-  | { name: 'style'; retryUrl?: string | null; retryJobId?: string; retryNote?: string | null }
+  | { name: 'style'; /** Focus the link box when the screen opens. */ focusLink?: boolean }
   | { name: 'agents' }
   | { name: 'calendar' }
   | { name: 'settings' };
