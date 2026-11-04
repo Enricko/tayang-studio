@@ -63,6 +63,15 @@ describe('isRenderTool', () => {
     ['npx hyperframes preview', false],
     ['npm run build', false],
     ['Read renders/a.mp4', false],
+    // Piped, chained, or with flags after the output.
+    ['ffmpeg -y -i frames/%04d.png -c:v libx264 renders/final.mp4 2>&1 | tail -5', true],
+    ['ffmpeg -i in.mov renders/out.mp4 -y', true],
+    ['nohup /opt/homebrew/bin/ffmpeg -i in.mov out.mp4 > log.txt &', true],
+    ['cd p && ffmpeg -i a.mov -c:v libx264 out.mp4 && ls renders', true],
+    ['npx hyperframes render --output renders/a.mp4 2>&1 | tail -20', true],
+    ['ffmpeg -i in.mp4 -vf scale=320:-1 thumb.png 2>&1 | tail -3', false],
+    ['npx hyperframes render --help', false],
+    ['npx remotion --version', false],
     ['', false],
   ])('%s → %s', (title, expected) => {
     expect(isRenderTool(title, null)).toBe(expected);
@@ -71,6 +80,9 @@ describe('isRenderTool', () => {
   it("matches the project's own render command from tayang.json", () => {
     expect(isRenderTool('Run node scripts/make-video.mjs --out renders', ['node', 'scripts/make-video.mjs'])).toBe(true);
     expect(isRenderTool('Run node scripts/other.mjs', ['node', 'scripts/make-video.mjs'])).toBe(false);
+    // Whole words only: `make` is not `cmake`.
+    expect(isRenderTool('cmake --build .', ['make'])).toBe(false);
+    expect(isRenderTool('cd p && make 2>&1 | tail', ['make'])).toBe(true);
   });
 });
 
