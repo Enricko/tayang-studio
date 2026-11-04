@@ -53,7 +53,8 @@ CREATE TABLE IF NOT EXISTS messages (
   id TEXT PRIMARY KEY, chat_id TEXT NOT NULL, role TEXT NOT NULL,
   parts TEXT NOT NULL, created_at TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS messages_chat ON messages(chat_id);
+CREATE INDEX IF NOT EXISTS messages_chat_at ON messages(chat_id, created_at);
+DROP INDEX IF EXISTS messages_chat;
 CREATE TABLE IF NOT EXISTS styles (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, source TEXT NOT NULL, source_url TEXT,
   notes TEXT NOT NULL, prompt TEXT NOT NULL, created_at TEXT NOT NULL,
@@ -514,18 +515,24 @@ impl Db {
         }
     }
 
-    /// Every chat, project or not, newest activity first; at most `limit`. Chats of a deleted
-    /// project are left out.
+    /// Chats, project or not, newest activity first; a project once (its most active chat), at most
+    /// `limit` entries. Chats of a deleted project are left out.
     pub fn list_recent_chats(&self, limit: Option<u32>) -> Result<Vec<RecentChat>> {
         let limit = limit.map_or(-1, i64::from);
         query_as(
             &self.conn(),
-            "SELECT c.id, c.project_id AS projectId, c.agent_id AS agentId, c.title, \
-             c.created_at AS createdAt, p.title AS projectTitle, \
-             COALESCE((SELECT MAX(m.created_at) FROM messages m WHERE m.chat_id = c.id), c.created_at) AS activeAt \
-             FROM chats c LEFT JOIN projects p ON p.id = c.project_id \
-             WHERE c.project_id IS NULL OR p.id IS NOT NULL \
-             ORDER BY activeAt DESC, c.rowid DESC LIMIT ?1",
+            "WITH active AS ( \
+               SELECT c.id, c.project_id, c.agent_id, c.title, c.created_at, c.rowid AS rid, p.title AS project_title, \
+                 COALESCE((SELECT MAX(m.created_at) FROM messages m WHERE m.chat_id = c.id), c.created_at) AS active_at \
+               FROM chats c LEFT JOIN projects p ON p.id = c.project_id \
+               WHERE c.project_id IS NULL OR p.id IS NOT NULL \
+             ), ranked AS ( \
+               SELECT *, ROW_NUMBER() OVER (PARTITION BY COALESCE(project_id, id) ORDER BY active_at DESC, rid DESC) AS n \
+               FROM active \
+             ) \
+             SELECT id, project_id AS projectId, agent_id AS agentId, title, created_at AS createdAt, \
+               project_title AS projectTitle, active_at AS activeAt \
+             FROM ranked WHERE n = 1 ORDER BY active_at DESC, rid DESC LIMIT ?1",
             &[&limit],
         )
     }
@@ -1274,6 +1281,52 @@ mod tests {
         let top = db.list_recent_chats(Some(1)).unwrap();
         assert_eq!(top.len(), 1);
         assert_eq!(top[0].id, loose.id);
+    }
+
+    #[test]
+    fn messages_have_a_chat_and_time_index_that_survives_reopening() {
+        let db = db();
+        let names = |db: &Db| -> Vec<String> {
+            let conn = db.conn();
+            let mut stmt = conn
+                .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'messages' ORDER BY name")
+                .unwrap();
+            stmt.query_map([], |r| r.get(0)).unwrap().map(|r| r.unwrap()).collect()
+        };
+        assert!(names(&db).contains(&"messages_chat_at".to_string()));
+        // Running the schema again (every start) changes nothing.
+        db.conn().execute_batch(SCHEMA).unwrap();
+        assert_eq!(names(&db).iter().filter(|n| n.as_str() == "messages_chat_at").count(), 1);
+        let conn = db.conn();
+        let plan: String = conn
+            .query_row(
+                "EXPLAIN QUERY PLAN SELECT MAX(created_at) FROM messages WHERE chat_id = 'x'",
+                [],
+                |r| r.get(3),
+            )
+            .unwrap();
+        assert!(plan.contains("messages_chat_at"), "{plan}");
+    }
+
+    #[test]
+    fn recent_chats_count_a_project_once_before_the_limit() {
+        let db = db();
+        db.insert_project(&project("a", "2026-01-01T00:00:00Z")).unwrap();
+        let busy: Vec<Chat> = (0..5).map(|i| db.create_chat(Some("a"), AgentId::Claude, &format!("A{i}")).unwrap()).collect();
+        let loose = db.create_chat(None, AgentId::Claude, "Loose").unwrap();
+        let conn = db.conn();
+        conn.execute("UPDATE chats SET created_at = '2026-01-01T00:00:00Z'", []).unwrap();
+        conn.execute("UPDATE chats SET created_at = '2026-01-02T00:00:00Z' WHERE id = ?1", [&busy[2].id]).unwrap();
+        conn.execute("UPDATE chats SET created_at = '2026-01-03T00:00:00Z' WHERE project_id = 'a' AND id != ?1", [&busy[2].id])
+            .unwrap();
+        drop(conn);
+        let recent = db.list_recent_chats(Some(2)).unwrap();
+        let ids: Vec<&str> = recent.iter().map(|c| c.id.as_str()).collect();
+        // The project's most active chat stands for it; the limit counts distinct entries.
+        assert_eq!(ids.len(), 2);
+        assert_eq!(recent[0].project_id.as_deref(), Some("a"));
+        assert_ne!(recent[0].id, busy[2].id);
+        assert_eq!(ids[1], loose.id.as_str());
     }
 
     #[test]

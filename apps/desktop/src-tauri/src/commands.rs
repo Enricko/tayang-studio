@@ -454,8 +454,9 @@ pub fn list_chats(state: State<'_, AppState>, project_id: Option<String>) -> Cmd
 }
 
 /// The sidebar's Recent list: chats with and without a project, newest activity first.
+/// Async so the query never runs on the main thread.
 #[tauri::command]
-pub fn list_recent_chats(state: State<'_, AppState>, limit: Option<u32>) -> CmdResult<Vec<RecentChat>> {
+pub async fn list_recent_chats(state: State<'_, AppState>, limit: Option<u32>) -> CmdResult<Vec<RecentChat>> {
     state.db.list_recent_chats(limit).map_err(err)
 }
 
