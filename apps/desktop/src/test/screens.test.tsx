@@ -4,6 +4,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentInfo, AgentUpdate, Job, PermissionRequest, Project, Settings, Style as StyleT } from '@tayang/shared';
 
 vi.mock('@/lib/ipc', () => ({
+  listAutopilots: vi.fn().mockResolvedValue([]),
+  listSlots: vi.fn().mockResolvedValue([]),
+  saveAutopilot: vi.fn(),
+  setAutopilotStatus: vi.fn(),
+  deleteAutopilot: vi.fn().mockResolvedValue(undefined),
+  updateSlot: vi.fn(),
   listProjects: vi.fn(),
   updateProject: vi.fn(),
   setSchedule: vi.fn(),
