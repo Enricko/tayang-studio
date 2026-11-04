@@ -252,4 +252,16 @@ describe('frames-checked marker', () => {
     expect(stripFramesToken('Frames checked, all good')).toBe('Frames checked, all good');
     expect(stripFramesToken('Selesai.\n\n[tayang:frames-checked]')).toBe('Selesai.');
   });
+  it('leaves no empty code span when the agent wraps the token in backticks', () => {
+    expect(stripFramesToken('Selesai `[tayang:frames-checked]` ya')).toBe('Selesai  ya');
+    expect(stripFramesToken('Selesai.\n\n`[tayang:frames-checked]`')).toBe('Selesai.');
+    expect(stripFramesToken('Ok ``[tayang:frames-checked]``')).toBe('Ok');
+  });
+  it('hides a partial token at the very end of streaming text', () => {
+    expect(stripFramesToken('Selesai. [tayang:fra')).toBe('Selesai.');
+    expect(stripFramesToken('Selesai.\n`[tayang:frames-chec')).toBe('Selesai.');
+    expect(stripFramesToken('Selesai. [')).toBe('Selesai.');
+    expect(stripFramesToken('Selesai [tayang:other] kok')).toBe('Selesai [tayang:other] kok');
+    expect(stripFramesToken('Array [1] x')).toBe('Array [1] x');
+  });
 });

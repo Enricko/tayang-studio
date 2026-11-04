@@ -9,9 +9,23 @@ const LEGACY_PHRASE = 'Frames checked';
 
 export const hasFramesChecked = (text: string): boolean => text.includes(FRAMES_CHECKED_TOKEN) || text.includes(LEGACY_PHRASE);
 
-/** The message as the reader sees it: the token is plumbing. */
-export const stripFramesToken = (text: string): string =>
-  text.includes(FRAMES_CHECKED_TOKEN) ? text.split(FRAMES_CHECKED_TOKEN).join('').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim() : text;
+const escapeRe = (t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const WRAPPED_TOKEN = new RegExp(`\`*${escapeRe(FRAMES_CHECKED_TOKEN)}\`*`, 'g');
+/** Every proper prefix of the token, longest first, so a half-streamed one can be hidden. */
+const PARTIAL_TOKEN = new RegExp(
+  `\`*(?:${Array.from({ length: FRAMES_CHECKED_TOKEN.length - 1 }, (_, i) => escapeRe(FRAMES_CHECKED_TOKEN.slice(0, FRAMES_CHECKED_TOKEN.length - 1 - i))).join('|')})$`,
+);
+
+/**
+ * The message as the reader sees it: the token is plumbing, also when the agent wraps it in
+ * backticks, and also while it is still being typed at the end of streaming text.
+ */
+export const stripFramesToken = (text: string): string => {
+  const whole = text.replace(WRAPPED_TOKEN, '');
+  const cut = whole.replace(PARTIAL_TOKEN, '');
+  if (cut === text) return text;
+  return cut.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+};
 
 export const FRAME_CHECK_PROMPT = [
   'Check the frames before you report this video as done.',
