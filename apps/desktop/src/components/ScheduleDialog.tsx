@@ -42,15 +42,19 @@ export function ScheduleDialog({
 
   const target = project ?? choices.find((p) => p.id === pickedId) ?? null;
 
+  // Seed the fields when the dialog opens or its own video changes; picking one from the list keeps what was typed.
+  const seedId = project?.id;
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setPickedId('');
+      return;
+    }
     const at = target?.scheduledAt ? new Date(target.scheduledAt) : null;
     const start = at && !Number.isNaN(at.getTime()) ? at : null;
     setDate(start ? dateValue(start) : dateValue(new Date()));
     setTime(start ? timeValue(start) : '09:00');
     setError(null);
-    // Re-seed when the dialog opens or the video changes, not on every keystroke.
-  }, [open, target?.id]);
+  }, [open, seedId]);
 
   const save = async (at: string | null) => {
     if (!target || busy) return;

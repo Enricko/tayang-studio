@@ -89,6 +89,7 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
   const [picking, setPicking] = useState(false);
   const [openEntry, setOpenEntry] = useState<string | null>(null);
   const dragId = useRef<string | null>(null);
+  const [gridError, setGridError] = useState<string | null>(null);
 
   const messages = useChat((s) => (chatId ? s.messages[chatId] : undefined)) ?? NO_MESSAGES;
   const streaming = useChat((s) => (chatId ? !!s.streaming[chatId] : false));
@@ -182,11 +183,11 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
 
   const replace = (p: Project) => setProjects((list) => list.map((x) => (x.id === p.id ? p : x)));
   const update = async (job: Promise<Project>) => {
-    setError(null);
+    setGridError(null);
     try {
       replace(await job);
     } catch {
-      setError(t('calendar.cantUpdate'));
+      setGridError(t('calendar.cantUpdate'));
     }
   };
 
@@ -225,6 +226,11 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
             <ChevronRight size={16} strokeWidth={1.5} aria-hidden="true" />
           </Button>
         </div>
+        {gridError && (
+          <p role="alert" className="m-0 text-xs text-orange-light">
+            {gridError}
+          </p>
+        )}
         <div className="flex flex-wrap gap-4 text-xs text-text-2">
           <span className="inline-flex items-center gap-2">
             <span aria-hidden="true" className="size-1.5 rounded-full bg-primary" />
@@ -256,9 +262,11 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
                   onDragOver={(e) => e.preventDefault()}
                   onDrop={(e) => {
                     e.preventDefault();
-                    const id = dragId.current ?? e.dataTransfer?.getData('text/plain');
+                    const id = dragId.current;
+                    const carried = e.dataTransfer?.getData('text/plain');
                     dragId.current = null;
-                    if (id) moveTo(id, d);
+                    // Only the entry being dragged right now may move; a stray drop is ignored.
+                    if (id && (!carried || carried === id)) moveTo(id, d);
                   }}
                   className={cn(
                     'flex min-h-[92px] min-w-0 flex-col gap-1 border-r border-b border-[#1F1F1F] p-1',
@@ -285,6 +293,9 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
                             draggable
                             data-testid="cal-entry"
                             aria-label={t('calendar.entryAria', { title: p.title, state: stateLabel, time })}
+                            onDragEnd={() => {
+                              dragId.current = null;
+                            }}
                             onDragStart={(e) => {
                               dragId.current = p.id;
                               e.dataTransfer?.setData('text/plain', p.id);
@@ -308,7 +319,7 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
                             className="h-8 justify-start px-2 text-[13px]"
                             onClick={() => {
                               setOpenEntry(null);
-                              void openProjectChat(p).catch(() => setError(t('calendar.cantUpdate')));
+                              void openProjectChat(p).catch(() => setGridError(t('calendar.cantUpdate')));
                             }}
                           >
                             {t('calendar.openVideo')}
