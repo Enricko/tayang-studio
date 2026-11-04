@@ -14,6 +14,7 @@ import {
   upsertJob,
 } from '@/lib/ipc';
 import { onAgentUpdate, onPermission } from '@/lib/events';
+import { extractA2ui } from '@/a2ui/parse';
 import { agentErrorText, AGENT_NAMES } from '@/lib/agents';
 import { useApp } from '@/state/app';
 import { refreshJobs } from '@/state/jobs';
@@ -88,15 +89,13 @@ export const BUSY_NOTE = 'Wait for the agent to finish, then try again';
 const RECAP_MESSAGES = 6;
 const RECAP_CHARS = 1500;
 
-/** The last 6 text messages as "You:"/"Agent:" lines, oldest first, within 1,500 characters. */
+/** The last 6 text messages as "You:"/"Agent:" lines, oldest first, within 1,500 characters, without A2UI blocks. */
 export function buildRecap(messages: ChatMessage[]): string {
   const lines: string[] = [];
   for (const m of messages) {
     if (m.role === 'system') continue;
-    const text = m.parts
-      .map((p) => (p.type === 'text' ? p.text : ''))
-      .join('')
-      .trim();
+    // A2UI blocks are drawn cards, not words: the next agent gets the prose only.
+    const text = extractA2ui(m.parts.map((p) => (p.type === 'text' ? p.text : '')).join('')).text.trim();
     if (text) lines.push(`${m.role === 'user' ? 'You' : 'Agent'}: ${text}`);
   }
   const kept: string[] = [];

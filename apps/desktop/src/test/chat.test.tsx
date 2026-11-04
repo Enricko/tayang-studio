@@ -969,6 +969,13 @@ describe('buildRecap', () => {
     expect(recap.indexOf('You: line 2')).toBeLessThan(recap.indexOf('Agent: line 7'));
   });
 
+  it('leaves out A2UI blocks and keeps the prose around them', () => {
+    const block = '```a2ui\n{"version":"v0.9","createSurface":{"surfaceId":"s","catalogId":"x"}}\n```';
+    const recap = buildRecap([msg('agent', `Pick one:\n${block}\nThen tell me.`, 1), msg('agent', block, 2)]);
+    expect(recap).toBe('Agent: Pick one:\n\nThen tell me.');
+    expect(recap).not.toContain('createSurface');
+  });
+
   it('stays within 1,500 characters and skips messages without text', () => {
     const big = 'x'.repeat(900);
     const list = [msg('user', big, 1), msg('agent', big, 2), msg('user', big, 3)];
