@@ -34,6 +34,27 @@ describe('ipc', () => {
     ]);
   });
 
+  it('autopilot and slot wrappers call the Rust commands with camelCase args', async () => {
+    const calls: { cmd: string; args: unknown }[] = [];
+    mockIPC((cmd, args) => {
+      calls.push({ cmd, args });
+    });
+    await ipc.listAutopilots();
+    await ipc.setAutopilotStatus('a1', 'paused');
+    await ipc.deleteAutopilot('a1');
+    await ipc.listSlots('2026-11-01T00:00:00.000Z', '2026-12-01T00:00:00.000Z');
+    await ipc.upsertSlot('a1', '2026-11-05T09:00:00.000Z');
+    await ipc.updateSlot('s1', { status: 'planned', error: null });
+    expect(calls).toEqual([
+      { cmd: 'list_autopilots', args: undefined },
+      { cmd: 'set_autopilot_status', args: { id: 'a1', status: 'paused' } },
+      { cmd: 'delete_autopilot', args: { id: 'a1' } },
+      { cmd: 'list_slots', args: { from: '2026-11-01T00:00:00.000Z', to: '2026-12-01T00:00:00.000Z' } },
+      { cmd: 'upsert_slot', args: { autopilotId: 'a1', dueAt: '2026-11-05T09:00:00.000Z' } },
+      { cmd: 'update_slot', args: { id: 's1', patch: { status: 'planned', error: null } } },
+    ]);
+  });
+
   it('style sync, template install and render command call the Rust commands', async () => {
     const calls: { cmd: string; args: unknown }[] = [];
     mockIPC((cmd, args) => {

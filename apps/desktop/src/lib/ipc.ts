@@ -3,6 +3,9 @@ import type {
   AgentId,
   AgentInfo,
   AgentUsage,
+  Autopilot,
+  AutopilotInput,
+  AutopilotSlot,
   Chat,
   ChatMessage,
   Job,
@@ -11,6 +14,7 @@ import type {
   NewProject,
   Project,
   Settings,
+  SlotPatch,
   Style,
   SystemInfo,
   ToolStatus,
@@ -41,6 +45,21 @@ export const setSchedule = (projectId: string, at: string | null) =>
 export const setPosted = (projectId: string, posted: boolean) =>
   invoke<Project>('set_posted', { projectId, posted });
 export const approveProject = (projectId: string) => invoke<Project>('approve_project', { projectId });
+
+// ---- autopilots ----
+export const listAutopilots = () => invoke<Autopilot[]>('list_autopilots');
+/** Creates (no id) or edits (with id) an autopilot; a new one starts active, an edit keeps its status. */
+export const saveAutopilot = (input: AutopilotInput) => invoke<Autopilot>('save_autopilot', { input });
+/** Removes the autopilot and its slots that made no video; the videos stay. */
+export const deleteAutopilot = (id: string) => invoke<void>('delete_autopilot', { id });
+export const setAutopilotStatus = (id: string, status: Autopilot['status']) =>
+  invoke<Autopilot>('set_autopilot_status', { id, status });
+/** Slots due between two RFC 3339 instants, both included. */
+export const listSlots = (from: string, to: string) => invoke<AutopilotSlot[]>('list_slots', { from, to });
+/** Makes sure a planned slot exists for (autopilot, dueAt); an existing slot comes back unchanged. */
+export const upsertSlot = (autopilotId: string, dueAt: string) =>
+  invoke<AutopilotSlot>('upsert_slot', { autopilotId, dueAt });
+export const updateSlot = (id: string, patch: SlotPatch) => invoke<AutopilotSlot>('update_slot', { id, patch });
 
 // ---- chats ----
 export const listChats = (projectId?: string) =>
