@@ -33,8 +33,10 @@ interface InstallState {
   tools: Partial<Record<ToolId, ToolInstall>>;
   /** The tool the setup chat is working on, if any. */
   active: ToolId | null;
-  /** Open permission request of the setup chat. */
+  /** Open permission request of the setup chat: the card shows this one. */
   request: PermissionRequest | null;
+  /** Requests that arrived while `request` was open, oldest first. */
+  queue: PermissionRequest[];
   /** A cancelled turn is still winding down; installs stay disabled until its done/error arrives. */
   closing: boolean;
   agent: AgentId | null;
@@ -58,13 +60,24 @@ export const useInstall = create<InstallState>((set, get) => {
   const patch = (tool: ToolId, p: Partial<ToolInstall>) =>
     set((s) => ({ tools: { ...s.tools, [tool]: { status: 'missing', log: [], ...s.tools[tool], ...p } } }));
 
+  /** Answers every open request with null (cancelled) and empties the queue. */
+  const dropRequests = () => {
+    const { request, queue } = get();
+    set({ request: null, queue: [] });
+    for (const r of [...(request ? [request] : []), ...queue]) {
+      void agentRespondPermission(r.requestId, null).catch(() => {});
+    }
+  };
+
   const fail = (tool: ToolId, error: string) => {
     patch(tool, { status: 'failed', error });
-    set({ active: null, request: null });
+    dropRequests();
+    set({ active: null });
   };
 
   const closeTurn = async () => {
-    set({ active: null, request: null, closing: true });
+    dropRequests();
+    set({ active: null, closing: true });
     try {
       await agentCancel(SETUP_CHAT);
     } catch {
@@ -91,8 +104,8 @@ export const useInstall = create<InstallState>((set, get) => {
     } else if (update.kind === 'error') {
       fail(tool, update.message);
     } else if (update.kind === 'done') {
-      // The session answers any open permission request as cancelled.
-      set({ request: null });
+      // The turn is over: nothing still queued can run.
+      dropRequests();
       const agent = get().agent;
       try {
         const statuses = agent ? await get().refresh(agent) : get().statuses;
@@ -113,6 +126,7 @@ export const useInstall = create<InstallState>((set, get) => {
     tools: {},
     active: null,
     request: null,
+    queue: [],
     closing: false,
     agent: null,
 
@@ -126,7 +140,7 @@ export const useInstall = create<InstallState>((set, get) => {
 
     async start(tool, opts) {
       if (get().active || get().closing) return;
-      set({ active: tool, request: null, agent: opts.agent });
+      set({ active: tool, request: null, queue: [], agent: opts.agent });
       patch(tool, { status: 'confirm', log: [], error: undefined });
       try {
         await agentStart(SETUP_CHAT, opts.agent);
@@ -138,16 +152,17 @@ export const useInstall = create<InstallState>((set, get) => {
     },
 
     async respond(optionId) {
-      const { request, active } = get();
+      const { request, queue, active } = get();
       if (!request) return;
-      set({ request: null });
+      const [next = null, ...rest] = queue;
+      set({ request: next, queue: rest });
       if (optionId === null) {
         if (active) patch(active, { status: 'missing', log: [] });
         await agentRespondPermission(request.requestId, null);
         await closeTurn();
         return;
       }
-      if (active) patch(active, { status: 'running' });
+      if (active) patch(active, { status: next ? 'confirm' : 'running' });
       await agentRespondPermission(request.requestId, optionId);
     },
 
@@ -174,9 +189,10 @@ export const useInstall = create<InstallState>((set, get) => {
           }
           const tool = get().active;
           if (!tool) return;
-          // Every request of the turn gets its own card, not just the first.
+          // Every request of the turn gets its own card, one at a time, oldest first.
           patch(tool, { status: 'confirm' });
-          set({ request: req });
+          if (get().request) set((s) => ({ queue: [...s.queue, req] }));
+          else set({ request: req });
         }),
       ];
     },
@@ -184,7 +200,7 @@ export const useInstall = create<InstallState>((set, get) => {
     reset() {
       unlisten.forEach((p) => void p.then((fn) => fn()));
       unlisten = [];
-      set({ statuses: [], tools: {}, active: null, request: null, closing: false, agent: null });
+      set({ statuses: [], tools: {}, active: null, request: null, queue: [], closing: false, agent: null });
     },
   };
 });

@@ -14,7 +14,8 @@ export interface SendOpts {
 interface ChatState {
   messages: Record<string, ChatMessage[]>;
   streaming: Record<string, boolean>;
-  pendingPermission: Record<string, PermissionRequest | null>;
+  /** Open permission requests per chat, oldest first. The card shows the head. */
+  permissions: Record<string, PermissionRequest[]>;
   attachments: Record<string, MessagePart[]>;
   /** Chats whose agent session was started in this app session. */
   started: Record<string, boolean>;
@@ -40,6 +41,11 @@ const localMessage = (chatId: string, role: ChatMessage['role'], parts: MessageP
 });
 
 let unlisten: Promise<() => void>[] = [];
+
+const NO_PERMISSION = null;
+/** The permission request a chat's card shows: the oldest open one. */
+export const headPermission = (s: { permissions: Record<string, PermissionRequest[]> }, chatId: string | null) =>
+  (chatId ? s.permissions[chatId]?.[0] : undefined) ?? NO_PERMISSION;
 
 export const useChat = create<ChatState>((set, get) => {
   const append = (chatId: string, m: ChatMessage) =>
@@ -68,11 +74,15 @@ export const useChat = create<ChatState>((set, get) => {
     }
   };
 
-  const finish = (chatId: string) =>
+  /** The turn is over: answer whatever is still queued with null and clear the queue. */
+  const finish = (chatId: string) => {
+    const open = get().permissions[chatId] ?? [];
     set((s) => ({
       streaming: { ...s.streaming, [chatId]: false },
-      pendingPermission: { ...s.pendingPermission, [chatId]: null },
+      permissions: { ...s.permissions, [chatId]: [] },
     }));
+    for (const req of open) void agentRespondPermission(req.requestId, null).catch(() => {});
+  };
 
   const onUpdate = (chatId: string, u: AgentUpdate) => {
     if (u.kind === 'thought') return;
@@ -115,7 +125,7 @@ export const useChat = create<ChatState>((set, get) => {
   return {
     messages: {},
     streaming: {},
-    pendingPermission: {},
+    permissions: {},
     attachments: {},
     started: {},
 
@@ -153,9 +163,9 @@ export const useChat = create<ChatState>((set, get) => {
     },
 
     async respondPermission(chatId, optionId) {
-      const req = get().pendingPermission[chatId];
+      const [req, ...rest] = get().permissions[chatId] ?? [];
       if (!req) return;
-      set((s) => ({ pendingPermission: { ...s.pendingPermission, [chatId]: null } }));
+      set((s) => ({ permissions: { ...s.permissions, [chatId]: rest } }));
       await agentRespondPermission(req.requestId, optionId);
     },
 
@@ -172,7 +182,9 @@ export const useChat = create<ChatState>((set, get) => {
       unlisten = [
         onAgentUpdate(({ chatId, update }) => onUpdate(chatId, update)),
         onPermission((req) =>
-          set((s) => ({ pendingPermission: { ...s.pendingPermission, [req.chatId]: req } })),
+          set((s) => ({
+            permissions: { ...s.permissions, [req.chatId]: [...(s.permissions[req.chatId] ?? []), req] },
+          })),
         ),
       ];
     },
@@ -180,7 +192,7 @@ export const useChat = create<ChatState>((set, get) => {
     reset() {
       unlisten.forEach((p) => void p.then((fn) => fn()));
       unlisten = [];
-      set({ messages: {}, streaming: {}, pendingPermission: {}, attachments: {}, started: {} });
+      set({ messages: {}, streaming: {}, permissions: {}, attachments: {}, started: {} });
     },
   };
 });

@@ -8,7 +8,7 @@ import { MessageList } from '@/components/MessageList';
 import { PermissionCard } from '@/components/PermissionCard';
 import { createChat, createProject, listProjects, listStyles } from '@/lib/ipc';
 import { useApp } from '@/state/app';
-import { useChat } from '@/state/chat';
+import { headPermission, useChat } from '@/state/chat';
 
 const KINDS: VideoKind[] = ['explainer', 'promo', 'quote', 'news', 'tutorial', 'data', 'event'];
 const NO_MESSAGES: never[] = [];
@@ -34,7 +34,7 @@ export function ChatNew() {
 
   const messages = useChat((s) => (chatId ? s.messages[chatId] : undefined)) ?? NO_MESSAGES;
   const streaming = useChat((s) => (chatId ? !!s.streaming[chatId] : false));
-  const permission = useChat((s) => (chatId ? s.pendingPermission[chatId] : null));
+  const permission = useChat((s) => headPermission(s, chatId));
   const agent = settings?.defaultAgent ?? 'claude';
 
   useEffect(() => {

@@ -235,6 +235,44 @@ describe('ChatProject', () => {
     expect(ipc.agentRespondPermission).toHaveBeenCalledWith('r1', 'opt-allow');
   });
 
+  it('queues parallel permission requests and answers both', async () => {
+    const user = userEvent.setup();
+    render(<ChatProject chatId="c1" />);
+    await screen.findByRole('textbox', { name: 'Message' });
+    const req = (requestId: string, cmd: string): PermissionRequest => ({
+      chatId: 'c1',
+      requestId,
+      title: cmd,
+      commands: [cmd],
+      options: [{ id: `allow-${requestId}`, label: 'Allow', kind: 'allow-once' }],
+    });
+    await act(async () => {
+      handlers.perm.forEach((cb) => cb(req('r1', 'echo one')));
+      handlers.perm.forEach((cb) => cb(req('r2', 'echo two')));
+    });
+    expect(screen.getAllByRole('button', { name: 'Allow' })).toHaveLength(1);
+    await user.click(screen.getByRole('button', { name: 'Allow' }));
+    expect(ipc.agentRespondPermission).toHaveBeenLastCalledWith('r1', 'allow-r1');
+    expect(await screen.findByText('echo two', { selector: 'pre' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Allow' }));
+    expect(ipc.agentRespondPermission).toHaveBeenLastCalledWith('r2', 'allow-r2');
+    expect(screen.queryByRole('button', { name: 'Allow' })).not.toBeInTheDocument();
+  });
+
+  it('answers still-queued requests with null when the turn ends', async () => {
+    render(<ChatProject chatId="c1" />);
+    await screen.findByRole('textbox', { name: 'Message' });
+    const base = { chatId: 'c1', title: 't', commands: ['x'], options: [{ id: 'a', label: 'Allow', kind: 'allow-once' as const }] };
+    await act(async () => {
+      handlers.perm.forEach((cb) => cb({ ...base, requestId: 'q1' }));
+      handlers.perm.forEach((cb) => cb({ ...base, requestId: 'q2' }));
+    });
+    await emit('c1', { kind: 'done', stopReason: 'end_turn' });
+    expect(ipc.agentRespondPermission).toHaveBeenCalledWith('q1', null);
+    expect(ipc.agentRespondPermission).toHaveBeenCalledWith('q2', null);
+    expect(useChat.getState().permissions['c1']).toEqual([]);
+  });
+
   it('attach and detach feed the next send, then clear', async () => {
     const user = userEvent.setup();
     render(<ChatProject chatId="c1" />);

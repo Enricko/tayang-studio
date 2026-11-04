@@ -23,6 +23,8 @@ interface StudyState {
   /** Number of agent tool calls so far; drives the progress steps. */
   toolCalls: number;
   request: PermissionRequest | null;
+  /** Requests that arrived while `request` was open, oldest first. */
+  queue: PermissionRequest[];
   error: string | null;
   /** Bumped when a style was saved so the library reloads. */
   savedVersion: number;
@@ -67,14 +69,25 @@ export const useStudy = create<StudyState>((set, get) => {
     }
   };
 
+  /** Answers every open request with null (cancelled) and empties the queue. */
+  const dropRequests = () => {
+    const { request, queue } = get();
+    set({ request: null, queue: [] });
+    for (const r of [...(request ? [request] : []), ...queue]) {
+      void agentRespondPermission(r.requestId, null).catch(() => {});
+    }
+  };
+
   const fail = async (message: string) => {
-    set({ phase: 'failed', error: message, request: null });
+    dropRequests();
+    set({ phase: 'failed', error: message });
     await writeJob('failed', message);
   };
 
   const finish = async () => {
     const { studyId, url } = get();
     if (!studyId) return;
+    dropRequests();
     try {
       const raw = await readStyleResult(studyId);
       const parsed = raw ? parseStyleResult(raw, url) : null;
@@ -100,7 +113,8 @@ export const useStudy = create<StudyState>((set, get) => {
       onPermission((req) => {
         const id = get().studyId;
         if (!id || req.chatId !== studyChatId(id) || get().phase !== 'running') return;
-        set({ request: req });
+        if (get().request) set((s) => ({ queue: [...s.queue, req] }));
+        else set({ request: req });
       }),
     ];
   };
@@ -111,6 +125,7 @@ export const useStudy = create<StudyState>((set, get) => {
     studyId: null,
     toolCalls: 0,
     request: null,
+    queue: [],
     error: null,
     savedVersion: 0,
 
@@ -118,7 +133,7 @@ export const useStudy = create<StudyState>((set, get) => {
       if (get().phase === 'running') return;
       agent = agentId;
       const studyId = newId();
-      set({ phase: 'running', url, studyId, toolCalls: 0, request: null, error: null });
+      set({ phase: 'running', url, studyId, toolCalls: 0, request: null, queue: [], error: null });
       listen();
       try {
         const dir = await studyDir(studyId);
@@ -131,9 +146,10 @@ export const useStudy = create<StudyState>((set, get) => {
     },
 
     async respond(optionId) {
-      const { request, studyId } = get();
+      const { request, queue, studyId } = get();
       if (!request || !studyId) return;
-      set({ request: null });
+      const [next = null, ...rest] = queue;
+      set({ request: next, queue: rest });
       await agentRespondPermission(request.requestId, optionId).catch(() => {});
       if (optionId === null) {
         await agentCancel(studyChatId(studyId)).catch(() => {});

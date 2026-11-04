@@ -199,6 +199,38 @@ describe('Requirements multi-request', () => {
     expect(ipc.agentRespondPermission).toHaveBeenLastCalledWith('r2', 'once');
   });
 
+  it('queues two parallel requests and answers both in order', async () => {
+    const user = userEvent.setup();
+    render(<Requirements />);
+    await user.click(await screen.findByRole('button', { name: 'Install FFmpeg' }));
+    await act(async () => {
+      handlers.perm.forEach((h) => h(request));
+      handlers.perm.forEach((h) => h({ ...request, requestId: 'r2', commands: ['ffmpeg -version'] }));
+    });
+    expect(screen.getAllByRole('button', { name: 'Allow and install' })).toHaveLength(1);
+    await user.click(screen.getByRole('button', { name: 'Allow and install' }));
+    expect(ipc.agentRespondPermission).toHaveBeenLastCalledWith('r1', 'once');
+    expect(await screen.findByText('ffmpeg -version')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Allow and install' }));
+    expect(ipc.agentRespondPermission).toHaveBeenLastCalledWith('r2', 'once');
+    expect(ipc.agentRespondPermission).toHaveBeenCalledTimes(2);
+  });
+
+  it('answers queued requests with null when the turn ends', async () => {
+    const user = userEvent.setup();
+    render(<Requirements />);
+    await user.click(await screen.findByRole('button', { name: 'Install FFmpeg' }));
+    await act(async () => {
+      handlers.perm.forEach((h) => h(request));
+      handlers.perm.forEach((h) => h({ ...request, requestId: 'r2' }));
+    });
+    await emitUpdate({ kind: 'error', message: 'gone' });
+    expect(ipc.agentRespondPermission).toHaveBeenCalledWith('r1', null);
+    expect(ipc.agentRespondPermission).toHaveBeenCalledWith('r2', null);
+    expect(useInstall.getState().request).toBeNull();
+    expect(useInstall.getState().queue).toEqual([]);
+  });
+
   it('cancel while running calls agentCancel', async () => {
     const user = userEvent.setup();
     render(<Requirements />);

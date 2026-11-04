@@ -8,7 +8,7 @@ import { Preview } from '@/screens/preview/Preview';
 import { StepBar } from '@/components/StepBar';
 import { getChat, listProjects } from '@/lib/ipc';
 import { useApp } from '@/state/app';
-import { useChat } from '@/state/chat';
+import { headPermission, useChat } from '@/state/chat';
 
 const NO_MESSAGES: never[] = [];
 const KIND: Record<VideoKind, string> = {
@@ -26,7 +26,7 @@ export function ChatProject({ chatId }: { chatId: string }) {
   const [project, setProject] = useState<Project | null>(null);
   const messages = useChat((s) => s.messages[chatId]) ?? NO_MESSAGES;
   const streaming = useChat((s) => !!s.streaming[chatId]);
-  const permission = useChat((s) => s.pendingPermission[chatId]);
+  const permission = useChat((s) => headPermission(s, chatId));
 
   useEffect(() => {
     useChat.getState().listen();
