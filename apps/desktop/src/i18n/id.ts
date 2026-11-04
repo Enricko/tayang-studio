@@ -425,7 +425,6 @@ export const id: Translations = {
     createFirst: 'Buat autopilot pertamamu',
     counts: '{{made}} dibuat · {{failed}} gagal',
     nextVideo: 'Video berikutnya {{when}}',
-    openAria: 'Buka {{name}}',
     allAutopilots: 'Semua autopilot',
     upcoming: 'Akan datang',
     noUpcoming: 'Belum ada yang direncanakan untuk 7 hari ke depan',

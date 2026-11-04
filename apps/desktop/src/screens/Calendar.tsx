@@ -110,7 +110,7 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
   const [gridError, setGridError] = useState<string | null>(null);
   const [autopilots, setAutopilots] = useState<Autopilot[]>([]);
   const [slots, setSlots] = useState<AutopilotSlot[]>([]);
-  const [panelError, setPanelError] = useState<string | null>(null);
+  const [slotError, setSlotError] = useState<string | null>(null);
 
   const messages = useChat((s) => (chatId ? s.messages[chatId] : undefined)) ?? NO_MESSAGES;
   const streaming = useChat((s) => (chatId ? !!s.streaming[chatId] : false));
@@ -132,9 +132,9 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
       .then((l) => {
         setAutopilots(l);
         // A later load that works takes back an earlier load error (not an action's error).
-        setPanelError((e) => (e === t('autopilot.cantLoad') ? null : e));
+        setSlotError((e) => (e === t('autopilot.cantLoad') ? null : e));
       })
-      .catch(() => setPanelError(t('autopilot.cantLoad')));
+      .catch(() => setSlotError(t('autopilot.cantLoad')));
   }, [reloadTick]);
 
   // Slots for the visible grid.
@@ -232,13 +232,13 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
   }, [projects, slots, autopilots]);
 
   const tryAgain = async (slot: AutopilotSlot) => {
-    setPanelError(null);
+    setSlotError(null);
     try {
       const next = await updateSlot(slot.id, { status: 'planned', error: null, projectId: null });
       setSlots((l) => l.map((x) => (x.id === next.id ? next : x)));
       notifyAutopilotChanged();
     } catch {
-      setPanelError(t('autopilot.cantUpdate'));
+      setSlotError(t('autopilot.cantUpdate'));
     }
   };
 
@@ -294,9 +294,9 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
         >
           {t('calendar.manageAutopilots')}
         </button>
-        {panelError && (
+        {slotError && (
           <p role="alert" className="m-0 text-xs text-orange-light">
-            {panelError}
+            {slotError}
           </p>
         )}
         {blocked && (

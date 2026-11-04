@@ -32,7 +32,7 @@ const SLOT_DOT: Record<SlotStatus, string> = {
   making: 'bg-primary motion-safe:animate-pulse',
   done: 'bg-foreground',
   failed: 'bg-orange-light',
-  skipped: 'bg-[#4A4A4A]',
+  skipped: 'bg-hairline',
 };
 
 interface Data {
@@ -140,7 +140,7 @@ function AutopilotCard({
 
   const summary = (
     <>
-      <StyleThumb style={style} id={a.id} className="h-24 w-[54px] shrink-0 rounded-md border border-[#333]" />
+      <StyleThumb style={style} id={a.id} className="h-24 w-[54px] shrink-0 rounded-md border border-hairline" />
       <span className="flex min-w-0 flex-1 flex-col gap-1">
         <span className="flex items-center gap-2">
           <span className="mr-auto truncate text-[15px] font-medium text-foreground">{a.name}</span>
@@ -161,7 +161,6 @@ function AutopilotCard({
       {onOpen ? (
         <button
           type="button"
-          aria-label={t('autopilot.openAria', { name: a.name })}
           onClick={onOpen}
           className="flex w-full cursor-pointer items-start gap-3 rounded-md border-0 bg-transparent p-0 text-left focus-visible:outline-2 focus-visible:outline-primary"
         >
@@ -377,7 +376,7 @@ export function Autopilot({ id, now: fixedNow }: { id?: string; now?: Date } = {
       )}
 
       {data && !id && !empty && (
-        <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 380px), 1fr))' }}>
+        <div className="grid grid-cols-1 gap-4 min-[1100px]:grid-cols-2">
           {data.autopilots.map((a) => (
             <AutopilotCard
               key={a.id}

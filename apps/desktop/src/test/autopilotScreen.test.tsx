@@ -117,6 +117,9 @@ describe('Autopilot screen list', () => {
     expect(within(card).getByText('2 made · 1 failed')).toBeInTheDocument();
     expect(card.querySelector('img')).toHaveAttribute('src', '/p/bold.png');
     expect(screen.getByRole('button', { name: 'New autopilot' })).toBeInTheDocument();
+    // One or two columns, never more.
+    expect(card.parentElement).toHaveClass('grid-cols-1');
+    expect(card.parentElement?.getAttribute('style') ?? '').not.toContain('auto-fill');
   });
 
   it('pauses, resumes and edits through the right calls', async () => {
@@ -175,10 +178,11 @@ describe('Autopilot screen list', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't update the autopilot");
   });
 
-  it('opens the detail when the card is clicked', async () => {
+  it('opens the detail when the card is clicked; the button is named by its content', async () => {
     vi.mocked(ipc.listAutopilots).mockResolvedValue([pilot()]);
     render(<Autopilot now={now} />);
-    await userEvent.click(await screen.findByRole('button', { name: 'Open Kopi' }));
+    const open = await screen.findByRole('button', { name: /^Kopi.*Active.*Coffee tips.*Next video in 2 hours/ });
+    await userEvent.click(open);
     expect(useApp.getState().route).toEqual({ name: 'autopilot', id: 'a1' });
   });
 

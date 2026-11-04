@@ -430,7 +430,6 @@ export const en = {
     createFirst: 'Create your first autopilot',
     counts: '{{made}} made · {{failed}} failed',
     nextVideo: 'Next video {{when}}',
-    openAria: 'Open {{name}}',
     allAutopilots: 'All autopilots',
     upcoming: 'Upcoming',
     noUpcoming: 'Nothing planned for the next 7 days',
