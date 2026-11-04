@@ -17,6 +17,12 @@ vi.mock('@/lib/ipc', () => ({
   agentRespondPermission: vi.fn(),
   getSettings: vi.fn(),
   listStyles: vi.fn(),
+  mediaLatestRender: vi.fn().mockResolvedValue(null),
+  mediaProbe: vi.fn().mockResolvedValue(null),
+  mediaThumbnails: vi.fn().mockResolvedValue([]),
+  mediaExtractFrame: vi.fn(),
+  mediaRender: vi.fn(),
+  assetUrl: (p: string) => p,
 }));
 
 type UpdateCb = (e: { chatId: string; update: AgentUpdate }) => void;

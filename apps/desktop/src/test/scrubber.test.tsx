@@ -124,4 +124,13 @@ describe('Preview', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Render preview' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('ffmpeg missing');
   });
+
+  it('shows Frames checked when the last agent message says so', async () => {
+    useChat.setState({
+      messages: { c1: [{ id: 'm1', chatId: 'c1', role: 'agent', parts: [{ type: 'text', text: 'Frames checked, all good' }], createdAt: '' }] },
+    });
+    render(<Preview projectId="p1" chatId="c1" />);
+    await screen.findByRole('slider');
+    expect(screen.getByText('Frames checked')).toBeInTheDocument();
+  });
 });

@@ -4,6 +4,7 @@ import { Button } from '@/components/Button';
 import { Composer } from '@/components/Composer';
 import { MessageList } from '@/components/MessageList';
 import { PermissionCard } from '@/components/PermissionCard';
+import { Preview } from '@/screens/preview/Preview';
 import { StepBar } from '@/components/StepBar';
 import { listChats, listProjects } from '@/lib/ipc';
 import { useApp } from '@/state/app';
@@ -84,7 +85,7 @@ export function ChatProject({ chatId }: { chatId: string }) {
           </div>
         </section>
         <section aria-label="Preview" className="w-[360px] shrink-0 border-l border-border">
-          <div data-testid="preview-slot" />
+          {project ? <Preview projectId={project.id} chatId={chatId} /> : <div data-testid="preview-slot" />}
         </section>
       </div>
     </div>
