@@ -18,8 +18,8 @@ import { cn } from '@/lib/utils';
 
 /** Recent shows this many; See all lists every chat. */
 const RECENT = 10;
-/** Enough rows that a project with several chats doesn't push Recent below ten. */
-const RECENT_FETCH = 40;
+/** One more than Recent shows: Rust counts a project once, so an eleventh row means See all has more. */
+const RECENT_FETCH = RECENT + 1;
 
 type ChatStatus = 'working' | 'needs-you' | 'idle';
 const DOT: Record<ChatStatus, string> = {
@@ -107,7 +107,6 @@ export function Sidebar({ active, collapsed = false }: { active: SidebarKey; col
   const needsYou = useApp((s) => s.needsYouCount);
   const version = useApp((s) => s.projectsVersion);
   const openChatId = useApp((s) => (s.route.name === 'chat' ? s.route.chatId : null));
-  const routeName = useApp((s) => s.route.name);
   const streaming = useChat((s) => s.streaming);
   const permissions = useChat((s) => s.permissions);
   const jobs = useJobs((s) => s.jobs);
@@ -124,7 +123,7 @@ export function Sidebar({ active, collapsed = false }: { active: SidebarKey; col
     return () => {
       alive = false;
     };
-  }, [version, routeName, openChatId, running]);
+  }, [version, openChatId, running]);
 
   const status = (chatId: string): ChatStatus => {
     const waiting =
@@ -133,7 +132,8 @@ export function Sidebar({ active, collapsed = false }: { active: SidebarKey; col
   };
 
   const openChat = (chat: RecentChat) => {
-    useChat.getState().rememberChat(chat);
+    // A row this session already has may be newer than the list (an agent switch since it was read).
+    if (!useChat.getState().rows[chat.id]) useChat.getState().rememberChat(chat);
     setSeeAll(false);
     navigate({ name: 'chat', chatId: chat.id });
   };

@@ -307,6 +307,24 @@ describe('Recent in the sidebar', () => {
     expect(screen.getByRole('link', { name: /Kenapa rupiah/ }).querySelector('[data-status]')).toHaveAttribute('data-status', 'idle');
   });
 
+  it('asks Rust for one more than it shows, so See all appears only when there is more', async () => {
+    vi.mocked(ipc.listRecentChats).mockResolvedValue(Array.from({ length: 10 }, (_, i) => recent(`n${i}`, null, `Obrolan ${i + 1}`)));
+    render(<Sidebar active="chat" />);
+    await screen.findByRole('link', { name: 'Obrolan 10' });
+    expect(ipc.listRecentChats).toHaveBeenCalledWith(11);
+    expect(screen.queryByRole('button', { name: 'See all' })).not.toBeInTheDocument();
+  });
+
+  it('a stale Recent row never undoes an agent switch', async () => {
+    const user = userEvent.setup();
+    vi.mocked(ipc.listRecentChats).mockResolvedValue([recent('c0', null, 'Ngobrol santai')]);
+    useChat.getState().rememberChat({ ...chat('c0', null, 'Ngobrol santai'), agentId: 'codex' });
+    render(<Sidebar active="chat" />);
+    await user.click(await screen.findByRole('link', { name: /Ngobrol santai/ }));
+    expect(useApp.getState().route).toEqual({ name: 'chat', chatId: 'c0' });
+    expect(useChat.getState().rows.c0?.agentId).toBe('codex');
+  });
+
   it('opens a chat on click', async () => {
     const user = userEvent.setup();
     vi.mocked(ipc.listRecentChats).mockResolvedValue(list);
