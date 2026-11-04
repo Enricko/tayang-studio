@@ -50,6 +50,8 @@ Tayang sends a random install ID, your system (macOS, Windows or Linux), its ver
 
 To turn it off, open Settings › Account and switch off "Share anonymous install stats".
 
+To show your Claude usage, Tayang reads the login Claude Code already stores on this computer and sends it only to Anthropic to fetch your usage numbers.
+
 For the owner: set the secret with `wrangler secret put ADMIN_TOKEN`, then `GET /v1/stats` with `Authorization: Bearer <ADMIN_TOKEN>` returns the counts. `pnpm --filter @tayang/api stats -- --remote` prints the same table straight from D1 (use `--local` for the dev database). Set `TAYANG_API_URL` when starting the desktop app to point it at another API; it is used instead of the saved API URL and never stored.
 
 ## Credits
