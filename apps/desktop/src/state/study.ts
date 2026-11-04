@@ -16,6 +16,8 @@ import {
   studyDir,
   upsertJob,
 } from '@/lib/ipc';
+import { i18n } from '@/i18n';
+import { stored } from '@/lib/stored';
 import { agentErrorText } from '@/lib/agents';
 import { onAgentUpdate, onPermission } from '@/lib/events';
 import { refreshJobs } from '@/state/jobs';
@@ -80,7 +82,7 @@ export const useStudy = create<StudyState>((set, get) => {
     const job: Job = {
       id: studyChatId(studyId),
       kind: 'study-style',
-      title: 'Study a video for a new style',
+      title: stored('agents.studyTitle'),
       projectId: null,
       chatId: studyChatId(studyId),
       agentId: agent,
@@ -119,7 +121,8 @@ export const useStudy = create<StudyState>((set, get) => {
     if (studyId) await removeStudyDir(studyId).catch(() => {});
   };
 
-  const fail = async (message: string) => {
+  /** `note` is what the job board keeps; it defaults to the message shown now. */
+  const fail = async (message: string, note: string = message) => {
     const { studyId, url } = get();
     dropRequests();
     set({ phase: 'failed', error: message });
@@ -128,7 +131,7 @@ export const useStudy = create<StudyState>((set, get) => {
     await cleanUp(studyId);
     // The old study's job is always written (it must not stay on Working); only the current study may drop
     // the stale job it replaces.
-    const written = await writeJob('failed', message, studyId, url);
+    const written = await writeJob('failed', note, studyId, url);
     if (written && get().studyId === studyId) await dropStaleJob();
   };
 
@@ -144,7 +147,7 @@ export const useStudy = create<StudyState>((set, get) => {
       const raw = await readStyleResult(studyId);
       const parsed = raw ? parseStyleResult(raw, url) : null;
       if (!mine()) return;
-      if (!parsed) return fail('The agent did not write a style Tayang could read. Try another video.');
+      if (!parsed) return fail(i18n.t('agents.studyUnreadable'), stored('agents.studyUnreadable'));
       const style = { ...parsed, id: `copied-${studyId}`, createdAt: new Date().toISOString() };
       await saveStyle(style);
       // A short silent preview from the downloaded video. Never fails the study.
@@ -238,7 +241,7 @@ export const useStudy = create<StudyState>((set, get) => {
       await agentRespondPermission(request.requestId, optionId).catch(() => {});
       if (optionId === null) {
         await agentCancel(studyChatId(studyId)).catch(() => {});
-        await fail('You cancelled the study');
+        await fail(i18n.t('agents.cancelledStudy'), stored('agents.cancelledStudy'));
       }
     },
 
@@ -246,7 +249,7 @@ export const useStudy = create<StudyState>((set, get) => {
       const { phase, studyId } = get();
       if (phase !== 'running' || !studyId) return;
       await agentCancel(studyChatId(studyId)).catch(() => {});
-      await fail('Cancelled');
+      await fail(i18n.t('agents.cancelled'), stored('agents.cancelled'));
     },
 
     dismiss: () => set({ phase: 'idle', error: null, studyId: null, url: '' }),

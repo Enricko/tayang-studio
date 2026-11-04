@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { AGENT_STOPPED, agentErrorText } from '@/lib/agents';
+import { agentErrorText } from '@/lib/agents';
 
 describe('agentErrorText', () => {
   it('shows the agent message when there is one', () => {
     expect(agentErrorText('The agent reported an error: quota exceeded', 'claude')).toBe(
       'The agent reported an error: quota exceeded',
     );
-    expect(agentErrorText('', 'claude')).toBe(AGENT_STOPPED);
-    expect(agentErrorText(undefined, 'gemini')).toBe(AGENT_STOPPED);
+    expect(agentErrorText('', 'claude')).toBe('The agent stopped unexpectedly');
+    expect(agentErrorText(undefined, 'gemini')).toBe('The agent stopped unexpectedly');
   });
 
   it.each([
