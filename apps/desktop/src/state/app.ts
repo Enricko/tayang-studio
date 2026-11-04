@@ -6,7 +6,14 @@ export type Route =
   | { name: 'connect' }
   | { name: 'requirements' }
   | { name: 'chat-new'; styleId?: string }
-  | { name: 'chat'; chatId: string; /** Prefilled in the composer, never sent. */ draft?: string }
+  | {
+      name: 'chat';
+      chatId: string;
+      /** Prefilled in the composer, never sent. */
+      draft?: string;
+      /** A chat without a project that New chat started from a template on the Style screen. */
+      styleId?: string;
+    }
   | { name: 'videos' }
   | { name: 'style'; /** Focus the link box when the screen opens. */ focusLink?: boolean }
   | { name: 'autopilot'; /** One autopilot's detail view. */ id?: string }
@@ -26,6 +33,8 @@ interface AppState {
   settings: Settings | null;
   setSettings(s: Settings): void;
   needsYouCount: number;
+  /** The chat New chat started last in this app session: Chat goes back to it while it runs. */
+  newChatId: string | null;
   /** Bumped when a project is created so the sidebar's Recent list refreshes. */
   projectsVersion: number;
   bumpProjects(): void;
@@ -46,6 +55,7 @@ export const useApp = create<AppState>((set, get) => ({
   settings: null,
   setSettings: (settings) => set({ settings }),
   needsYouCount: 0,
+  newChatId: null,
   projectsVersion: 0,
   bumpProjects: () => set((s) => ({ projectsVersion: s.projectsVersion + 1 })),
   notificationsBlocked: false,

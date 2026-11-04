@@ -7,6 +7,7 @@ vi.mock('@/lib/ipc', () => ({
   updateSettings: vi.fn(),
   systemLocale: vi.fn(),
   listProjects: vi.fn().mockResolvedValue([]),
+  listRecentChats: vi.fn().mockResolvedValue([]),
   syncStyles: vi.fn().mockResolvedValue({ styles: [], offline: false }),
 }));
 vi.mock('@/lib/events', () => ({ onAgentUpdate: vi.fn(), onPermission: vi.fn() }));

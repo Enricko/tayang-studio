@@ -26,6 +26,12 @@ export const id: Translations = {
     calendar: 'Kalender',
     settings: 'Pengaturan',
     recent: 'Terbaru',
+    seeAll: 'Lihat semua',
+    allChats: 'Semua chat',
+    searchChats: 'Cari chat',
+    noChats: 'Tidak ada chat yang cocok',
+    working: 'Sedang dikerjakan',
+    needsYou: 'Perlu kamu',
   },
   layout: {
     resizeSidebar: 'Ubah lebar sidebar',

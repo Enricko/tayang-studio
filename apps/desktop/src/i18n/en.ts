@@ -24,6 +24,12 @@ export const en = {
     calendar: 'Calendar',
     settings: 'Settings',
     recent: 'Recent',
+    seeAll: 'See all',
+    allChats: 'All chats',
+    searchChats: 'Search chats',
+    noChats: 'No chats match',
+    working: 'Working',
+    needsYou: 'Needs you',
   },
   layout: {
     resizeSidebar: 'Resize sidebar',
