@@ -56,6 +56,12 @@ describe('Markdown in agent replies', () => {
     expect(container.textContent).toContain('onerror');
   });
 
+  it('does not make a link of a plain http href', () => {
+    agent('[plain](http://example.com) and [ok](https://example.com)');
+    expect(screen.queryByRole('link', { name: 'plain' })).toBeNull();
+    expect(screen.getByText(/plain and/)).toBeInTheDocument();
+  });
+
   it('does not make a link of a javascript: href', () => {
     const { container } = agent('[bad](javascript:alert(1)) and [ok](https://example.com)');
     expect(screen.queryByRole('link', { name: 'bad' })).toBeNull();

@@ -6,7 +6,8 @@ import { useTranslation } from 'react-i18next';
 import { Check, Copy } from 'lucide-react';
 import { openUrl } from '@tauri-apps/plugin-opener';
 
-const SAFE_LINK = /^(https?:|mailto:)/i;
+/** Agent prose may carry links from pages it read: only https and mail open, like A2UI's https rule. */
+const SAFE_LINK = /^(https:|mailto:)/i;
 
 function nodeText(n: ReactNode): string {
   if (typeof n === 'string' || typeof n === 'number') return String(n);
