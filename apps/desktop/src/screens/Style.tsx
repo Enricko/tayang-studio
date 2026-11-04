@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Film, Link2, Loader2, Pause, Play } from 'lucide-react';
 import type { Style as StyleT, StyleAspect } from '@tayang/shared';
 import { Button } from '@/components/Button';
@@ -8,6 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/compone
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
+import { i18n } from '@/i18n';
 import { deleteStyle, listStyles, saveStyle, syncStyles } from '@/lib/ipc';
 import { cn } from '@/lib/utils';
 import { useApp } from '@/state/app';
@@ -28,22 +30,10 @@ export function isVideoUrl(raw: string): boolean {
   return host === 'youtu.be';
 }
 
-const ASPECT_LABEL: Record<StyleAspect, string> = {
-  camera: 'Camera',
-  pacing: 'Pacing',
-  type: 'Type',
-  color: 'Color',
-  captions: 'Captions',
-  transitions: 'Transitions',
-};
+const ASPECTS: StyleAspect[] = ['camera', 'pacing', 'type', 'color', 'captions', 'transitions'];
 
 type Tab = 'all' | 'builtin' | 'copied' | 'mine';
-const TABS: { id: Tab; label: string }[] = [
-  { id: 'all', label: 'All' },
-  { id: 'builtin', label: 'Built in' },
-  { id: 'copied', label: 'Copied from videos' },
-  { id: 'mine', label: 'Yours' },
-];
+const TABS: Tab[] = ['all', 'builtin', 'copied', 'mine'];
 
 const SWATCHES: [string, string][] = [
   ['#0B1E3F', '#FFFFFF'],
@@ -84,6 +74,7 @@ const posterOf = (s: StyleT): string | null => s.previewUrl || (s.source === 'co
 
 /** The calm panel shown when a style has no picture at all. */
 function NoPreview({ id, text, className }: { id: string; text?: boolean; className?: string }) {
+  const { t } = useTranslation();
   const [bg] = swatch(id);
   return (
     <div
@@ -93,7 +84,7 @@ function NoPreview({ id, text, className }: { id: string; text?: boolean; classN
       aria-hidden={text ? undefined : 'true'}
     >
       <Film size={24} strokeWidth={1.5} aria-hidden="true" className="text-text-3" />
-      {text && <span className="text-xs text-text-3">No preview for this style</span>}
+      {text && <span className="text-xs text-text-3">{t('style.noPreview')}</span>}
     </div>
   );
 }
@@ -104,16 +95,24 @@ const ENGINE_LABEL = {
 } as const;
 
 function sourceLabel(s: StyleT): string {
-  if (s.source === 'builtin') return 'Built in';
-  if (s.source === 'copied')
-    return s.sourceUrl ? `Copied from a video · ${new URL(s.sourceUrl).hostname.replace(/^www\./, '')}` : 'Copied from a video';
-  return 'Yours';
+  if (s.source === 'builtin') return i18n.t('style.builtIn');
+  if (s.source === 'copied') {
+    let host = '';
+    try {
+      host = s.sourceUrl ? new URL(s.sourceUrl).hostname.replace(/^www\./, '') : '';
+    } catch {
+      /* a link that doesn't parse shows no host */
+    }
+    return host ? i18n.t('style.copiedFrom', { host }) : i18n.t('style.copied');
+  }
+  return i18n.t('style.yours');
 }
 
 function StudyBox() {
+  const { t } = useTranslation();
   const study = useStudy();
   const agent = useApp((s) => s.settings?.defaultAgent) ?? 'claude';
-  const steps = ['Downloaded', 'Frames sampled', 'Reading camera, pacing and type', 'Writing the style prompt', 'Making a preview'];
+  const steps = (['downloaded', 'frames', 'reading', 'writing', 'preview'] as const).map((k) => t(`style.studySteps.${k}`));
   const active = study.phase === 'finishing' ? steps.length - 1 : Math.min(study.toolCalls, steps.length - 2);
 
   if (study.phase === 'idle') return null;
@@ -122,10 +121,10 @@ function StudyBox() {
       <div role="alert" className="flex items-start gap-3 rounded-md border border-border bg-background p-3">
         <Oyen mood="surprised" size={32} />
         <div className="flex flex-1 flex-col gap-2">
-          <span className="text-[13px] font-medium">Couldn't copy this style</span>
+          <span className="text-[13px] font-medium">{t('style.couldntCopy')}</span>
           <span className="text-xs text-text-2">{study.error}</span>
           <Button variant="secondary" className="h-8 self-start px-3 text-[13px]" onClick={study.dismiss}>
-            Dismiss
+            {t('style.dismiss')}
           </Button>
         </div>
       </div>
@@ -134,9 +133,9 @@ function StudyBox() {
     return (
       <div className="flex items-center gap-3 rounded-md border border-border bg-background p-3">
         <Oyen mood="happy" size={32} />
-        <span className="mr-auto text-[13px] font-medium">Style saved to your library</span>
+        <span className="mr-auto text-[13px] font-medium">{t('style.saved')}</span>
         <Button variant="ghost" className="h-8 px-2 text-[13px]" onClick={study.dismiss}>
-          Dismiss
+          {t('style.dismiss')}
         </Button>
       </div>
     );
@@ -146,11 +145,11 @@ function StudyBox() {
         <Oyen mood="sleepy" size={32} />
         <div className="flex min-w-0 flex-1 flex-col gap-2">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[13px] font-medium">Studying a video</span>
+            <span className="text-[13px] font-medium">{t('style.studying')}</span>
             <span className="truncate font-mono text-xs text-text-3">{study.url.replace(/^https?:\/\//, '')}</span>
             {study.phase === 'running' && (
               <Button variant="ghost" className="ml-auto h-7 px-2 text-xs" onClick={() => void study.cancel()}>
-                Cancel
+                {t('common.cancel')}
               </Button>
             )}
           </div>
@@ -173,7 +172,7 @@ function StudyBox() {
         </div>
       </div>
       {study.ranLog.length > 0 && (
-        <ul aria-label="Commands run without asking" className="m-0 flex list-none flex-col gap-1 p-0">
+        <ul aria-label={t('style.ranAria')} className="m-0 flex list-none flex-col gap-1 p-0">
           {study.ranLog.slice(-4).map((line, i) => (
             <li key={`${study.ranLog.length}-${i}`} className="truncate font-mono text-xs text-text-3" title={line}>
               {line}
@@ -184,9 +183,9 @@ function StudyBox() {
       {study.request && (
         <PermissionCard
           request={study.request}
-          ask="Study this video on this computer: download it, sample frames and write the style."
+          ask={t('style.studyAsk')}
           agentId={agent}
-          allowLabel="Allow"
+          allowLabel={t('permission.allow')}
           onRespond={(id) => void study.respond(id)}
         />
       )}
@@ -222,6 +221,7 @@ const VIDEO_TIMEOUT_MS = 5000;
  * data; the image alone shows when there is no clip, it errors, or it has no data after 5 s.
  */
 function StylePreview({ style }: { style: StyleT }) {
+  const { t } = useTranslation();
   const [failed, setFailed] = useState<string | null>(null);
   const [playing, setPlaying] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -299,7 +299,7 @@ function StylePreview({ style }: { style: StyleT }) {
         loop
         playsInline
         preload="auto"
-        aria-label={`${style.name} preview`}
+        aria-label={t('style.previewAria', { name: style.name })}
         className="size-full object-cover"
         onLoadedData={() => {
           loadedRef.current = true;
@@ -317,7 +317,7 @@ function StylePreview({ style }: { style: StyleT }) {
       )}
       <button
         type="button"
-        aria-label={playing ? 'Pause preview' : 'Play preview'}
+        aria-label={playing ? t('style.pausePreview') : t('style.playPreview')}
         onClick={toggle}
         className="absolute right-2 bottom-2 flex size-8 items-center justify-center rounded-full bg-black/60 text-foreground hover:bg-black/80 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
       >
@@ -327,7 +327,6 @@ function StylePreview({ style }: { style: StyleT }) {
   );
 }
 
-const ASPECTS = Object.keys(ASPECT_LABEL) as StyleAspect[];
 type NotesDraft = Record<StyleAspect, string>;
 const draftOf = (s: StyleT): NotesDraft =>
   Object.fromEntries(ASPECTS.map((a) => [a, s.notes[a] ?? ''])) as NotesDraft;
@@ -361,6 +360,7 @@ function Detail({
   onClone(clone: StyleT): Promise<void>;
   onEditStarted(): void;
 }) {
+  const { t } = useTranslation();
   const navigate = useApp((s) => s.navigate);
   const [editing, setEditing] = useState(startInEdit);
   const [name, setName] = useState(style.name);
@@ -418,7 +418,7 @@ function Detail({
       await onClone({
         ...style,
         id: `mine-${Date.now().toString(36)}`,
-        name: `${style.name} (copy)`,
+        name: `${style.name} (${t('style.copySuffix')})`,
         source: 'mine',
         sourceUrl: null,
         createdAt: new Date().toISOString(),
@@ -448,7 +448,7 @@ function Detail({
           {editing ? (
             <>
               <DialogTitle className="sr-only">{style.name}</DialogTitle>
-              <Input aria-label="Style name" value={name} onChange={(e) => setName(e.target.value)} className="h-9" />
+              <Input aria-label={t('style.nameAria')} value={name} onChange={(e) => setName(e.target.value)} className="h-9" />
             </>
           ) : (
             <DialogTitle className="text-base leading-normal font-medium">{style.name}</DialogTitle>
@@ -461,7 +461,7 @@ function Detail({
             {ASPECTS.map((a) => (
               <div key={a} className="flex flex-col gap-1">
                 <label htmlFor={`style-note-${a}`} className="text-xs text-text-3">
-                  {ASPECT_LABEL[a]}
+                  {t(`style.aspects.${a}`)}
                 </label>
                 <AutoTextarea
                   id={`style-note-${a}`}
@@ -477,7 +477,7 @@ function Detail({
             <dl className="m-0 flex flex-col gap-2">
               {shownNotes.map((a) => (
                 <div key={a} className="flex gap-3 text-[13px] leading-normal">
-                  <dt className="w-[76px] shrink-0 text-text-3">{ASPECT_LABEL[a]}</dt>
+                  <dt className="w-[76px] shrink-0 text-text-3">{t(`style.aspects.${a}`)}</dt>
                   <dd className="m-0 text-[#D9D9D9]">{style.notes[a]}</dd>
                 </div>
               ))}
@@ -486,7 +486,7 @@ function Detail({
         )}
         <div className="flex flex-col gap-2">
           <label htmlFor="style-prompt" className="text-xs text-text-3">
-            Prompt your agent gets
+            {t('style.promptLabel')}
           </label>
           {editing ? (
             <AutoTextarea
@@ -518,7 +518,7 @@ function Detail({
                 disabled={!name.trim() || !prompt.trim()}
                 onClick={() => void save()}
               >
-                Save
+                {t('style.save')}
               </Button>
               <Button
                 variant="ghost"
@@ -528,7 +528,7 @@ function Detail({
                   setEditing(false);
                 }}
               >
-                Cancel
+                {t('common.cancel')}
               </Button>
             </>
           ) : (
@@ -543,20 +543,20 @@ function Detail({
                   })
                 }
               >
-                Use in a new chat
+                {t('style.useInChat')}
               </Button>
               {builtin ? (
                 <Button variant="ghost" className="h-9 px-3 text-[13px]" disabled={cloning} onClick={() => void clone()}>
-                  Clone to edit
+                  {t('style.clone')}
                 </Button>
               ) : (
                 <Button variant="ghost" className="h-9 px-3 text-[13px]" onClick={() => setEditing(true)}>
-                  Edit
+                  {t('style.edit')}
                 </Button>
               )}
               {!builtin && (
                 <Button variant="ghost" className="h-9 px-3 text-[13px]" onClick={() => void remove()}>
-                  Delete
+                  {t('style.delete')}
                 </Button>
               )}
             </>
@@ -568,6 +568,7 @@ function Detail({
 }
 
 export function Style() {
+  const { t } = useTranslation();
   const agent = useApp((s) => s.settings?.defaultAgent) ?? 'claude';
   const savedVersion = useStudy((s) => s.savedVersion);
   const phase = useStudy((s) => s.phase);
@@ -645,7 +646,7 @@ export function Style() {
 
   const study = () => {
     if (!isVideoUrl(url)) {
-      setUrlError('Paste a TikTok, Reels or YouTube link');
+      setUrlError(t('style.badLink'));
       return;
     }
     setUrlError(null);
@@ -655,16 +656,16 @@ export function Style() {
   return (
     <div className="flex h-full flex-col gap-6 overflow-y-auto p-8">
       <div data-tauri-drag-region className="flex flex-col gap-1">
-        <h1 className="m-0 text-[28px] font-semibold tracking-[-0.01em]">Style</h1>
-        <span className="text-sm text-text-2">Saved looks your agent follows. Pick one, write your own, or copy one from a video.</span>
+        <h1 className="m-0 text-[28px] font-semibold tracking-[-0.01em]">{t('style.title')}</h1>
+        <span className="text-sm text-text-2">{t('style.subtitle')}</span>
       </div>
 
-      <section aria-label="Copy a style from a video" className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4">
+      <section aria-label={t('style.copyTitle')} className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4">
         <div className="flex flex-wrap items-center gap-2">
           <label htmlFor="style-url" className="mr-auto text-sm font-medium">
-            Copy a style from a video
+            {t('style.copyTitle')}
           </label>
-          <span className="text-xs text-text-3">TikTok · Instagram Reels · YouTube</span>
+          <span className="text-xs text-text-3">{t('style.sites')}</span>
         </div>
         <div className="flex flex-wrap gap-2">
           <div className="relative min-w-[320px] flex-1">
@@ -672,9 +673,9 @@ export function Style() {
             <Input
               id="style-url"
               ref={input}
-              aria-label="Video link"
+              aria-label={t('style.linkAria')}
               aria-invalid={!!urlError}
-              placeholder="Paste a video link"
+              placeholder={t('style.linkPlaceholder')}
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && study()}
@@ -682,7 +683,7 @@ export function Style() {
             />
           </div>
           <Button className="h-10" disabled={phase === 'running' || phase === 'finishing'} onClick={study}>
-            Study video
+            {t('style.studyVideo')}
           </Button>
         </div>
         {urlError && (
@@ -692,17 +693,17 @@ export function Style() {
         )}
         <StudyBox />
         <span className="text-xs text-text-3">
-          Frames are studied on your computer and deleted after. Tayang copies the look, not the footage
+          {t('style.privacy')}
         </span>
       </section>
 
       <div className="flex flex-col gap-6">
-        <section ref={library} tabIndex={-1} aria-label="Library" className="flex min-w-0 flex-col gap-4 outline-none">
+        <section ref={library} tabIndex={-1} aria-label={t('style.libraryAria')} className="flex min-w-0 flex-col gap-4 outline-none">
           <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
-            <TabsList variant="line" aria-label="Filter styles" className="h-10 w-full justify-start border-b border-border p-0">
-              {TABS.map((t) => (
-                <TabsTrigger key={t.id} value={t.id} className="h-10 flex-none px-3 text-sm">
-                  {t.label}
+            <TabsList variant="line" aria-label={t('style.filterAria')} className="h-10 w-full justify-start border-b border-border p-0">
+              {TABS.map((id) => (
+                <TabsTrigger key={id} value={id} className="h-10 flex-none px-3 text-sm">
+                  {t(`style.tabs.${id}`)}
                 </TabsTrigger>
               ))}
             </TabsList>
@@ -710,15 +711,15 @@ export function Style() {
           {syncing && (
             <p role="status" className="m-0 flex items-center gap-2 text-xs text-text-3">
               <Loader2 size={14} strokeWidth={1.5} aria-hidden="true" className="animate-spin" />
-              Updating built-in styles
+              {t('style.updating')}
             </p>
           )}
           {!syncing && offline && (
             <p className="m-0 text-xs text-text-3">
-              {hasBuiltin ? 'Built-in styles are from your last sync' : 'Connect to the internet to load built-in styles'}
+              {hasBuiltin ? t('style.fromLastSync') : t('style.goOnline')}
             </p>
           )}
-          {shown.length === 0 && !syncing && <p className="m-0 text-sm text-text-3">Nothing here yet</p>}
+          {shown.length === 0 && !syncing && <p className="m-0 text-sm text-text-3">{t('style.empty')}</p>}
           <div
             className="grid gap-4"
             style={{
@@ -746,7 +747,7 @@ export function Style() {
                   />
                   <span className="text-[13px] font-medium">{s.name}</span>
                   <span className="text-xs text-text-3">{sourceLabel(s)}</span>
-                  {s.template && <span className="text-xs text-text-3">Starts from a working project</span>}
+                  {s.template && <span className="text-xs text-text-3">{t('style.startsFromProject')}</span>}
                 </button>
               );
             })}
@@ -796,7 +797,7 @@ export function Style() {
             />
             {blocked && dirty && (
               <p role="status" className="m-0 text-xs text-orange-light">
-                You have unsaved changes. Save or cancel first
+                {t('style.unsaved')}
               </p>
             )}
           </DialogContent>
