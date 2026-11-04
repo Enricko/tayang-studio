@@ -322,11 +322,22 @@ fn build_style_preview(tools: &MediaTools, source: &Path, out_dir: &Path, limit:
         let _ = std::fs::remove_dir_all(&tmp);
         return None;
     };
-    let _ = std::fs::remove_dir_all(out_dir);
-    if std::fs::rename(&tmp, out_dir).is_err() {
+    // Swap with a backup so a failure at any step leaves the old preview in place.
+    let backup = out_dir.with_file_name(format!(".{name}.old"));
+    let _ = std::fs::remove_dir_all(&backup);
+    let had_old = out_dir.exists();
+    if had_old && std::fs::rename(out_dir, &backup).is_err() {
         let _ = std::fs::remove_dir_all(&tmp);
         return None;
     }
+    if std::fs::rename(&tmp, out_dir).is_err() {
+        if had_old {
+            let _ = std::fs::rename(&backup, out_dir);
+        }
+        let _ = std::fs::remove_dir_all(&tmp);
+        return None;
+    }
+    let _ = std::fs::remove_dir_all(&backup);
     Some(StylePreview { preview_path: has_clip.then(|| out_dir.join("preview.mp4")), poster_path: out_dir.join("poster.jpg") })
 }
 
@@ -810,6 +821,31 @@ mod tests {
         assert_eq!(names, ["copied-1"]);
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn a_swap_that_fails_restores_the_old_preview() {
+        use std::os::unix::fs::PermissionsExt;
+        let Some(t) = test_tools() else { return };
+        let tmp = tempfile::tempdir().unwrap();
+        let study = tmp.path().join("study");
+        make_source(&t, &study, "source.mp4");
+        let parent = tmp.path().join("style-media");
+        let out = parent.join("copied-1");
+        std::fs::create_dir_all(&out).unwrap();
+        std::fs::write(out.join("poster.jpg"), "old poster").unwrap();
+        // Building into the temp folder works, but the parent turns read-only, so no rename can succeed.
+        let ro = std::fs::Permissions::from_mode(0o555);
+        let rw = std::fs::Permissions::from_mode(0o755);
+        std::fs::create_dir_all(parent.join(".copied-1.tmp")).unwrap();
+        std::fs::set_permissions(&parent, ro).unwrap();
+        let r = make_style_preview(&t, &study, &out);
+        std::fs::set_permissions(&parent, rw).unwrap();
+        // (Running as root ignores permissions; then the run simply succeeds and there is nothing to restore.)
+        if let Ok(None) = r {
+            assert_eq!(std::fs::read_to_string(out.join("poster.jpg")).unwrap(), "old poster");
+        }
+    }
+
     #[test]
     fn a_successful_run_replaces_an_existing_preview() {
         let Some(t) = test_tools() else { return };
@@ -822,6 +858,8 @@ mod tests {
         let r = make_style_preview(&t, &study, &out).unwrap().unwrap();
         assert!(r.preview_path.unwrap().exists() && r.poster_path.exists());
         assert!(!out.join("stale.txt").exists());
+        let names: Vec<_> = std::fs::read_dir(out.parent().unwrap()).unwrap().map(|e| e.unwrap().file_name()).collect();
+        assert_eq!(names, ["copied-1"], "no backup or temp folder is left");
     }
 
     #[test]
