@@ -16,11 +16,12 @@ import { useApp } from '@/state/app';
 
 type Tab = 'all' | 'progress' | 'rendered' | 'scheduled';
 
-const TABS: { id: Tab; match(s: ProjectStatus): boolean }[] = [
+const TABS: { id: Tab; match(p: Project): boolean }[] = [
   { id: 'all', match: () => true },
-  { id: 'progress', match: (s) => s === 'draft' || s === 'building' },
-  { id: 'rendered', match: (s) => s === 'rendered' },
-  { id: 'scheduled', match: (s) => s === 'scheduled' },
+  { id: 'progress', match: (p) => p.status === 'draft' || p.status === 'building' },
+  { id: 'rendered', match: (p) => p.status === 'rendered' },
+  // Scheduling leaves `status` alone, so the tab follows the schedule itself.
+  { id: 'scheduled', match: (p) => p.status === 'scheduled' || (!!p.scheduledAt && !p.postedAt) },
 ];
 
 const DOT: Record<ProjectStatus, string> = {
@@ -69,7 +70,7 @@ export function Videos() {
   const shown = useMemo(() => {
     const current = TABS.find((x) => x.id === tab)!;
     const needle = q.trim().toLowerCase();
-    return list.filter((p) => current.match(p.status) && (!needle || p.title.toLowerCase().includes(needle)));
+    return list.filter((p) => current.match(p) && (!needle || p.title.toLowerCase().includes(needle)));
   }, [list, tab, q]);
 
   return (
@@ -97,7 +98,7 @@ export function Videos() {
           {TABS.map((tb) => (
             <TabsTrigger key={tb.id} value={tb.id} className="h-10 flex-none px-3 text-sm">
               {t(`videos.tabs.${tb.id}`)}
-              <span className="ml-1 font-mono text-xs text-text-3">{list.filter((p) => tb.match(p.status)).length}</span>
+              <span className="ml-1 font-mono text-xs text-text-3">{list.filter((p) => tb.match(p)).length}</span>
             </TabsTrigger>
           ))}
         </TabsList>
