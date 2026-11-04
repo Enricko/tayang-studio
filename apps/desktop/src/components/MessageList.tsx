@@ -130,6 +130,9 @@ function isUpdateOnly(text: string, messageId: string, a2ui: A2uiState): boolean
   });
 }
 
+/** A closed ```a2ui block that isn't valid JSON: say so, never show the raw JSON. */
+const BROKEN_BLOCK = "Couldn't show these options";
+
 function sendAction(chatId: string, a: A2uiAction, sendOptions?: SendOptions) {
   const { summary, ...rest } = a;
   const action: MessagePart = { type: 'a2ui-action', summary, action: { version: 'v0.9', action: rest } };
@@ -140,7 +143,7 @@ function sendAction(chatId: string, a: A2uiAction, sendOptions?: SendOptions) {
 
 /** An agent text part: prose, the surfaces it owns, and a placeholder for a block still streaming. */
 function AgentText({ text, messageId, a2ui }: { text: string; messageId: string; a2ui: A2uiState }) {
-  const { text: rawProse, blocks, pending: a2uiPending } = useMemo(() => extractA2ui(text), [text]);
+  const { text: rawProse, blocks, pending: a2uiPending, invalid } = useMemo(() => extractA2ui(text), [text]);
   const { handle, locked, sendOptions } = useContext(ActionsContext);
   // Older agents answer topics with a ```json block. Where a screen shows topic cards (it provides the
   // handler), hide that block, also while it is still streaming; other chats keep it as written.
@@ -176,6 +179,7 @@ function AgentText({ text, messageId, a2ui }: { text: string; messageId: string;
       {blocks.length > 0 && a2ui.set.notes.length > 0 && (
         <p className="m-0 text-[12px] text-text-3">{a2ui.set.notes[0]}</p>
       )}
+      {invalid > 0 && <p className="m-0 text-[12px] text-text-3">{BROKEN_BLOCK}</p>}
       {pending && <p className="m-0 text-[13px] text-text-3">Loading options…</p>}
     </>
   );

@@ -69,6 +69,18 @@ describe('A2UI in the chat', () => {
     expect(screen.queryByText(/createSurface/)).toBeNull();
   });
 
+  it('shows a muted note, never raw JSON, for a closed block that is not valid', () => {
+    render(
+      <MessageList
+        streaming={false}
+        messages={[msg('1', 'agent', [{ type: 'text', text: 'Pick:\n```a2ui\n{"version":"v0.9","createSurface":\n```' }])]}
+      />,
+    );
+    expect(screen.getByText('Pick:')).toBeInTheDocument();
+    expect(screen.getByText("Couldn't show these options")).toBeInTheDocument();
+    expect(screen.queryByText(/createSurface/)).toBeNull();
+  });
+
   it('shows a placeholder while a block is still streaming', () => {
     render(
       <MessageList

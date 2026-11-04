@@ -1,11 +1,13 @@
 /** Pulls ```a2ui fenced blocks out of agent text. */
 export interface Extracted {
-  /** The text with every valid a2ui block removed. */
+  /** The text with every a2ui block removed (a closed but broken block too: never show raw JSON). */
   text: string;
   /** Each valid block as a list of v0.9 messages. */
   blocks: unknown[][];
   /** True when the text ends inside an a2ui fence that has not closed yet. */
   pending: boolean;
+  /** Closed blocks that were not valid JSON. */
+  invalid: number;
 }
 
 function parseBlock(body: string): unknown[] | null {
@@ -43,19 +45,20 @@ export function extractA2ui(input: string): Extracted {
 
 function extract(input: string): Extracted {
   const blocks: unknown[][] = [];
+  let invalid = 0;
   const re = /```a2ui[ \t]*\r?\n([\s\S]*?)```/g;
-  let text = input.replace(re, (whole, body: string) => {
+  let text = input.replace(re, (_whole, body: string) => {
     const parsed = parseBlock(body);
-    if (!parsed) return whole;
-    blocks.push(parsed);
+    if (parsed) blocks.push(parsed);
+    else invalid++;
     return '';
   });
   let pending = false;
-  // An unclosed fence is still streaming. (A closed-but-invalid block stays as text.)
+  // An unclosed fence is still streaming.
   const open = text.search(/```a2ui[ \t]*(\r?\n(?![\s\S]*```)|$)/);
   if (open >= 0) {
     pending = true;
     text = text.slice(0, open);
   }
-  return { text: text.replace(/\n{3,}/g, '\n\n').trim(), blocks, pending };
+  return { text: text.replace(/\n{3,}/g, '\n\n').trim(), blocks, pending, invalid };
 }

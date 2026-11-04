@@ -33,11 +33,12 @@ describe('extractA2ui', () => {
     expect(r.blocks).toEqual([[create]]);
   });
 
-  it('keeps invalid JSON as plain text', () => {
-    const text = 'Hi\n```a2ui\n{nope\n```';
-    const r = extractA2ui(text);
+  it('drops a closed block with invalid JSON and counts it', () => {
+    const r = extractA2ui('Hi\n```a2ui\n{nope\n```');
     expect(r.blocks).toEqual([]);
-    expect(r.text).toBe(text);
+    expect(r.text).toBe('Hi');
+    expect(r.invalid).toBe(1);
+    expect(r.pending).toBe(false);
   });
 
   it('marks an unclosed fence as pending and hides it', () => {
