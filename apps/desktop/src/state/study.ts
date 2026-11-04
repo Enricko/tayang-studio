@@ -126,9 +126,10 @@ export const useStudy = create<StudyState>((set, get) => {
     // Stop the agent first (it may still be writing the download), then delete what it left behind.
     await stopAgent(studyId);
     await cleanUp(studyId);
-    // Another study may have started meanwhile: never write the old one's state over it.
-    if (get().studyId !== studyId) return;
-    if (await writeJob('failed', message, studyId, url)) await dropStaleJob();
+    // The old study's job is always written (it must not stay on Working); only the current study may drop
+    // the stale job it replaces.
+    const written = await writeJob('failed', message, studyId, url);
+    if (written && get().studyId === studyId) await dropStaleJob();
   };
 
   const finish = async () => {
@@ -209,13 +210,22 @@ export const useStudy = create<StudyState>((set, get) => {
       set({ phase: 'running', url, studyId, toolCalls: 0, ranLog: [], request: null, queue: [], error: null });
       staleJobId = replaceJobId ?? null;
       listen();
+      /** Cancelled (or replaced) while a step was pending: nothing may be left running or on disk. */
+      const gone = () => get().studyId !== studyId || get().phase !== 'running';
+      const abandon = async () => {
+        await stopAgent(studyId);
+        await cleanUp(studyId);
+      };
       try {
         const dir = await studyDir(studyId);
-        if (await writeJob('working', null)) await dropStaleJob();
+        if (gone()) return await abandon();
+        if (await writeJob('working', null, studyId, url)) await dropStaleJob();
         // Style studies always run in auto mode (the app enforces it too).
         await agentStart(studyChatId(studyId), agentId, true);
+        if (gone()) return await abandon();
         await agentPrompt(studyChatId(studyId), [{ type: 'text', text: buildStudyStylePrompt(url, dir) }]);
       } catch (e) {
+        if (gone()) return await abandon();
         await fail(agentErrorText(e instanceof Error ? e.message : String(e), agentId));
       }
     },

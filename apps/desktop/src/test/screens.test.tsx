@@ -975,6 +975,59 @@ describe('Study preview', () => {
     useStudy.getState().dismiss();
   });
 
+  it('Cancel while the agent is still starting stops it once it is up, never prompts it, and keeps the job failed', async () => {
+    vi.mocked(ipc.studyDir).mockResolvedValue('/w/s');
+    vi.mocked(ipc.agentPrompt).mockClear();
+    vi.mocked(ipc.agentStop).mockClear();
+    vi.mocked(ipc.removeStudyDir).mockClear();
+    vi.mocked(ipc.upsertJob).mockClear();
+    vi.mocked(ipc.agentCancel).mockResolvedValue();
+    let up: (v: boolean) => void = () => {};
+    vi.mocked(ipc.agentStart).mockReturnValueOnce(new Promise((res) => (up = res)));
+    const view = render(<Style />);
+    await userEvent.type(screen.getByLabelText('Video link'), 'https://youtu.be/abc');
+    await userEvent.click(screen.getByRole('button', { name: 'Study video' }));
+    await waitFor(() => expect(ipc.agentStart).toHaveBeenCalled());
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(useStudy.getState().phase).toBe('failed'));
+    const stopsBefore = vi.mocked(ipc.agentStop).mock.calls.length;
+    await act(async () => up(false));
+    await waitFor(() => expect(vi.mocked(ipc.agentStop).mock.calls.length).toBeGreaterThan(stopsBefore));
+    expect(ipc.agentPrompt).not.toHaveBeenCalled();
+    expect(ipc.removeStudyDir).toHaveBeenCalledTimes(2); // after the cancel, and again once the agent was stopped
+    const jobs = vi.mocked(ipc.upsertJob).mock.calls.map(([j]) => j.status);
+    expect(jobs.at(-1)).toBe('failed');
+    view.unmount();
+    useStudy.getState().dismiss();
+  });
+
+  it('a study that fails right before a new one starts still gets its job written as failed', async () => {
+    vi.mocked(ipc.studyDir).mockResolvedValue('/w/s');
+    vi.mocked(ipc.agentPrompt).mockClear();
+    vi.mocked(ipc.upsertJob).mockClear();
+    vi.mocked(ipc.agentCancel).mockResolvedValue();
+    let stopped: () => void = () => {};
+    vi.mocked(ipc.agentStop).mockReturnValueOnce(new Promise((res) => (stopped = () => res(undefined))));
+    const view = render(<Style />);
+    await userEvent.type(screen.getByLabelText('Video link'), 'https://youtu.be/abc');
+    await userEvent.click(screen.getByRole('button', { name: 'Study video' }));
+    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
+    const oldId = useStudy.getState().studyId!;
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(useStudy.getState().phase).toBe('failed'));
+    // The old agent is still being stopped; the user starts another study.
+    await act(async () => useStudy.getState().start('https://youtu.be/new', 'claude'));
+    const newId = useStudy.getState().studyId!;
+    await act(async () => stopped());
+    await waitFor(() =>
+      expect(vi.mocked(ipc.upsertJob).mock.calls.some(([j]) => j.id === `study-${oldId}` && j.status === 'failed')).toBe(true),
+    );
+    expect(useStudy.getState().studyId).toBe(newId);
+    expect(useStudy.getState().phase).toBe('running');
+    view.unmount();
+    useStudy.getState().dismiss();
+  });
+
   it('a failing or empty preview never fails the study', async () => {
     for (const result of [() => Promise.reject(new Error('ffmpeg missing')), () => Promise.resolve(null)]) {
       vi.mocked(ipc.makeStylePreview).mockImplementation(result);
