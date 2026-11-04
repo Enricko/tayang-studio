@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { FOREGROUND_RULE, RENDERS_RULE, buildSessionPreamble, languageHint, sessionFacts, stripFramesToken } from '@tayang/skills';
-import type { AgentId, AgentUpdate, ChatMessage, FileInfo, JobStatus, MessagePart, PermissionRequest } from '@tayang/shared';
+import type { AgentId, AgentUpdate, Chat, ChatMessage, FileInfo, JobStatus, MessagePart, PermissionRequest } from '@tayang/shared';
 import {
   addMessage,
   agentCancel,
@@ -70,9 +70,15 @@ interface ChatState {
   pendingAuto: boolean | null;
   /** Chats whose Auto switch is being applied to the running session. */
   autoBusy: Record<string, boolean>;
+  /** Chat rows seen in this app session, so a screen knows a chat's project before asking Rust. */
+  rows: Record<string, Chat>;
+  /** Unsent composer text per chat; `new` is the New chat screen's, which has no chat yet. */
+  drafts: Record<string, string>;
 
   /** Turns auto mode on or off; a running session switches right away. */
   setAuto(chatId: string | null, on: boolean): Promise<void>;
+  rememberChat(chat: Chat): void;
+  setDraft(key: string, text: string): void;
   /** A new chat just got its id: it takes over the draft's Auto choice. */
   adoptPendingAuto(chatId: string): void;
   load(chatId: string): Promise<void>;
@@ -607,6 +613,15 @@ export const useChat = create<ChatState>((set, get) => {
     auto: {},
     pendingAuto: null,
     autoBusy: {},
+    rows: {},
+    drafts: {},
+
+    rememberChat: (chat) => set((s) => ({ rows: { ...s.rows, [chat.id]: chat } })),
+
+    setDraft(key, text) {
+      if ((get().drafts[key] ?? '') === text) return;
+      set((s) => ({ drafts: { ...s.drafts, [key]: text } }));
+    },
 
     async setAuto(chatId, on) {
       if (!chatId) {
@@ -831,7 +846,7 @@ export const useChat = create<ChatState>((set, get) => {
       resetProjectStatus();
       stopAllWatches();
       useRender.setState({ runs: {} });
-      set({ messages: {}, streaming: {}, turnStartedAt: {}, permissions: {}, attachments: {}, started: {}, auto: {}, pendingAuto: null, autoBusy: {} });
+      set({ messages: {}, streaming: {}, turnStartedAt: {}, permissions: {}, attachments: {}, started: {}, auto: {}, pendingAuto: null, autoBusy: {}, rows: {}, drafts: {} });
     },
   };
 });
