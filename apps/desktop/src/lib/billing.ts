@@ -71,13 +71,5 @@ export function billingReminderDue(s: BillingStatus | null, now: Date, remindedF
   return end - now.getTime() <= REMINDER_LEAD_MS && remindedFor !== s.currentPeriodEnd;
 }
 
-/** Only SumoPod's payment pages are opened: https on pay.sumopod.com, sumopod.com or *.pymnt.global (as Rust checks). */
-export function isPaymentLink(url: string): boolean {
-  try {
-    const u = new URL(url.trim());
-    const host = u.hostname.toLowerCase();
-    return u.protocol === 'https:' && (host === 'pay.sumopod.com' || host === 'sumopod.com' || host.endsWith('.pymnt.global'));
-  } catch {
-    return false;
-  }
-}
+/** Only SumoPod's payment pages are opened (shared allow-list; Rust checks the same hosts). */
+export { isPaymentLink } from '@tayang/shared';

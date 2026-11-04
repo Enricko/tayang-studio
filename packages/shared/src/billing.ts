@@ -169,3 +169,23 @@ export function nextPeriod(current: { plan: PaidPlanId; end: string } | null, pa
   const extraDays = lowerPlanDays(price(paid), price(current.plan));
   return { kind: 'converted', plan: current.plan, end: iso(end + extraDays * DAY_MS), extraDays };
 }
+
+// ---- payment links ----
+
+/** Where SumoPod's payment pages live. The API refuses any other link, and the app (TS and Rust) only opens these. */
+export const PAYMENT_LINK_HOSTS = ['pay.sumopod.com', 'sumopod.com', '*.pymnt.global'] as const;
+
+/** https on one of PAYMENT_LINK_HOSTS (`*.x` means any subdomain of x, not x itself). */
+export function isPaymentLink(url: string): boolean {
+  let u: URL;
+  try {
+    u = new URL(url.trim());
+  } catch {
+    return false;
+  }
+  const host = u.hostname.toLowerCase();
+  return (
+    u.protocol === 'https:' &&
+    PAYMENT_LINK_HOSTS.some((h) => (h.startsWith('*.') ? host.endsWith(h.slice(1)) : host === h))
+  );
+}

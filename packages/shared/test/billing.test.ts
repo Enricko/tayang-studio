@@ -90,3 +90,23 @@ describe('period arithmetic', () => {
     expect(nextPeriod({ plan: 'lite', end: '2026-11-14T12:00:00Z' }, 'lite', now).end).toBe(at(40));
   });
 });
+
+import { PAYMENT_LINK_HOSTS, isPaymentLink } from '../src/index';
+
+describe('isPaymentLink (the one allow-list for the API, Rust mirrors it)', () => {
+  it('only https on pay.sumopod.com, sumopod.com or *.pymnt.global', () => {
+    expect(PAYMENT_LINK_HOSTS).toEqual(['pay.sumopod.com', 'sumopod.com', '*.pymnt.global']);
+    for (const ok of ['https://pay.sumopod.com/p/1', 'https://sumopod.com/pay/1', 'https://checkout.pymnt.global/x', 'https://PAY.SUMOPOD.COM/p'])
+      expect(isPaymentLink(ok)).toBe(true);
+    for (const bad of [
+      'http://pay.sumopod.com/p/1',
+      'https://pay-sandbox.sumopod.com/p/1',
+      'https://evil-sumopod.com/p',
+      'https://sumopod.com.evil.net/p',
+      'https://pymnt.global/p',
+      'javascript:alert(1)',
+      'not a url',
+    ])
+      expect(isPaymentLink(bad)).toBe(false);
+  });
+});
