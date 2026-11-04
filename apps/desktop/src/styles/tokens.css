@@ -45,6 +45,7 @@
   --deep-orange: #5c1c08;
   --tint: #2a140c;
   --orange-light: #ffb08f;
+  --accent-hover: #ff6a33;
   color-scheme: dark;
 }
 
@@ -76,6 +77,7 @@
   --color-deep-orange: var(--deep-orange);
   --color-tint: var(--tint);
   --color-orange-light: var(--orange-light);
+  --color-accent-hover: var(--accent-hover);
   --radius-sm: 4px;
   --radius-md: 8px;
   --radius-lg: 12px;

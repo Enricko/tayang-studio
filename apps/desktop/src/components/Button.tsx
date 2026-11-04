@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'light';
 
 const MAP: Record<ButtonVariant, { variant: 'default' | 'secondary' | 'ghost'; className: string }> = {
-  primary: { variant: 'default', className: 'font-semibold hover:bg-[#FF6A33]' },
+  primary: { variant: 'default', className: 'font-semibold hover:bg-accent-hover' },
   secondary: { variant: 'secondary', className: 'border border-hairline hover:bg-hairline' },
   ghost: { variant: 'ghost', className: 'text-text-2 hover:text-foreground' },
   light: { variant: 'default', className: 'bg-foreground text-ink hover:bg-foreground/90' },
