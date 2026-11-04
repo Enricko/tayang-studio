@@ -102,7 +102,7 @@ const AUTOPILOT_SELECT: &str = "SELECT id, name, niche, language, style_id AS st
 const SLOT_SELECT: &str = "SELECT id, autopilot_id AS autopilotId, due_at AS dueAt, status, \
     project_id AS projectId, error FROM autopilot_slots";
 
-pub const DEFAULT_API_URL: &str = "https://api.tayang.app";
+pub const DEFAULT_API_URL: &str = "https://studio.tayang.app/api";
 
 /// Ids of the hard-coded built-ins older versions seeded; they now come from the API.
 const LEGACY_BUILTIN_IDS: [&str; 3] =
@@ -993,7 +993,7 @@ mod tests {
         assert_eq!(s.working_folder, home.join("Tayang").to_string_lossy());
         assert_eq!(s.default_agent, AgentId::Claude);
         assert!(s.frame_check && !s.onboarded);
-        assert_eq!(s.api_url, "https://api.tayang.app");
+        assert_eq!(s.api_url, "https://studio.tayang.app/api");
         assert_eq!((s.language, s.format, s.fps), (VideoLanguage::Id, VideoFormat::Portrait, 30));
         assert_eq!(s.ui_language, None);
         assert!(!s.background_mode && !s.open_at_login);

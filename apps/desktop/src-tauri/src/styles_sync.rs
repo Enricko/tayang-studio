@@ -377,10 +377,10 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         let home = std::path::PathBuf::from("/home/u");
         let mut s = db.get_settings(&home);
-        assert_eq!(resolve_api_url(None, &s), "https://api.tayang.app");
-        assert_eq!(resolve_api_url(Some("  ".into()), &s), "https://api.tayang.app");
+        assert_eq!(resolve_api_url(None, &s), "https://studio.tayang.app/api");
+        assert_eq!(resolve_api_url(Some("  ".into()), &s), "https://studio.tayang.app/api");
         assert_eq!(resolve_api_url(Some("http://localhost:8787".into()), &s), "http://localhost:8787");
-        assert_eq!(db.get_settings(&home).api_url, "https://api.tayang.app", "not stored");
+        assert_eq!(db.get_settings(&home).api_url, "https://studio.tayang.app/api", "not stored");
         s = db.update_settings(serde_json::json!({"apiUrl": "https://mine.test"})).unwrap();
         assert_eq!(resolve_api_url(None, &s), "https://mine.test");
         assert_eq!(resolve_api_url(Some("http://x".into()), &s), "http://x");
@@ -400,7 +400,7 @@ mod tests {
             .unwrap();
         }
         let s = Db::open(&path).unwrap().get_settings(std::path::Path::new("/h"));
-        assert_eq!((s.fps, s.api_url.as_str()), (60, "https://api.tayang.app"));
+        assert_eq!((s.fps, s.api_url.as_str()), (60, "https://studio.tayang.app/api"));
     }
 
     #[tokio::test]

@@ -165,7 +165,7 @@ mod tests {
         let now = at("2026-11-04T12:00:00Z");
         let mut s = settings();
         s.share_install_stats = false;
-        assert!(!is_due(&s, "https://api.tayang.app", now));
+        assert!(!is_due(&s, "https://studio.tayang.app/api", now));
         let s = settings();
         assert!(!is_due(&s, " ", now));
     }

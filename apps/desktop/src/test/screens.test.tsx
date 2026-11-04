@@ -82,7 +82,7 @@ const settings: Settings = {
   format: '9:16',
   fps: 30,
   onboarded: true,
-  apiUrl: 'https://api.tayang.app',
+  apiUrl: 'https://studio.tayang.app/api',
   installId: '',
   shareInstallStats: true,
   autoMode: false,
@@ -1635,12 +1635,12 @@ describe('Settings', () => {
   it('edits the API address and explains what it is for', async () => {
     render(<SettingsScreen />);
     const input = await screen.findByLabelText('API address');
-    expect(input).toHaveValue('https://api.tayang.app');
+    expect(input).toHaveValue('https://studio.tayang.app/api');
     expect(screen.getByText('Used for built-in styles and install stats')).toBeInTheDocument();
     await userEvent.clear(input);
-    await userEvent.type(input, 'http://localhost:8787');
+    await userEvent.type(input, 'http://localhost:8787/api');
     await userEvent.tab();
-    await waitFor(() => expect(ipc.updateSettings).toHaveBeenCalledWith({ apiUrl: 'http://localhost:8787' }));
+    await waitFor(() => expect(ipc.updateSettings).toHaveBeenCalledWith({ apiUrl: 'http://localhost:8787/api' }));
   });
 
   it('rejects an API address that is not http(s)', async () => {
@@ -1654,12 +1654,12 @@ describe('Settings', () => {
   });
 
   it('clearing the API address resets it to the default', async () => {
-    useApp.setState({ settings: { ...settings, apiUrl: 'http://localhost:8787' } });
+    useApp.setState({ settings: { ...settings, apiUrl: 'http://localhost:8787/api' } });
     render(<SettingsScreen />);
     const input = await screen.findByLabelText('API address');
     await userEvent.clear(input);
     await userEvent.tab();
-    await waitFor(() => expect(ipc.updateSettings).toHaveBeenCalledWith({ apiUrl: 'https://api.tayang.app' }));
+    await waitFor(() => expect(ipc.updateSettings).toHaveBeenCalledWith({ apiUrl: 'https://studio.tayang.app/api' }));
   });
 
   it('says existing projects stay put when the working folder changes', async () => {

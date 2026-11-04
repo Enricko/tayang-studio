@@ -234,7 +234,7 @@ export const DEFAULT_SETTINGS: Omit<Settings, 'workingFolder'> = {
   format: '9:16',
   fps: 30,
   onboarded: false,
-  apiUrl: 'https://api.tayang.app',
+  apiUrl: 'https://studio.tayang.app/api',
   installId: '',
   shareInstallStats: true,
   lastPingAt: null,
