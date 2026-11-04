@@ -19,8 +19,7 @@ pub fn run() {
             let data = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data)?;
             let db = db::Db::open(&data.join("tayang.db"))?;
-            // Records the real home so later settings updates resolve defaults against it.
-            db.get_settings(&home);
+            // Also records the real home so later settings updates resolve defaults against it.
             let working = db.get_settings(&home).working_folder;
             commands::allow_working_folder(app.handle(), &working);
             app.manage(AppState {
