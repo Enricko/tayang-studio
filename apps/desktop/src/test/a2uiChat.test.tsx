@@ -28,6 +28,7 @@ vi.mock('@tauri-apps/plugin-opener', () => ({ openUrl: vi.fn() }));
 import { addMessage, agentPrompt, agentRespondPermission, agentStart, getChat, upsertJob } from '@/lib/ipc';
 import { MessageList } from '@/components/MessageList';
 import { BUSY_NOTE, useChat } from '@/state/chat';
+import { setUiLanguage } from '@/i18n';
 
 const V = 'v0.9';
 const block = (surfaceId: string, label: string) =>
@@ -208,6 +209,24 @@ describe('one gate while the agent replies', () => {
     expect(s.messages.c1!.at(-1)).toMatchObject({ role: 'system', parts: [{ type: 'text', text: BUSY_NOTE }] });
     expect(agentStart).toHaveBeenCalledTimes(1);
   });
+
+  it('a background send (the autopilot) gets the busy refusal back as an error', async () => {
+    await useChat.getState().send('c2', [{ type: 'text', text: 'first' }], { agentId: 'claude' });
+    vi.mocked(agentPrompt).mockRejectedValueOnce(new Error('The agent is still working on the last message'));
+    expect(await useChat.getState().send('c2', [{ type: 'text', text: 'second' }], { background: true })).toBe(
+      'The agent is still working on the last message',
+    );
+    expect(useChat.getState().started.c2).toBe(true);
+  });
+
+  it('a background send gets other errors back in English, whatever the interface language', async () => {
+    await setUiLanguage('id');
+    vi.mocked(agentStart).mockRejectedValueOnce(new Error(''));
+    expect(await useChat.getState().send('c3', [{ type: 'text', text: 'go' }], { agentId: 'claude', background: true })).toBe(
+      'The agent stopped unexpectedly',
+    );
+    await setUiLanguage('en');
+  });
 });
 
 describe('answering a surface after a restart', () => {
@@ -274,7 +293,7 @@ describe('a surface while its message is stored', () => {
 
 describe('skills preamble', () => {
   it('goes to user-facing sessions only, not setup or style studies', async () => {
-    for (const id of ['setup', 'study-s1', 'ideas-2026-11-04']) {
+    for (const id of ['setup', 'study-s1', 'autopilot-a1', 'ideas-2026-11-04']) {
       vi.mocked(agentPrompt).mockClear();
       await useChat.getState().send(id, [{ type: 'text', text: 'go' }], { agentId: 'codex' });
       const sent = JSON.stringify(vi.mocked(agentPrompt).mock.calls[0]![1]);

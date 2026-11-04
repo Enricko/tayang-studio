@@ -795,7 +795,7 @@ describe('ChatProject', () => {
 });
 
 describe('chat persistence scope', () => {
-  it.each(['setup', 'study-abc', 'ideas-2026-11-02'])('never stores %s updates', async (id) => {
+  it.each(['setup', 'study-abc', 'autopilot-a1', 'ideas-2026-11-02'])('never stores %s updates', async (id) => {
     useChat.getState().listen();
     await emit(id, { kind: 'tool', toolCallId: 't1', title: 'claude mcp add -s user elevenlabs -e ELEVENLABS_API_KEY=sk_real', status: 'done' });
     await emit(id, { kind: 'text', text: 'done' });

@@ -36,6 +36,11 @@ export interface SendOpts {
   job?: ChatJob;
   /** The chat's own agent; defaults to the agent picked in Settings. */
   agentId?: AgentId;
+  /**
+   * Sent by the autopilot, with nobody watching: a refusal because the agent is still working comes
+   * back as an error too, and every error comes back in English (it is saved on the slot).
+   */
+  background?: boolean;
 }
 
 interface ChatState {
@@ -77,12 +82,12 @@ interface ChatState {
 
 const isLocal = (m: ChatMessage) => m.id.startsWith('local-');
 
-/** Agent chats that have no chat row: the setup installs, style studies and calendar ideas. */
+/** Agent chats that have no chat row: the setup installs, style studies, calendar ideas and the autopilots' topic chats. */
 export const isScratchChat = (chatId: string) =>
-  chatId === 'setup' || chatId.startsWith('study-') || chatId.startsWith('ideas-');
+  chatId === 'setup' || chatId.startsWith('study-') || chatId.startsWith('ideas-') || chatId.startsWith('autopilot-');
 
-/** Sessions that never show A2UI (setup installs, style studies): no skills preamble. Same rule as Rust. */
-const isInternalChat = (chatId: string) => chatId === 'setup' || chatId.startsWith('study-');
+/** Sessions that never show A2UI (setup installs, style studies, autopilot topics): no skills preamble. Same rule as Rust. */
+const isInternalChat = (chatId: string) => chatId === 'setup' || chatId.startsWith('study-') || chatId.startsWith('autopilot-');
 
 /** Chats this store loaded or sent to; updates for any other chat id are not ours. */
 const tracked = new Set<string>();
@@ -392,10 +397,10 @@ export const useChat = create<ChatState>((set, get) => {
         if (BUSY.test(message)) {
           // The running turn is fine: leave its permissions, job and session alone and just say so.
           append(chatId, localMessage(chatId, 'system', [{ type: 'text', text: BUSY_NOTE }]));
-          return null;
+          return opts?.background ? message : null;
         }
         onUpdate(chatId, { kind: 'error', message });
-        return agentErrorText(message, chatAgent.get(chatId) ?? 'claude');
+        return agentErrorText(message, chatAgent.get(chatId) ?? 'claude', opts?.background ? 'en' : undefined);
       }
     },
 
