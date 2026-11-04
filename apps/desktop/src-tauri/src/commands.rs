@@ -724,6 +724,30 @@ pub async fn media_render(state: State<'_, AppState>, project_id: String) -> Cmd
     .map_err(err)?
 }
 
+/// Fetches the built-in styles from the API; keeps the cached ones when offline.
+#[tauri::command]
+pub async fn sync_styles(state: State<'_, AppState>) -> CmdResult<StylesSync> {
+    let api_url = state.db.get_settings(&state.home).api_url;
+    let fetcher = crate::styles_sync::HttpFetcher::new(std::time::Duration::from_secs(10))?;
+    Ok(crate::styles_sync::sync_styles(&state.db, &api_url, &fetcher).await)
+}
+
+/// Unpacks the project's style template into its folder (once, never over existing files).
+#[tauri::command]
+pub async fn install_style_template(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    project_id: String,
+) -> CmdResult<InstallResult> {
+    let api_url = state.db.get_settings(&state.home).api_url;
+    let templates = app.path().app_data_dir().map_err(err)?.join("templates");
+    let fetcher = crate::styles_sync::HttpFetcher::new(std::time::Duration::from_secs(120))?;
+    let installed =
+        crate::styles_sync::install_template(&state.db, &fetcher, &api_url, &templates, &project_id)
+            .await?;
+    Ok(InstallResult { installed })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

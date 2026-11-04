@@ -25,6 +25,10 @@ pub fn run() {
             let _ = db.fail_stale_jobs("Tayang was closed while this was running");
             // Also records the real home so later settings updates resolve defaults against it.
             let working = db.get_settings(&home).working_folder;
+            // TAYANG_API_URL overrides the stored API address for this install.
+            if let Some(url) = std::env::var("TAYANG_API_URL").ok().filter(|u| !u.trim().is_empty()) {
+                let _ = db.update_settings(serde_json::json!({ "apiUrl": url.trim() }));
+            }
             commands::allow_asset_folders(app.handle(), &db, &working);
             app.manage(usage::UsageCache::default());
             app.manage(AppState {
@@ -69,6 +73,8 @@ pub fn run() {
             commands::media_thumbnails,
             commands::media_render,
             commands::get_agent_usage,
+            commands::sync_styles,
+            commands::install_style_template,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Tayang Studio");
