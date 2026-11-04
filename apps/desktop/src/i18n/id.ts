@@ -434,4 +434,12 @@ export const id: Translations = {
     delete: 'Hapus',
     unsaved: 'Ada perubahan yang belum disimpan. Simpan atau batalkan dulu',
   },
+  stepBar: {
+    aria: 'Progres',
+    topic: 'Topik',
+    script: 'Skrip',
+    style: 'Gaya',
+    build: 'Buat',
+    render: 'Render',
+  },
 };

@@ -440,6 +440,14 @@ export const en = {
     delete: 'Delete',
     unsaved: 'You have unsaved changes. Save or cancel first',
   },
+  stepBar: {
+    aria: 'Progress',
+    topic: 'Topic',
+    script: 'Script',
+    style: 'Style',
+    build: 'Build',
+    render: 'Render',
+  },
 } as const;
 
 type Widen<T> = { -readonly [K in keyof T]: T[K] extends string ? string : Widen<T[K]> };

@@ -55,7 +55,7 @@ export default function App() {
         if (!st.uiLanguage) {
           void Promise.resolve()
             .then(() => updateSettings({ uiLanguage: detectUiLanguage() }))
-            .then((next) => useApp.getState().setSettings(next))
+            .then((next) => next && useApp.getState().setSettings(next))
             .catch(() => {});
         }
         // Built-in styles in the background, like the install ping: never blocks, failures are ignored.

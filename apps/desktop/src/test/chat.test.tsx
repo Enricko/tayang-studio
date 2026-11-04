@@ -56,6 +56,7 @@ import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import * as ipc from '@/lib/ipc';
 import { ChatNew } from '@/screens/ChatNew';
 import { ChatProject } from '@/screens/ChatProject';
+import { setUiLanguage } from '@/i18n';
 import { useApp } from '@/state/app';
 import { buildRecap, useChat } from '@/state/chat';
 import { useUsage } from '@/state/usage';
@@ -603,6 +604,48 @@ describe('ChatProject', () => {
     await user.click(screen.getByRole('button', { name: 'Send' }));
     await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalledTimes(1));
     expect(JSON.stringify(vi.mocked(ipc.agentPrompt).mock.calls[0]![1])).toContain('a2ui');
+  });
+
+  it('tells an agent that reads Indonesian to answer in Indonesian, once per session', async () => {
+    const user = userEvent.setup();
+    useApp.setState({ settings: { ...settings, uiLanguage: 'id' } });
+    setUiLanguage('id');
+    render(<ChatProject chatId="c1" />);
+    await user.type(await screen.findByRole('textbox', { name: 'Pesan' }), 'satu');
+    await user.click(screen.getByRole('button', { name: 'Kirim' }));
+    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalledTimes(1));
+    const sent = JSON.stringify(vi.mocked(ipc.agentPrompt).mock.calls[0]![1]);
+    expect(sent).toContain('The user reads Indonesian. Reply in Indonesian unless they write in another language.');
+    // a later message in the same session does not repeat it
+    await emit('c1', { kind: 'done', stopReason: 'end_turn' });
+    await user.type(screen.getByRole('textbox', { name: 'Pesan' }), 'dua');
+    await user.click(screen.getByRole('button', { name: 'Kirim' }));
+    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalledTimes(2));
+    expect(JSON.stringify(vi.mocked(ipc.agentPrompt).mock.calls[1]![1])).not.toContain('The user reads Indonesian');
+  });
+
+  it('does not add the hint for English', async () => {
+    const user = userEvent.setup();
+    render(<ChatProject chatId="c1" />);
+    await user.type(await screen.findByRole('textbox', { name: 'Message' }), 'one');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalledTimes(1));
+    expect(JSON.stringify(vi.mocked(ipc.agentPrompt).mock.calls[0]![1])).not.toContain('The user reads');
+  });
+
+  it('saves the sign-in line in English and shows it in the language the user reads now', async () => {
+    const user = userEvent.setup();
+    vi.mocked(ipc.agentStart).mockRejectedValue(new Error('The agent needs you to sign in first (Authentication required)'));
+    render(<ChatProject chatId="c1" />);
+    await user.type(await screen.findByRole('textbox', { name: 'Message' }), 'go');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+    await screen.findByText('Sign in to Claude Code: open a terminal and run `claude` once, then try again');
+    const saved = vi.mocked(ipc.addMessage).mock.calls.map((c) => JSON.stringify(c[2]));
+    expect(saved.some((s) => s.includes('Sign in to Claude Code: open a terminal and run `claude` once, then try again'))).toBe(true);
+    await act(async () => setUiLanguage('id'));
+    expect(
+      await screen.findByText('Masuk ke Claude Code: buka terminal dan jalankan `claude` sekali, lalu coba lagi'),
+    ).toBeInTheDocument();
   });
 
   it('shows an error message and re-enables the composer', async () => {

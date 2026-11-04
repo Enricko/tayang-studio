@@ -4,12 +4,13 @@ import type { Settings } from '@tayang/shared';
 
 vi.mock('@/lib/ipc', () => ({
   getSettings: vi.fn(),
+  updateSettings: vi.fn(),
   listProjects: vi.fn().mockResolvedValue([]),
   syncStyles: vi.fn().mockResolvedValue({ styles: [], offline: false }),
 }));
 vi.mock('@/lib/events', () => ({ onAgentUpdate: vi.fn(), onPermission: vi.fn() }));
 
-import { getSettings, syncStyles } from '@/lib/ipc';
+import { getSettings, syncStyles, updateSettings } from '@/lib/ipc';
 import App from '@/App';
 import { useApp } from '@/state/app';
 
@@ -43,6 +44,31 @@ describe('App start', () => {
     render(<App />);
     expect(await screen.findByText('What are we making?', { selector: 'h1' })).toBeInTheDocument();
     expect(useApp.getState().route.name).toBe('chat-new');
+  });
+});
+
+describe('App interface language', () => {
+  beforeEach(() => useApp.setState({ route: { name: 'welcome' }, settings: null }));
+
+  it('first run: follows an Indonesian system language, saves it, and sets <html lang>', async () => {
+    vi.spyOn(navigator, 'language', 'get').mockReturnValue('id-ID');
+    vi.mocked(getSettings).mockResolvedValue(base);
+    vi.mocked(updateSettings).mockClear().mockImplementation(async (p) => ({ ...base, ...p }));
+    render(<App />);
+    expect(await screen.findByRole('button', { name: 'Mulai' })).toBeInTheDocument();
+    expect(updateSettings).toHaveBeenCalledWith({ uiLanguage: 'id' });
+    expect(document.documentElement.lang).toBe('id');
+    vi.restoreAllMocks();
+  });
+
+  it('a saved language wins over the system language and is not saved again', async () => {
+    vi.spyOn(navigator, 'language', 'get').mockReturnValue('id-ID');
+    vi.mocked(getSettings).mockResolvedValue({ ...base, uiLanguage: 'en' });
+    vi.mocked(updateSettings).mockClear();
+    render(<App />);
+    expect(await screen.findByRole('button', { name: 'Get started' })).toBeInTheDocument();
+    expect(updateSettings).not.toHaveBeenCalled();
+    vi.restoreAllMocks();
   });
 });
 
