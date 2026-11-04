@@ -23,7 +23,7 @@
     ],
     "security": {
       "csp": null,
-      "assetProtocol": { "enable": true, "scope": ["$HOME/**"] }
+      "assetProtocol": { "enable": true, "scope": { "allow": ["$HOME/**"], "requireLiteralLeadingDot": false } }
     }
   },
   "bundle": {

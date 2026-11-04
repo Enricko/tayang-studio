@@ -9,7 +9,7 @@ use crate::acp::{AcpManager, AcpSink, PromptPart};
 use crate::projects;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
 pub type CmdResult<T> = Result<T, String>;
@@ -63,10 +63,19 @@ pub fn get_settings(state: State<'_, AppState>) -> Settings {
 
 #[tauri::command]
 pub fn update_settings(
+    app: AppHandle,
     state: State<'_, AppState>,
     patch: serde_json::Value,
 ) -> CmdResult<Settings> {
-    state.db.update_settings(patch).map_err(err)
+    let settings = state.db.update_settings(patch).map_err(err)?;
+    allow_working_folder(&app, &settings.working_folder);
+    Ok(settings)
+}
+
+/// Lets the webview load files (frames, thumbnails, renders) from the working folder,
+/// even when it is outside the home folder.
+pub fn allow_working_folder(app: &AppHandle, working: &str) {
+    let _ = app.asset_protocol_scope().allow_directory(working, true);
 }
 
 #[tauri::command]
