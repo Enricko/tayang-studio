@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Check, Loader2, X } from 'lucide-react';
+import { Check, File as FileIcon, Loader2, X } from 'lucide-react';
 import { formatTimecode, type ChatMessage, type MessagePart } from '@tayang/shared';
 import { Oyen } from '@/components/Oyen';
 import { AGENT_NAMES } from '@/lib/agents';
@@ -17,9 +17,18 @@ function Chip({ children }: { children: React.ReactNode }) {
 
 export function FrameChip({ part }: { part: Extract<MessagePart, { type: 'frame' }> }) {
   return (
-    <span className="inline-flex items-center gap-2 rounded-sm border border-hairline bg-raised px-2 py-1 text-xs text-text-2">
+    <span className="inline-flex items-center gap-2 rounded-sm border border-hairline bg-transparent px-2 py-1 text-xs text-text-2">
       <span className="font-medium text-foreground">Frame {formatTimecode(part.timeSec, 30)}</span>
       {part.marks.length > 0 && <span className="text-text-3">{part.marks.length} marked</span>}
+    </span>
+  );
+}
+
+function SentFile({ part }: { part: Extract<MessagePart, { type: 'file' }> }) {
+  return (
+    <span className="inline-flex items-center gap-1 text-xs text-text-2">
+      <FileIcon size={14} strokeWidth={1.5} aria-hidden="true" />
+      <span className="font-medium text-foreground">{part.name}</span>
     </span>
   );
 }
@@ -107,6 +116,8 @@ export function MessageList({
                     <Chip key={j}>@{p.title}</Chip>
                   ) : p.type === 'frame' ? (
                     <FrameChip key={j} part={p} />
+                  ) : p.type === 'file' ? (
+                    <SentFile key={j} part={p} />
                   ) : null,
                 )}
               </div>

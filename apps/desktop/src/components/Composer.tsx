@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowUp, ChevronDown, Square, X } from 'lucide-react';
+import { open as openDialog } from '@tauri-apps/plugin-dialog';
+import { getCurrentWebview } from '@tauri-apps/api/webview';
+import { ArrowUp, ChevronDown, File as FileIcon, Paperclip, Square, X } from 'lucide-react';
 import type { AgentId, MessagePart, Project } from '@tayang/shared';
 import { AgentLogo } from '@/components/AgentLogo';
 import { FrameChip } from '@/components/MessageList';
@@ -7,6 +9,7 @@ import { filterProjects, MentionMenu } from '@/components/MentionMenu';
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover';
 import { Textarea } from '@/components/ui/textarea';
 import { AGENT_NAMES } from '@/lib/agents';
+import { assetUrl, attachFile } from '@/lib/ipc';
 import { useApp } from '@/state/app';
 import { useChat } from '@/state/chat';
 
@@ -15,9 +18,42 @@ export const QUICK_CHIPS = ['Faster pace', 'Bigger text', 'Change colors', 'Add 
 const TOKEN = /(^|\s)@(\S*)$/;
 const NONE: MessagePart[] = [];
 
+type FilePart = Extract<MessagePart, { type: 'file' }>;
+
+export function fileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
 export interface MentionRef {
   projectId: string;
   title: string;
+}
+
+function FileChip({ part, onRemove }: { part: FilePart; onRemove(): void }) {
+  const image = part.mime.startsWith('image/');
+  return (
+    <span className="inline-flex h-8 max-w-60 items-center gap-2 rounded-sm border border-hairline bg-transparent pl-2 pr-1 text-xs text-text-2">
+      {image ? (
+        <img src={assetUrl(part.path)} alt={part.name} className="size-5 shrink-0 rounded-[4px] object-cover" />
+      ) : (
+        <FileIcon size={14} strokeWidth={1.5} className="shrink-0" aria-hidden="true" />
+      )}
+      <span className="truncate font-medium text-foreground">{part.name}</span>
+      <span className="shrink-0 font-mono text-text-3">{fileSize(part.size)}</span>
+      <button
+        type="button"
+        aria-label="Remove file"
+        onClick={onRemove}
+        className="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center border-none bg-transparent p-0 text-text-3"
+      >
+        <X size={14} strokeWidth={1.5} aria-hidden="true" />
+      </button>
+    </span>
+  );
 }
 
 export function Composer({
@@ -33,6 +69,7 @@ export function Composer({
   mentionSignal = 0,
   onStop,
   agentId,
+  ensureChat,
 }: {
   chatId: string | null;
   /** Resolve to false when sending failed: the draft is then kept. */
@@ -52,6 +89,8 @@ export function Composer({
   onStop?(): void;
   /** The agent this chat talks to; defaults to the one picked in Settings. */
   agentId?: AgentId;
+  /** A new chat has no id until its first send: attaching creates it. */
+  ensureChat?(): Promise<string>;
 }) {
   const defaultAgent = useApp((s) => s.settings?.defaultAgent ?? 'claude');
   const agent = agentId ?? defaultAgent;
@@ -60,6 +99,74 @@ export function Composer({
   const [dismissed, setDismissed] = useState<string | null>(null);
   const [active, setActive] = useState('');
   const ref = useRef<HTMLTextAreaElement>(null);
+  const box = useRef<HTMLDivElement>(null);
+  const [dragging, setDragging] = useState(false);
+  const [attachError, setAttachError] = useState<string | null>(null);
+
+  const attachPaths = async (paths: string[]) => {
+    if (paths.length === 0) return;
+    setAttachError(null);
+    try {
+      const id = chatId ?? (await ensureChat?.());
+      if (!id) return;
+      for (const path of paths) {
+        try {
+          useChat.getState().attach(id, await attachFile(id, path));
+        } catch (e) {
+          setAttachError(errorText(e));
+        }
+      }
+    } catch (e) {
+      setAttachError(errorText(e));
+    }
+  };
+  // Dropped paths arrive from the window, so the latest closure goes through a ref.
+  const attachRef = useRef(attachPaths);
+  attachRef.current = attachPaths;
+
+  const pickFiles = async () => {
+    try {
+      const picked = await openDialog({ multiple: true, directory: false });
+      if (!picked) return;
+      await attachPaths(Array.isArray(picked) ? picked : [picked]);
+    } catch (e) {
+      setAttachError(errorText(e));
+    }
+  };
+
+  useEffect(() => {
+    let off: (() => void) | undefined;
+    let gone = false;
+    const over = (pos: { x: number; y: number }) => {
+      const r = box.current?.getBoundingClientRect();
+      if (!r) return false;
+      const x = pos.x / window.devicePixelRatio;
+      const y = pos.y / window.devicePixelRatio;
+      return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+    };
+    try {
+      getCurrentWebview()
+        .onDragDropEvent((e) => {
+          const p = e.payload;
+          if (p.type === 'leave') setDragging(false);
+          else if (p.type === 'drop') {
+            const hit = over(p.position);
+            setDragging(false);
+            if (hit && !disabledRef.current) void attachRef.current(p.paths);
+          } else setDragging(over(p.position) && !disabledRef.current);
+        })
+        .then((fn) => (gone ? fn() : (off = fn)))
+        .catch(() => {});
+    } catch {
+      /* not running inside Tauri */
+    }
+    return () => {
+      gone = true;
+      off?.();
+    };
+  }, []);
+  const disabledRef = useRef(disabled);
+  disabledRef.current = disabled;
 
   useEffect(() => {
     if (mentionSignal > 0) {
@@ -80,7 +187,7 @@ export function Composer({
     ref.current?.focus();
   };
 
-  const canSend = !disabled && (text.trim().length > 0 || !!mention);
+  const canSend = !disabled && (text.trim().length > 0 || !!mention || attachments.length > 0);
   const sending = useRef(false);
   const send = async () => {
     if (!canSend || sending.current) return;
@@ -146,7 +253,16 @@ export function Composer({
       )}
       <Popover open={open}>
         <PopoverAnchor asChild>
-          <div className="flex flex-col gap-3 rounded-lg border border-hairline bg-card p-3">
+          <div
+            ref={box}
+            data-no-drag
+            className={`flex flex-col gap-3 rounded-lg border bg-card p-3 transition-colors ${dragging ? 'border-primary' : 'border-hairline focus-within:border-[#3A3A3A]'}`}
+          >
+            {attachError && (
+              <p role="alert" className="m-0 text-xs text-orange-light">
+                {attachError}
+              </p>
+            )}
             {(mention || attachments.length > 0) && (
               <div className="flex flex-wrap gap-2">
                 {mention && (
@@ -175,6 +291,8 @@ export function Composer({
                         <X size={14} strokeWidth={1.5} aria-hidden="true" />
                       </button>
                     </span>
+                  ) : a.type === 'file' ? (
+                    <FileChip key={i} part={a} onRemove={() => chatId && useChat.getState().detach(chatId, i)} />
                   ) : null,
                 )}
               </div>
@@ -194,12 +312,21 @@ export function Composer({
                 setActive('');
               }}
               onKeyDown={onKeyDown}
-              className="min-h-12 resize-none border-none bg-transparent p-0 text-[14px] leading-[1.6] shadow-none focus-visible:ring-0"
+              className="min-h-12 resize-none rounded-none border-0 bg-transparent p-0 text-[14px] leading-[1.6] shadow-none focus-visible:border-transparent focus-visible:ring-0 dark:bg-transparent"
             />
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-sm border border-hairline bg-raised px-2 text-xs font-medium text-[#D9D9D9]"
+                aria-label="Attach files"
+                disabled={disabled}
+                onClick={() => void pickFiles()}
+                className="inline-flex size-7 cursor-pointer items-center justify-center rounded-sm border-none bg-transparent p-0 text-text-2 hover:text-foreground disabled:cursor-default disabled:opacity-50"
+              >
+                <Paperclip size={16} strokeWidth={1.5} aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-sm border border-hairline bg-transparent px-2 text-xs font-medium text-[#D9D9D9] hover:bg-raised"
               >
                 <AgentLogo id={agent} size={14} />
                 {AGENT_NAMES[agent]}

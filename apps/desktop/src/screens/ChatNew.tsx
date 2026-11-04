@@ -211,6 +211,7 @@ export function ChatNew() {
         <div className="w-full max-w-[720px] pb-6 pt-4">
           <Composer
             chatId={chatId}
+            ensureChat={() => ensureChat('New chat')}
             onSend={onSend}
             disabled={streaming}
             onStop={chatId ? () => void useChat.getState().cancel(chatId) : undefined}
