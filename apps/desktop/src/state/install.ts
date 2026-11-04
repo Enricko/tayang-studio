@@ -20,6 +20,8 @@ export interface ToolInstall {
   status: InstallStatus;
   log: LogLine[];
   error?: string;
+  /** What the agent said this turn; shown when the tool is still missing (e.g. a command for the user to run). */
+  reply?: string;
 }
 
 export interface StartOpts {
@@ -94,7 +96,9 @@ export const useInstall = create<InstallState>((set, get) => {
     const tool = get().active;
     if (!tool) return;
     const cur = get().tools[tool];
-    if (update.kind === 'tool') {
+    if (update.kind === 'text') {
+      patch(tool, { reply: (cur?.reply ?? '') + update.text });
+    } else if (update.kind === 'tool') {
       const log = [...(cur?.log ?? [])];
       const line: LogLine = { id: update.toolCallId, title: update.title, status: update.status };
       const i = log.findIndex((l) => l.id === line.id);
@@ -114,7 +118,8 @@ export const useInstall = create<InstallState>((set, get) => {
           patch(tool, { status: 'done', error: undefined });
           set({ active: null });
         } else {
-          fail(tool, 'Tayang still can’t find it on this computer. Try again.');
+          const reply = get().tools[tool]?.reply?.trim();
+          fail(tool, reply ? reply.slice(-400) : 'Tayang still can’t find it on this computer. Try again.');
         }
       } catch (e) {
         fail(tool, e instanceof Error ? e.message : String(e));
@@ -142,7 +147,7 @@ export const useInstall = create<InstallState>((set, get) => {
     async start(tool, opts) {
       if (get().active || get().closing) return;
       set({ active: tool, request: null, queue: [], agent: opts.agent });
-      patch(tool, { status: 'confirm', log: [], error: undefined });
+      patch(tool, { status: 'confirm', log: [], error: undefined, reply: undefined });
       try {
         await agentStart(SETUP_CHAT, opts.agent);
         const text = buildInstallPrompt(tool, opts.sys, opts.agent, { elevenLabsKey: opts.elevenLabsKey });

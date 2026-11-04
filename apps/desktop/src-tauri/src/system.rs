@@ -59,8 +59,72 @@ pub fn tool_dirs(home: Option<&Path>, appdata: Option<&Path>) -> Vec<PathBuf> {
     }
     if cfg!(windows) {
         dirs.extend(appdata.map(|a| a.join("npm")));
+        // winget puts portable tools (ffmpeg, yt-dlp) behind links here.
+        if let Some(h) = home {
+            dirs.push(h.join("AppData").join("Local").join("Microsoft").join("WinGet").join("Links"));
+        }
+        // A winget install updates the stored PATH, not the one this app started with.
+        dirs.extend(registry_path());
     }
     dirs
+}
+
+/// Replaces `%NAME%` with `lookup(NAME)`; unknown names and lone `%` stay as they are.
+pub fn expand_env_vars(s: &str, lookup: impl Fn(&str) -> Option<String>) -> String {
+    let mut out = String::new();
+    let mut rest = s;
+    while let Some(start) = rest.find('%') {
+        out.push_str(&rest[..start]);
+        let after = &rest[start + 1..];
+        match after.find('%') {
+            Some(end) if end > 0 => {
+                let name = &after[..end];
+                match lookup(name) {
+                    Some(v) => out.push_str(&v),
+                    None => {
+                        out.push('%');
+                        out.push_str(name);
+                        out.push('%');
+                    }
+                }
+                rest = &after[end + 1..];
+            }
+            _ => {
+                out.push('%');
+                rest = after;
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+/// The machine and user PATH as stored in the registry, expanded.
+#[cfg(windows)]
+fn registry_path() -> Vec<PathBuf> {
+    use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
+    use winreg::RegKey;
+    let machine = RegKey::predef(HKEY_LOCAL_MACHINE)
+        .open_subkey(r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment")
+        .and_then(|k| k.get_value::<String, _>("Path"))
+        .ok();
+    let user = RegKey::predef(HKEY_CURRENT_USER)
+        .open_subkey("Environment")
+        .and_then(|k| k.get_value::<String, _>("Path"))
+        .ok();
+    [machine, user]
+        .into_iter()
+        .flatten()
+        .flat_map(|p| {
+            let expanded = expand_env_vars(&p, |n| std::env::var(n).ok());
+            std::env::split_paths(&expanded).collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+#[cfg(not(windows))]
+fn registry_path() -> Vec<PathBuf> {
+    Vec::new()
 }
 
 fn dedupe(dirs: &mut Vec<PathBuf>) {
@@ -530,6 +594,22 @@ mod path_tests {
         let exts = candidate_exts("npx", pathext.as_deref(), true);
         let found = find_in(&[tmp.path().to_path_buf()], "npx", &exts).unwrap();
         assert!(found.to_string_lossy().to_ascii_lowercase().ends_with("npx.cmd"));
+    }
+
+    #[test]
+    fn registry_paths_expand_env_vars() {
+        let lookup = |n: &str| match n {
+            "USERPROFILE" => Some(r"C:\Users\a".to_string()),
+            "SystemRoot" => Some(r"C:\Windows".to_string()),
+            _ => None,
+        };
+        assert_eq!(
+            expand_env_vars(r"%SystemRoot%\system32;%USERPROFILE%\AppData\Local\Microsoft\WinGet\Links", lookup),
+            r"C:\Windows\system32;C:\Users\a\AppData\Local\Microsoft\WinGet\Links"
+        );
+        assert_eq!(expand_env_vars("%NOPE%\\x", lookup), "%NOPE%\\x");
+        assert_eq!(expand_env_vars("100% sure", lookup), "100% sure");
+        assert_eq!(expand_env_vars("a%%b", lookup), "a%%b");
     }
 
     #[test]

@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { AlertTriangle, Check, Download } from 'lucide-react';
 import type { SystemInfo, ToolId, ToolStatus } from '@tayang/shared';
-import { installCommands } from '@tayang/skills';
+import { openUrl } from '@tauri-apps/plugin-opener';
+import { installCommands, NODE_DOWNLOAD_URL } from '@tayang/skills';
 import sleepy from '@/assets/brand/oyen-expr-sleepy.svg';
 import { AgentLogo } from '@/components/AgentLogo';
 import { Button } from '@/components/Button';
@@ -14,7 +15,12 @@ import { useInstall, type LogLine, type ToolInstall } from '@/state/install';
 export const TOOL_ORDER: ToolId[] = ['node', 'ffmpeg', 'chrome', 'elevenlabs-mcp', 'ytdlp'];
 
 const COPY: Record<ToolId, { detail: string; missing?: string; ask: string }> = {
-  node: { detail: 'Runs the video engine · needs 22 or newer', ask: 'Install Node.js 22 or newer on this computer, then confirm node --version works.' },
+  node: {
+    detail: 'Runs the video engine · needs 22 or newer',
+    // Agents run on Node, so a missing Node can't be installed by the agent.
+    missing: 'Install Node.js 22 or newer, then press Check again',
+    ask: 'Install Node.js 22 or newer on this computer, then confirm node --version works.',
+  },
   chrome: { detail: 'Draws each frame before it is encoded', ask: 'Install Google Chrome on this computer.' },
   ffmpeg: {
     detail: 'Encodes the final MP4 and reads frames',
@@ -109,7 +115,9 @@ export function ToolRow({ tool, sys, agentName, busy, onInstall, onAskKey }: {
             className="h-9 px-3 text-[13px]"
             disabled={busy}
             aria-label={status === 'failed' ? undefined : `${label} ${tool.name}`}
-            onClick={() => (isEleven ? onAskKey() : onInstall())}
+            onClick={() =>
+              tool.id === 'node' ? void openUrl(NODE_DOWNLOAD_URL).catch(() => {}) : isEleven ? onAskKey() : onInstall()
+            }
           >
             {status === 'failed' ? 'Try again' : label}
           </Button>

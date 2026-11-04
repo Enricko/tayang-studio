@@ -8,6 +8,8 @@ import {
   buildStudyStylePrompt,
   buildTopicIdeasPrompt,
   installCommands,
+  NODE_DOWNLOAD_URL,
+  needsSudo,
   parseStyleResult,
   parseTopicIdeas,
 } from '../src/index';
@@ -25,13 +27,42 @@ describe('install', () => {
   });
   it('ffmpeg on windows and linux', () => {
     expect(buildInstallPrompt('ffmpeg', win, 'claude')).toContain('winget install --id Gyan.FFmpeg -e');
-    expect(installCommands('ffmpeg', apt, 'claude')).toEqual(['sudo apt install -y ffmpeg']);
+    // Linux: a static build in ~/.local/bin, no sudo.
+    const cmds = installCommands('ffmpeg', apt, 'claude');
+    expect(cmds.join('\n')).toContain('~/.local/bin');
+    expect(cmds.some((c) => c.includes('sudo'))).toBe(false);
+    const p = buildInstallPrompt('ffmpeg', apt, 'claude');
+    expect(p).toContain('without sudo');
+    expect(p).toContain('ffprobe');
+  });
+  it('a Mac without Homebrew installs standalone binaries into ~/.local/bin', () => {
+    const bare: SystemInfo = { os: 'macos', osVersion: '15', packageManager: null };
+    for (const tool of ['ffmpeg', 'ytdlp'] as const) {
+      const cmds = installCommands(tool, bare, 'claude');
+      expect(cmds.join('\n')).toContain('~/.local/bin');
+      expect(cmds.some((c) => c.includes('brew') || c.includes('sudo'))).toBe(false);
+      expect(buildInstallPrompt(tool, bare, 'claude')).toContain('This Mac has no Homebrew');
+    }
+    expect(installCommands('ytdlp', bare, 'claude')).toContain(
+      'curl -L -o ~/.local/bin/yt-dlp https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos',
+    );
+    expect(installCommands('elevenlabs-mcp', bare, 'claude')[0]).toBe('curl -LsSf https://astral.sh/uv/install.sh | sh');
+  });
+  it('linux sudo installs are handed to the user', () => {
+    expect(needsSudo('chrome', apt)).toBe(true);
+    expect(needsSudo('ffmpeg', apt)).toBe(false);
+    expect(installCommands('ytdlp', apt, 'claude')).toEqual(['pipx install yt-dlp']);
+    const p = buildInstallPrompt('chrome', apt, 'claude');
+    expect(p).toContain('Do not run sudo yourself');
+    expect(p).toContain('Ask the user to run this command in their own terminal');
+    expect(p).toContain('sudo apt install -y chromium');
   });
   it('other tools', () => {
     expect(installCommands('ytdlp', mac, 'claude')).toEqual(['brew install yt-dlp']);
     expect(installCommands('node', mac, 'claude')).toEqual(['brew install node@22']);
     expect(installCommands('chrome', win, 'claude')).toEqual(['winget install --id Google.Chrome -e']);
     expect(installCommands('chrome', apt, 'claude')).toEqual(['sudo apt install -y chromium']);
+    expect(NODE_DOWNLOAD_URL).toBe('https://nodejs.org/en/download');
   });
   it('elevenlabs', () => {
     expect(installCommands('elevenlabs-mcp', mac, 'claude')).toEqual([

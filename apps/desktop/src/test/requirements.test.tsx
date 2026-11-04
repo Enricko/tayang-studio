@@ -15,6 +15,9 @@ vi.mock('@/lib/ipc', () => ({
   getSettings: vi.fn(),
 }));
 
+vi.mock('@tauri-apps/plugin-opener', () => ({ openUrl: vi.fn().mockResolvedValue(undefined) }));
+import { openUrl } from '@tauri-apps/plugin-opener';
+
 type UpdateCb = (e: { chatId: string; update: AgentUpdate }) => void;
 type PermCb = (r: PermissionRequest) => void;
 const handlers: { update: UpdateCb[]; perm: PermCb[] } = { update: [], perm: [] };
@@ -124,6 +127,29 @@ describe('Requirements', () => {
     await waitFor(() =>
       expect(screen.getByRole('button', { name: /Start my first video/ })).toBeEnabled(),
     );
+  });
+
+  it('Node is installed by the user from nodejs.org, not by the agent', async () => {
+    const user = userEvent.setup();
+    vi.mocked(ipc.checkTools).mockResolvedValue(
+      missingFfmpeg.map((t) => (t.id === 'node' ? tool('node', 'Node.js', true, false) : t)),
+    );
+    render(<Requirements />);
+    expect(await screen.findByText('Install Node.js 22 or newer, then press Check again')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Install Node.js' }));
+    expect(openUrl).toHaveBeenCalledWith('https://nodejs.org/en/download');
+    expect(ipc.agentStart).not.toHaveBeenCalled();
+  });
+
+  it('shows what the agent said when the tool is still missing', async () => {
+    const user = userEvent.setup();
+    render(<Requirements />);
+    await user.click(await screen.findByRole('button', { name: 'Install FFmpeg' }));
+    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
+    await emitUpdate({ kind: 'text', text: 'Please run `sudo apt install -y chromium` ' });
+    await emitUpdate({ kind: 'text', text: 'in a terminal.' });
+    await emitUpdate({ kind: 'done', stopReason: 'end_turn' });
+    expect(await screen.findByText('Please run `sudo apt install -y chromium` in a terminal.')).toBeInTheDocument();
   });
 
   it('cancel answers null and returns the row to Install', async () => {
