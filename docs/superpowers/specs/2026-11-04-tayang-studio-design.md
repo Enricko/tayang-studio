@@ -197,6 +197,8 @@ The sidebar's bottom shows the default agent's usage, the same way Orca does: a 
 
 ## Agent skills and A2UI (owner request)
 
+**What the agent suggests (owner request).** Tayang only makes videos built in code (motion design and animation). The agent must never suggest or plan anything that needs filming, real footage, a presenter, or a real person's likeness or voice. Topic ideas fit the installed styles, use real and checkable facts, start with one short friendly sentence in the video language, and arrive as A2UI option cards ("Make this"), never as raw JSON.
+
 **Skills only inside Tayang.** Tayang's agent skills (how Tayang works, project briefs, styles and templates, the frame check, rendering, and A2UI) are loaded only for sessions Tayang starts. Nothing is installed into the user's global agent config, so the same agent used elsewhere behaves normally.
 - Claude Code: Tayang ships its skills as a Claude Code plugin bundled with the app and passes it per session through the ACP adapter (`_meta.claudeCode.options.plugins = [{ type: "local", path }]`), plus a short `_meta.systemPrompt.append` that says the agent is running inside Tayang Studio.
 - Other agents (no per-session plugin support over ACP): the same skill text is sent as a preamble in the first prompt of each Tayang session.
