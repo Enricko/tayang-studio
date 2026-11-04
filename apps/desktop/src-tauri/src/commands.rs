@@ -804,6 +804,17 @@ pub async fn install_style_template(
     Ok(InstallResult { installed })
 }
 
+/// The exact command "Render video" will run when the project has a `tayang.json`.
+#[tauri::command]
+pub fn render_command(state: State<'_, AppState>, project_id: String) -> CmdResult<Option<Vec<String>>> {
+    let folder = project_folder(&state, &project_id)?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    media::render_command(&folder, now)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
