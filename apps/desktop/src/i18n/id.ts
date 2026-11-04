@@ -399,7 +399,6 @@ export const id: Translations = {
     rowAria: 'Pemakaian {{label}}',
   },
   videos: {
-    rendering: 'Merender',
     noPreview: 'Belum ada preview',
     renderingNow: 'Sedang merender…',
     title: 'Video',

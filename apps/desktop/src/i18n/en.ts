@@ -404,7 +404,6 @@ export const en = {
     rowAria: '{{label}} usage',
   },
   videos: {
-    rendering: 'Rendering',
     noPreview: 'No preview yet',
     renderingNow: 'Rendering…',
     title: 'Videos',
