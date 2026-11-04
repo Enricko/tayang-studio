@@ -27,6 +27,10 @@ export const id: Translations = {
     settings: 'Pengaturan',
     recent: 'Terbaru',
   },
+  layout: {
+    resizeSidebar: 'Ubah lebar sidebar',
+    resizePreview: 'Ubah lebar pratinjau',
+  },
   onboarding: {
     step: 'Langkah {{step}} dari 3',
     welcome: {
@@ -383,6 +387,7 @@ export const id: Translations = {
     none: 'Belum ada data pemakaian',
     loading: 'Memuat pemakaian',
     aria: 'Pemakaian {{agent}}',
+    ringAria: 'Pemakaian {{agent}}: {{pct}} terpakai dalam 5 jam',
     fiveHour: 'Pemakaian 5 jam',
     title: 'Pemakaian',
     allAgents: 'semua agen',
@@ -632,10 +637,14 @@ export const id: Translations = {
     nextFrame: 'Frame berikutnya',
     frame: 'Frame {{n}}',
     framesAria: 'Frame',
+    previousFrameTip: 'Frame sebelumnya (←, atau Shift+← untuk satu detik)',
+    nextFrameTip: 'Frame berikutnya (→, atau Shift+→ untuk satu detik)',
     sendFrame: 'Kirim frame ke chat',
+    sendFrameShort: 'Kirim frame',
     markSpot: 'Tandai titik',
-    oneFrame: 'satu frame',
-    oneSecond: 'satu detik',
+    markSpotShort: 'Tandai',
+    keysFrame: 'frame',
+    keysSecond: '1 detik',
     framesChecked: 'Frame sudah dicek',
   },
   style: {

@@ -5,6 +5,7 @@ import { Button } from '@/components/Button';
 import { Composer } from '@/components/Composer';
 import { MessageList } from '@/components/MessageList';
 import { PermissionCard } from '@/components/PermissionCard';
+import { ResizeHandle } from '@/components/ResizeHandle';
 import { Preview } from '@/screens/preview/Preview';
 import { ScheduleDialog } from '@/components/ScheduleDialog';
 import { ScrollToBottom } from '@/components/ScrollToBottom';
@@ -16,6 +17,7 @@ import { projectSendOptions } from '@/lib/openProject';
 import { useApp } from '@/state/app';
 import { headPermission, useChat, type SendOpts } from '@/state/chat';
 import { useUsage } from '@/state/usage';
+import { PREVIEW, useFittedLayout, useLayout } from '@/state/layout';
 import { setRenderArgv, useRender } from '@/state/render';
 
 const NO_MESSAGES: never[] = [];
@@ -37,6 +39,7 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
   const messages = useChat((s) => s.messages[chatId]) ?? NO_MESSAGES;
   const streaming = useChat((s) => !!s.streaming[chatId]);
   const permission = useChat((s) => headPermission(s, chatId));
+  const fitted = useFittedLayout(true);
 
   useEffect(() => {
     useChat.getState().listen();
@@ -194,7 +197,22 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
             />
           </div>
         </section>
-        <section aria-label={t('chat.preview')} className="w-[360px] shrink-0 border-l border-border">
+        <section
+          id="chat-preview"
+          aria-label={t('chat.preview')}
+          className="relative shrink-0 border-l border-border"
+          style={{ width: fitted.preview }}
+        >
+          <ResizeHandle
+            label={t('layout.resizePreview')}
+            side="left"
+            aria-controls="chat-preview"
+            value={fitted.preview}
+            min={PREVIEW.min}
+            max={fitted.previewMax}
+            onResize={(w, live) => useLayout.getState().setPreview(Math.min(w, fitted.previewMax), live)}
+            onReset={() => useLayout.getState().resetPreview()}
+          />
           {project ? (
             <Preview
               projectId={project.id}

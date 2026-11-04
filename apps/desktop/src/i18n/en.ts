@@ -25,6 +25,10 @@ export const en = {
     settings: 'Settings',
     recent: 'Recent',
   },
+  layout: {
+    resizeSidebar: 'Resize sidebar',
+    resizePreview: 'Resize preview',
+  },
   onboarding: {
     step: 'Step {{step}} of 3',
     welcome: {
@@ -388,6 +392,7 @@ export const en = {
     none: 'No usage data yet',
     loading: 'Loading usage',
     aria: '{{agent}} usage',
+    ringAria: '{{agent}} usage: {{pct}} used in 5 hours',
     fiveHour: '5 hour usage',
     title: 'Usage',
     allAgents: 'all agents',
@@ -637,10 +642,14 @@ export const en = {
     nextFrame: 'Next frame',
     frame: 'Frame {{n}}',
     framesAria: 'Frames',
+    previousFrameTip: 'Previous frame (←, or Shift+← for one second)',
+    nextFrameTip: 'Next frame (→, or Shift+→ for one second)',
     sendFrame: 'Send frame to chat',
+    sendFrameShort: 'Send frame',
     markSpot: 'Mark a spot',
-    oneFrame: 'one frame',
-    oneSecond: 'one second',
+    markSpotShort: 'Mark',
+    keysFrame: 'frame',
+    keysSecond: '1 s',
     framesChecked: 'Frames checked',
   },
   style: {

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/Button';
+import { ResizeHandle } from '@/components/ResizeHandle';
 import { Sidebar, type SidebarKey } from '@/components/Sidebar';
 import { setUiLanguage } from '@/i18n';
 import { systemLanguage } from '@/lib/language';
@@ -22,6 +23,7 @@ import { Connect } from '@/screens/onboarding/Connect';
 import { Requirements } from '@/screens/onboarding/Requirements';
 import { Welcome } from '@/screens/onboarding/Welcome';
 import { useApp, type Route } from '@/state/app';
+import { SIDEBAR, useFittedLayout, useLayout, useSidebarShortcut, useWindowWidthSync } from '@/state/layout';
 import { refreshJobs } from '@/state/jobs';
 
 const ONBOARDING = new Set<Route['name']>(['welcome', 'connect', 'requirements']);
@@ -130,10 +132,41 @@ export default function App() {
       </div>
     );
   }
+  return <Shell route={route} />;
+}
+
+/** Below the snap point a drag collapses the sidebar to its rail; above it, it opens at that width. */
+function resizeSidebar(width: number, max: number, live?: boolean) {
+  const layout = useLayout.getState();
+  if (width < SIDEBAR.snap) return layout.setCollapsed(true, live);
+  layout.setCollapsed(false, true);
+  layout.setSidebar(Math.min(width, max), live);
+}
+
+/** The app around a screen: the resizable sidebar and the main column. */
+function Shell({ route }: { route: Route }) {
+  const { t } = useTranslation();
+  // Only the project chat has the preview panel; the sidebar's room depends on it.
+  const fitted = useFittedLayout(route.name === 'chat');
+  useWindowWidthSync();
+  useSidebarShortcut();
+
   return (
     <div className="flex h-full bg-background">
-      <div className="h-full w-[232px] shrink-0">
-        <Sidebar active={SIDEBAR_KEY[route.name] ?? 'chat'} />
+      <div id="app-sidebar" className="relative h-full shrink-0" style={{ width: fitted.sidebar }}>
+        <Sidebar active={SIDEBAR_KEY[route.name] ?? 'chat'} collapsed={fitted.collapsed} />
+        <ResizeHandle
+          label={t('layout.resizeSidebar')}
+          side="right"
+          aria-controls="app-sidebar"
+          value={fitted.sidebar}
+          min={SIDEBAR.min}
+          ariaMin={SIDEBAR.rail}
+          max={fitted.sidebarMax}
+          onResize={(w, live) => resizeSidebar(w, fitted.sidebarMax, live)}
+          onReset={() => useLayout.getState().resetSidebar()}
+          onToggle={() => useLayout.getState().toggleCollapsed()}
+        />
       </div>
       <main className="relative min-w-0 flex-1">
         {route.name === 'chat-new' ? (

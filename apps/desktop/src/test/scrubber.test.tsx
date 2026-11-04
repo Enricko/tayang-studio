@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 
@@ -12,7 +12,7 @@ vi.mock('@/lib/ipc', () => ({
 }));
 
 import * as ipc from '@/lib/ipc';
-import { Preview } from '@/screens/preview/Preview';
+import { Preview, frameBox } from '@/screens/preview/Preview';
 import { Scrubber } from '@/screens/preview/Scrubber';
 import { MessageList } from '@/components/MessageList';
 import { setUiLanguage } from '@/i18n';
@@ -68,6 +68,178 @@ describe('Scrubber', () => {
     setup();
     expect(screen.getByText('0:11.00')).toBeInTheDocument();
   });
+
+  it('keeps the time bubble on the playhead and inside the strip at both ends', () => {
+    setup(0);
+    let bubble = screen.getByTestId('scrubber-bubble');
+    expect(bubble.style.left).toBe('0%');
+    expect(bubble.style.transform).toBe('translateX(-0%)');
+    expect(bubble.className).toMatch(/whitespace-nowrap/);
+    cleanup();
+    setup(1019);
+    bubble = screen.getByTestId('scrubber-bubble');
+    expect(bubble.style.left).toBe('100%');
+    expect(bubble.style.transform).toBe('translateX(-100%)');
+  });
+
+  it('shows the hovered time while the pointer is over the strip', () => {
+    const { slider, onSeek } = setup(330, [{ name: 'Chart', startSec: 0, endSec: 34 }]);
+    slider.getBoundingClientRect = () =>
+      ({ left: 0, width: 1000, top: 0, height: 48, right: 1000, bottom: 48, x: 0, y: 0, toJSON() {} }) as DOMRect;
+    fireEvent.pointerMove(slider, { clientX: 250, pointerId: 1 });
+    expect(screen.getByTestId('scrubber-bubble')).toHaveTextContent('0:08.50 · Chart');
+    expect(screen.getByTestId('scrubber-hover')).toBeInTheDocument();
+    expect(onSeek).not.toHaveBeenCalled();
+    fireEvent.pointerLeave(slider, { pointerId: 1 });
+    expect(screen.getByTestId('scrubber-bubble')).toHaveTextContent('0:11.00 · Chart');
+    expect(screen.queryByTestId('scrubber-hover')).toBeNull();
+  });
+});
+
+describe('Preview layout', () => {
+  beforeEach(() => {
+    vi.mocked(ipc.mediaLatestRender).mockResolvedValue('/p/out.mp4');
+    vi.mocked(ipc.mediaProbe).mockResolvedValue({ durationSec: 34, fps: 30, frames: 1020, width: 1080, height: 1920 });
+    vi.mocked(ipc.mediaThumbnails).mockResolvedValue(thumbs);
+    useChat.getState().reset();
+  });
+
+  it('is a container column: the video flexes, the controls sit under it', async () => {
+    render(<Preview projectId="p1" chatId="c1" />);
+    await screen.findByRole('slider');
+    const root = screen.getByTestId('preview-panel');
+    expect(root.className).toMatch(/@container/);
+    expect(root.className).toMatch(/flex-col/);
+    const stage = screen.getByTestId('preview-stage');
+    expect(stage.className).toMatch(/flex-1/);
+    expect(stage).toContainElement(screen.getByTestId('preview-frame'));
+    expect(screen.getByTestId('preview-controls').className).toMatch(/shrink-0/);
+    expect(screen.getByTestId('preview-frame').querySelector('video')!.className).toMatch(/object-contain/);
+  });
+
+  it('puts the transport on one line: timecode in mono, the frame as a chip', async () => {
+    const { container } = render(<Preview projectId="p1" chatId="c1" />);
+    await screen.findByRole('slider');
+    const video = container.querySelector('video')!;
+    video.currentTime = 11;
+    fireEvent.timeUpdate(video);
+    const row = screen.getByTestId('transport');
+    expect(row.className).toMatch(/flex-nowrap/);
+    expect(row.className).toMatch(/whitespace-nowrap/);
+    const time = within(row).getByTestId('timecode');
+    expect(time).toHaveTextContent('0:11.00 / 0:34.00');
+    expect(time.className).toMatch(/tabular-nums/);
+    expect(time.className).toMatch(/font-mono/);
+    // the frame number is in the timecode's tooltip, and a chip from 320 px up
+    expect(time).toHaveAttribute('title', '0:11.00 / 0:34.00 · Frame 330');
+    expect(time.className).toMatch(/min-w-0/); // a long timecode truncates instead of overflowing
+    const chip = within(row).getByText('#330');
+    expect(chip.className).toMatch(/hidden/);
+    expect(chip.className).toMatch(/@min-\[320px\]:inline-flex/);
+  });
+
+  it('lines up the two actions, with short labels when narrow', async () => {
+    render(<Preview projectId="p1" chatId="c1" />);
+    await screen.findByRole('slider');
+    const send = screen.getByRole('button', { name: 'Send frame to chat' });
+    const mark = screen.getByRole('button', { name: 'Mark a spot' });
+    expect(send.parentElement).toBe(mark.parentElement);
+    expect(send.parentElement!.className).toMatch(/grid-cols-2/);
+    for (const b of [send, mark]) {
+      expect(b.className).toMatch(/h-8/);
+      expect(b.className).toMatch(/whitespace-nowrap/);
+    }
+    expect(within(send).getByText('Send frame')).toHaveClass('@min-[380px]:hidden');
+    expect(within(send).getByText('Send frame to chat')).toHaveClass('hidden');
+  });
+
+  it('shows the key hints as one compact line that hides when narrow, and keeps them in the buttons', async () => {
+    render(<Preview projectId="p1" chatId="c1" />);
+    await screen.findByRole('slider');
+    const hints = screen.getByTestId('key-hints');
+    expect(hints.className).toMatch(/hidden/);
+    expect(hints.className).toMatch(/@min-\[296px\]:flex/);
+    expect(hints.querySelectorAll('kbd').length).toBeGreaterThanOrEqual(3);
+    expect(hints).toHaveTextContent('← → frame · Shift+← → 1 s');
+    expect(screen.getByRole('button', { name: 'Previous frame' })).toHaveAttribute('title', expect.stringContaining('Shift+←'));
+    expect(screen.getByRole('button', { name: 'Next frame' })).toHaveAttribute('title', expect.stringContaining('Shift+→'));
+  });
+
+  it('steps frames with the arrows anywhere in the panel', async () => {
+    render(<Preview projectId="p1" chatId="c1" />);
+    await screen.findByRole('slider');
+    const next = screen.getByRole('button', { name: 'Next frame' });
+    next.focus();
+    await userEvent.keyboard('{ArrowRight}');
+    expect(screen.getByTestId('timecode')).toHaveAttribute('title', expect.stringMatching(/· Frame 1$/));
+    await userEvent.keyboard('{Shift>}{ArrowRight}{/Shift}');
+    expect(screen.getByTestId('timecode')).toHaveAttribute('title', expect.stringMatching(/· Frame 31$/));
+  });
+
+  it('sizes the frame box from the measured stage, keeping the video shape, so marks land on the picture', async () => {
+    let report: ResizeObserverCallback = () => {};
+    const observed: Element[] = [];
+    class MeasuringRO {
+      constructor(cb: ResizeObserverCallback) {
+        report = cb;
+      }
+      observe(el: Element) {
+        observed.push(el);
+      }
+      unobserve() {}
+      disconnect() {}
+    }
+    vi.stubGlobal('ResizeObserver', MeasuringRO);
+    const measure = (width: number, height: number) =>
+      act(() => report([{ contentRect: { width, height } } as ResizeObserverEntry], {} as ResizeObserver));
+    try {
+      render(<Preview projectId="p1" chatId="c1" />);
+      await screen.findByRole('slider');
+      expect(observed).toContain(screen.getByTestId('preview-stage'));
+      const box = screen.getByTestId('preview-frame');
+      // tall stage: the width limits (9:16 video)
+      measure(300, 800);
+      expect(box.style.width).toBe('300px');
+      expect(box.style.height).toBe(`${(300 * 16) / 9}px`);
+      // wide stage: the height limits
+      measure(600, 480);
+      expect(box.style.width).toBe(`${(480 * 9) / 16}px`);
+      expect(box.style.height).toBe('480px');
+      // a mark at the box's middle is the picture's middle
+      box.getBoundingClientRect = () =>
+        ({ left: 0, top: 0, width: 270, height: 480, right: 270, bottom: 480, x: 0, y: 0, toJSON() {} }) as DOMRect;
+      await userEvent.click(screen.getByRole('button', { name: 'Mark a spot' }));
+      fireEvent.click(box, { clientX: 135, clientY: 240 });
+      expect(screen.getByTestId('mark-1').style.left).toBe('50%');
+      expect(screen.getByTestId('mark-1').style.top).toBe('50%');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('frameBox fits the shape inside the stage', () => {
+    expect(frameBox(300, 800, 9 / 16)).toEqual({ width: 300, height: (300 * 16) / 9 });
+    expect(frameBox(600, 480, 9 / 16)).toEqual({ width: 270, height: 480 });
+    expect(frameBox(500, 500, 16 / 9)).toEqual({ width: 500, height: 281.25 });
+    expect(frameBox(0, 500, 9 / 16)).toBeNull();
+  });
+
+  it('puts the frames-checked chip on the video, top left, not in the hint row', async () => {
+    useChat.setState({
+      messages: { c1: [{ id: 'm1', chatId: 'c1', role: 'agent', parts: [{ type: 'text', text: 'Frames checked, all good' }], createdAt: '' }] },
+    });
+    render(<Preview projectId="p1" chatId="c1" />);
+    await screen.findByRole('slider');
+    const chip = screen.getByTestId('frames-checked');
+    expect(screen.getByTestId('preview-frame')).toContainElement(chip);
+    expect(chip.className).toMatch(/absolute/);
+    expect(chip.className).toMatch(/left-2/);
+    expect(chip.className).toMatch(/top-2/);
+    expect(chip.className).toMatch(/pointer-events-none/);
+    expect(chip).toHaveTextContent('Frames checked');
+    expect(within(chip).getByRole('img', { name: 'Oyen' })).toBeInTheDocument();
+    expect(screen.getByTestId('key-hints')).not.toContainElement(chip);
+  });
 });
 
 describe('Preview', () => {
@@ -85,7 +257,7 @@ describe('Preview', () => {
     const video = container.querySelector('video')!;
     video.currentTime = 11;
     fireEvent.timeUpdate(video);
-    expect(await screen.findByText('Frame 330')).toBeInTheDocument();
+    expect(await screen.findByText('#330')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Send frame to chat' }));
     await waitFor(() => expect(ipc.mediaExtractFrame).toHaveBeenCalledWith('p1', 11));
     await waitFor(() => expect(useChat.getState().attachments['c1']?.[0]).toMatchObject({ type: 'frame', frame: 330, timeSec: 11 }));
