@@ -16,6 +16,7 @@ import { AGENT_NAMES } from '@/lib/agents';
 import { detectAgents, getSystemInfo, pickFolder, updateSettings } from '@/lib/ipc';
 import { LANGUAGES, LANGUAGE_NAMES, uiLanguage } from '@/i18n';
 import { chooseLanguage } from '@/lib/language';
+import { sendTestNotification } from '@/lib/scheduler';
 import { useApp } from '@/state/app';
 import { useInstall } from '@/state/install';
 
@@ -138,6 +139,16 @@ export function Settings() {
       return;
     }
     await save({ openAtLogin: on });
+  };
+
+  const [testLine, setTestLine] = useState<string | null>(null);
+  const testNotification = async () => {
+    setTestLine(null);
+    try {
+      setTestLine((await sendTestNotification()) ? t('settings.testSent') : t('reminders.blocked'));
+    } catch (e) {
+      setTestLine(t('settings.testFailed', { message: e instanceof Error ? e.message : String(e) }));
+    }
   };
 
   const changeFolder = async () => {
@@ -284,6 +295,19 @@ export function Settings() {
               aria-label={t('settings.openAtLogin')}
               onCheckedChange={(v) => void changeOpenAtLogin(v)}
             />
+          </div>
+          <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3">
+            <div className="mr-auto flex flex-col gap-1">
+              <span className="text-sm font-medium">{t('settings.testNotification')}</span>
+              {testLine && (
+                <span role="status" className="text-xs text-text-3">
+                  {testLine}
+                </span>
+              )}
+            </div>
+            <Button variant="secondary" className="h-8 px-3 text-[13px]" onClick={() => void testNotification()}>
+              {t('settings.testNotification')}
+            </Button>
           </div>
         </section>
 

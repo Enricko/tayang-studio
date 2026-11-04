@@ -51,11 +51,13 @@ vi.mock('@/lib/events', () => ({
   }),
 }));
 vi.mock('@tauri-apps/plugin-opener', () => ({ openUrl: vi.fn() }));
+vi.mock('@/lib/scheduler', () => ({ sendTestNotification: vi.fn() }));
 vi.mock('@tauri-apps/plugin-autostart', () => ({ enable: vi.fn(), disable: vi.fn() }));
 
 import * as ipc from '@/lib/ipc';
 import { Agents } from '@/screens/Agents';
 import { Calendar } from '@/screens/Calendar';
+import { sendTestNotification } from '@/lib/scheduler';
 import * as autostart from '@tauri-apps/plugin-autostart';
 import { Settings as SettingsScreen } from '@/screens/Settings';
 import { Style, youtubeThumbnail } from '@/screens/Style';
@@ -1517,6 +1519,24 @@ describe('Settings', () => {
     expect(bg).not.toBeChecked();
     await userEvent.click(bg);
     await waitFor(() => expect(ipc.updateSettings).toHaveBeenCalledWith({ backgroundMode: true }));
+  });
+
+  it('the test notification button sends one and explains what to check; a denial or error is said too', async () => {
+    vi.mocked(sendTestNotification).mockResolvedValueOnce(true).mockResolvedValueOnce(false).mockRejectedValueOnce(new Error('no toast'));
+    render(<SettingsScreen />);
+    const btn = await screen.findByRole('button', { name: 'Send a test notification' });
+    await userEvent.click(btn);
+    expect(await screen.findByText(/Test notification sent\. If you don't see it/)).toBeInTheDocument();
+    await userEvent.click(btn);
+    expect(await screen.findByText(/Reminders can't show/)).toBeInTheDocument();
+    await userEvent.click(btn);
+    expect(await screen.findByText("Couldn't send it: no toast")).toBeInTheDocument();
+  });
+
+  it('the test notification button is in Indonesian too', async () => {
+    setUiLanguage('id');
+    render(<SettingsScreen />);
+    expect(await screen.findByRole('button', { name: 'Kirim notifikasi percobaan' })).toBeInTheDocument();
   });
 
   it('open at login enables the OS login item, then saves', async () => {
