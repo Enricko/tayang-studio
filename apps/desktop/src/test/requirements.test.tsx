@@ -209,3 +209,43 @@ describe('Requirements multi-request', () => {
     expect(ipc.agentCancel).toHaveBeenCalledWith('setup');
   });
 });
+
+describe('Requirements cancel then late events', () => {
+  it('keeps installs disabled while closing and ignores the late done', async () => {
+    handlers.update = [];
+    handlers.perm = [];
+    vi.clearAllMocks();
+    useInstall.getState().reset();
+    useApp.setState({ settings, route: { name: 'requirements' } });
+    vi.mocked(ipc.getSystemInfo).mockResolvedValue({ os: 'macos', osVersion: '26', packageManager: 'brew' });
+    vi.mocked(ipc.checkTools).mockResolvedValue(missingFfmpeg);
+    vi.mocked(ipc.agentStart).mockResolvedValue();
+    vi.mocked(ipc.agentPrompt).mockResolvedValue();
+    vi.mocked(ipc.agentCancel).mockResolvedValue();
+    vi.mocked(ipc.agentRespondPermission).mockResolvedValue();
+    const user = userEvent.setup();
+    render(<Requirements />);
+    await user.click(await screen.findByRole('button', { name: 'Install FFmpeg' }));
+    await act(async () => handlers.perm.forEach((h) => h(request)));
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(ipc.agentCancel).toHaveBeenCalledWith('setup');
+
+    const ffmpeg = await screen.findByRole('button', { name: 'Install FFmpeg' });
+    expect(ffmpeg).toBeDisabled();
+
+    // stray permission while closing is answered null
+    await act(async () => handlers.perm.forEach((h) => h({ ...request, requestId: 'late' })));
+    expect(ipc.agentRespondPermission).toHaveBeenLastCalledWith('late', null);
+    expect(screen.queryByRole('button', { name: 'Allow and install' })).not.toBeInTheDocument();
+
+    await emitUpdate({ kind: 'done', stopReason: 'cancelled' });
+    expect(useInstall.getState().closing).toBe(false);
+    expect(screen.getByRole('button', { name: 'Install FFmpeg' })).toBeEnabled();
+
+    // next install is unaffected
+    vi.mocked(ipc.checkTools).mockClear();
+    await user.click(screen.getByRole('button', { name: 'Install FFmpeg' }));
+    expect(useInstall.getState().active).toBe('ffmpeg');
+    expect(ipc.checkTools).not.toHaveBeenCalled();
+  });
+});

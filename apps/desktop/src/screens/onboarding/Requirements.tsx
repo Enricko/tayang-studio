@@ -208,6 +208,7 @@ export function Requirements() {
   const { navigate, settings, setSettings } = useApp();
   const statuses = useInstall((s) => s.statuses);
   const active = useInstall((s) => s.active);
+  const closing = useInstall((s) => s.closing);
   const refresh = useInstall((s) => s.refresh);
   const start = useInstall((s) => s.start);
   const askKey = useInstall((s) => s.askKey);
@@ -263,7 +264,7 @@ export function Requirements() {
             tool={t}
             sys={sys}
             agentName={agentName}
-            busy={!!active || !sys}
+            busy={!!active || closing || !sys}
             onInstall={(key) => install(t.id, key)}
             onAskKey={() => askKey(t.id)}
           />
@@ -302,7 +303,7 @@ export function Requirements() {
           <Button
             variant="secondary"
             className="h-7 gap-1 rounded-sm bg-transparent px-2 text-xs text-[#D9D9D9]"
-            disabled={!!active}
+            disabled={!!active || closing}
             onClick={() => void check()}
           >
             <RefreshCw size={14} strokeWidth={1.5} aria-hidden="true" />

@@ -35,6 +35,8 @@ interface InstallState {
   active: ToolId | null;
   /** Open permission request of the setup chat. */
   request: PermissionRequest | null;
+  /** A cancelled turn is still winding down; installs stay disabled until its done/error arrives. */
+  closing: boolean;
   agent: AgentId | null;
 
   refresh(agent: AgentId): Promise<ToolStatus[]>;
@@ -61,7 +63,20 @@ export const useInstall = create<InstallState>((set, get) => {
     set({ active: null, request: null });
   };
 
+  const closeTurn = async () => {
+    set({ active: null, request: null, closing: true });
+    try {
+      await agentCancel(SETUP_CHAT);
+    } catch {
+      set({ closing: false });
+    }
+  };
+
   const onUpdate = async (update: AgentUpdate) => {
+    if (get().closing) {
+      if (update.kind === 'done' || update.kind === 'error') set({ closing: false });
+      return;
+    }
     const tool = get().active;
     if (!tool) return;
     const cur = get().tools[tool];
@@ -98,6 +113,7 @@ export const useInstall = create<InstallState>((set, get) => {
     tools: {},
     active: null,
     request: null,
+    closing: false,
     agent: null,
 
     async refresh(agent) {
@@ -109,7 +125,7 @@ export const useInstall = create<InstallState>((set, get) => {
     askKey: (tool) => patch(tool, { status: 'key', error: undefined }),
 
     async start(tool, opts) {
-      if (get().active) return;
+      if (get().active || get().closing) return;
       set({ active: tool, request: null, agent: opts.agent });
       patch(tool, { status: 'confirm', log: [], error: undefined });
       try {
@@ -125,11 +141,13 @@ export const useInstall = create<InstallState>((set, get) => {
       const { request, active } = get();
       if (!request) return;
       set({ request: null });
-      if (active) {
-        if (optionId === null) patch(active, { status: 'missing', log: [] });
-        else patch(active, { status: 'running' });
-        if (optionId === null) set({ active: null });
+      if (optionId === null) {
+        if (active) patch(active, { status: 'missing', log: [] });
+        await agentRespondPermission(request.requestId, null);
+        await closeTurn();
+        return;
       }
+      if (active) patch(active, { status: 'running' });
       await agentRespondPermission(request.requestId, optionId);
     },
 
@@ -139,8 +157,7 @@ export const useInstall = create<InstallState>((set, get) => {
       const wasActive = get().active === tool;
       patch(tool, { status: 'missing', log: [], error: undefined });
       if (!wasActive) return;
-      set({ active: null, request: null });
-      await agentCancel(SETUP_CHAT).catch(() => {});
+      await closeTurn();
     },
 
     listen() {
@@ -151,6 +168,10 @@ export const useInstall = create<InstallState>((set, get) => {
         }),
         onPermission((req) => {
           if (req.chatId !== SETUP_CHAT) return;
+          if (get().closing) {
+            void agentRespondPermission(req.requestId, null).catch(() => {});
+            return;
+          }
           const tool = get().active;
           if (!tool) return;
           // Every request of the turn gets its own card, not just the first.
@@ -163,7 +184,7 @@ export const useInstall = create<InstallState>((set, get) => {
     reset() {
       unlisten.forEach((p) => void p.then((fn) => fn()));
       unlisten = [];
-      set({ statuses: [], tools: {}, active: null, request: null, agent: null });
+      set({ statuses: [], tools: {}, active: null, request: null, closing: false, agent: null });
     },
   };
 });
