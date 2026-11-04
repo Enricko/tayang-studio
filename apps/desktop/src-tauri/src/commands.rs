@@ -348,7 +348,11 @@ Follow the tayang-studio and a2ui-options skills. The user sees your replies in 
 so offer every choice as an A2UI card.";
 
 /// The Tayang agent plugin in the repo, used when the bundled copy is missing (`tauri dev`).
+/// Debug builds only: a release build must never reach into the build machine's checkout.
 fn dev_plugin_dir() -> Option<PathBuf> {
+    if !cfg!(debug_assertions) {
+        return None;
+    }
     let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("..")
@@ -359,12 +363,20 @@ fn dev_plugin_dir() -> Option<PathBuf> {
     dir.join(".claude-plugin").join("plugin.json").is_file().then_some(dir)
 }
 
-/// `<resource dir>/agent-plugin` when it holds the plugin, else the repo copy.
+/// `<resource dir>/agent-plugin` when it holds the plugin, else the repo copy (debug builds).
+/// `None` means Claude starts without the plugin, and the skills go into its first prompt instead.
 fn plugin_dir(resource_dir: Option<&Path>) -> Option<PathBuf> {
-    resource_dir
+    let found = resource_dir
         .map(|r| r.join("agent-plugin"))
         .filter(|p| p.join(".claude-plugin").join("plugin.json").is_file())
-        .or_else(dev_plugin_dir)
+        .or_else(dev_plugin_dir);
+    if found.is_none() {
+        eprintln!(
+            "[tayang] warning: agent-plugin/.claude-plugin/plugin.json is missing from the app resources; \
+             Claude gets the Tayang skills in its first prompt instead"
+        );
+    }
+    found
 }
 
 /// Claude gets the plugin and the system prompt through `_meta` (so nothing is
@@ -383,13 +395,16 @@ fn session_options(agent: AgentId, plugin: Option<&Path>) -> crate::acp::Session
     crate::acp::SessionOptions { meta: Some(meta), env }
 }
 
+/// Starts the chat's agent. Resolves `true` when Claude started without the Tayang
+/// plugin, so the caller must send the skills as text in the first prompt (other
+/// agents always get them that way).
 #[tauri::command]
 pub async fn agent_start(
     app: AppHandle,
     state: State<'_, AppState>,
     chat_id: String,
     agent_id: AgentId,
-) -> CmdResult<()> {
+) -> CmdResult<bool> {
     let mut command = system::acp_command(agent_id)
         .ok_or("Pick an agent first: custom agents have no start command yet")?;
     let program = command[0].clone();
@@ -399,12 +414,20 @@ pub async fn agent_start(
     let folder = project_folder_for_chat(&state, &chat_id)?;
     let cwd = resolve_cwd(&state.working(), &chat_id, folder.as_deref())?;
     let resource_dir = app.path().resource_dir().ok();
-    let options = session_options(agent_id, plugin_dir(resource_dir.as_deref()).as_deref());
+    let plugin = if agent_id == AgentId::Claude { plugin_dir(resource_dir.as_deref()) } else { None };
+    let options = session_options(agent_id, plugin.as_deref());
+    let skills_as_text = needs_skills_text(agent_id, plugin.as_deref());
     state
         .acp
         .start_with(&chat_id, &command, &cwd, Arc::new(TauriSink(app)), options)
         .await
-        .map_err(err)
+        .map_err(err)?;
+    Ok(skills_as_text)
+}
+
+/// Claude without the plugin has no skills unless the first prompt carries them.
+fn needs_skills_text(agent: AgentId, plugin: Option<&Path>) -> bool {
+    agent == AgentId::Claude && plugin.is_none()
 }
 
 /// m:ss.cc, same as `formatTimecode` in `@tayang/shared`.
@@ -878,7 +901,16 @@ mod tests {
 
     #[test]
     fn dev_plugin_folder_exists_in_the_repo() {
-        assert!(dev_plugin_dir().is_some());
+        // Only debug builds look in the repo; a release build must use its bundled copy.
+        assert_eq!(dev_plugin_dir().is_some(), cfg!(debug_assertions));
+    }
+
+    #[test]
+    fn claude_without_the_plugin_gets_the_skills_as_text() {
+        assert!(needs_skills_text(AgentId::Claude, None));
+        assert!(!needs_skills_text(AgentId::Claude, Some(Path::new("/p"))));
+        // Other agents get them as text anyway; the app decides that itself.
+        assert!(!needs_skills_text(AgentId::Codex, None));
     }
 
     #[test]

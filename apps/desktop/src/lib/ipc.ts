@@ -68,8 +68,9 @@ export const listJobs = () => invoke<Job[]>('list_jobs');
 export const upsertJob = (job: Job) => invoke<void>('upsert_job', { job });
 
 // ---- agent ----
+/** Resolves true when Claude started without the Tayang plugin: send it the skills as text too. */
 export const agentStart = (chatId: string, agentId: AgentId) =>
-  invoke<void>('agent_start', { chatId, agentId });
+  invoke<boolean>('agent_start', { chatId, agentId });
 export const agentPrompt = (chatId: string, parts: MessagePart[]) =>
   invoke<void>('agent_prompt', { chatId, parts });
 export const agentCancel = (chatId: string) => invoke<void>('agent_cancel', { chatId });

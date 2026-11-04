@@ -93,7 +93,7 @@ describe('Requirements', () => {
     useApp.setState({ settings, route: { name: 'requirements' } });
     vi.mocked(ipc.getSystemInfo).mockResolvedValue({ os: 'macos', osVersion: '26', packageManager: 'brew' });
     vi.mocked(ipc.checkTools).mockResolvedValue(missingFfmpeg);
-    vi.mocked(ipc.agentStart).mockResolvedValue();
+    vi.mocked(ipc.agentStart).mockResolvedValue(false);
     vi.mocked(ipc.agentPrompt).mockResolvedValue();
     vi.mocked(ipc.agentRespondPermission).mockResolvedValue();
     vi.mocked(ipc.updateSettings).mockResolvedValue({ ...settings, onboarded: true });
@@ -212,7 +212,7 @@ describe('Requirements multi-request', () => {
     useApp.setState({ settings, route: { name: 'requirements' } });
     vi.mocked(ipc.getSystemInfo).mockResolvedValue({ os: 'macos', osVersion: '26', packageManager: 'brew' });
     vi.mocked(ipc.checkTools).mockResolvedValue(missingFfmpeg);
-    vi.mocked(ipc.agentStart).mockResolvedValue();
+    vi.mocked(ipc.agentStart).mockResolvedValue(false);
     vi.mocked(ipc.agentPrompt).mockResolvedValue();
     vi.mocked(ipc.agentCancel).mockResolvedValue();
     vi.mocked(ipc.agentRespondPermission).mockResolvedValue();
@@ -283,7 +283,7 @@ describe('Requirements cancel then late events', () => {
     useApp.setState({ settings, route: { name: 'requirements' } });
     vi.mocked(ipc.getSystemInfo).mockResolvedValue({ os: 'macos', osVersion: '26', packageManager: 'brew' });
     vi.mocked(ipc.checkTools).mockResolvedValue(missingFfmpeg);
-    vi.mocked(ipc.agentStart).mockResolvedValue();
+    vi.mocked(ipc.agentStart).mockResolvedValue(false);
     vi.mocked(ipc.agentPrompt).mockResolvedValue();
     vi.mocked(ipc.agentCancel).mockResolvedValue();
     vi.mocked(ipc.agentRespondPermission).mockResolvedValue();

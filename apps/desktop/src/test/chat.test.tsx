@@ -128,7 +128,7 @@ beforeEach(() => {
     parts,
     createdAt: '',
   }));
-  vi.mocked(ipc.agentStart).mockResolvedValue();
+  vi.mocked(ipc.agentStart).mockResolvedValue(false);
   vi.mocked(ipc.agentPrompt).mockResolvedValue();
   vi.mocked(ipc.agentRespondPermission).mockResolvedValue();
 });
@@ -421,6 +421,17 @@ describe('ChatProject', () => {
     await user.click(screen.getByRole('button', { name: 'Send' }));
     await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalledTimes(1));
     expect(JSON.stringify(vi.mocked(ipc.agentPrompt).mock.calls[0]![1])).not.toContain('a2ui');
+  });
+
+  it('sends the skills to Claude as text when the app has no plugin to give it', async () => {
+    const user = userEvent.setup();
+    vi.mocked(ipc.agentStart).mockResolvedValueOnce(true);
+    render(<ChatProject chatId="c1" />);
+    await screen.findByText('Kenapa rupiah melemah?', { selector: 'span' });
+    await user.type(screen.getByRole('textbox', { name: 'Message' }), 'one');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalledTimes(1));
+    expect(JSON.stringify(vi.mocked(ipc.agentPrompt).mock.calls[0]![1])).toContain('a2ui');
   });
 
   it('shows an error message and re-enables the composer', async () => {

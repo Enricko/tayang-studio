@@ -274,15 +274,17 @@ export const useChat = create<ChatState>((set, get) => {
         if (opts?.job) chatJobs.set(chatId, opts.job);
         writeJob(chatId, 'working');
         let fresh = false;
+        let noPlugin = false;
         if (!get().started[chatId]) {
-          await agentStart(chatId, agent);
+          noPlugin = (await agentStart(chatId, agent)) === true;
           set((s) => ({ started: { ...s.started, [chatId]: true } }));
           fresh = true;
         }
         const sent = opts?.promptParts ? [...attached, ...opts.promptParts] : visible;
         const lead: MessagePart[] = [];
-        // Claude loads the Tayang plugin itself; other agents get the skills as text, once per session.
-        if (fresh && agent !== 'claude') lead.push({ type: 'text', text: buildSessionPreamble() });
+        // Claude loads the Tayang plugin itself (unless the app shipped without it); other agents get
+        // the skills as text, once per session.
+        if (fresh && (agent !== 'claude' || noPlugin)) lead.push({ type: 'text', text: buildSessionPreamble() });
         const recap = pendingRecap.get(chatId);
         if (recap) {
           lead.push({ type: 'text', text: `Earlier in this chat, with another agent:\n${recap}\n\nContinue from here.` });

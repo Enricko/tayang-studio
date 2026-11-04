@@ -272,7 +272,7 @@ describe('Agents', () => {
 describe('Calendar', () => {
   it('asks for ideas in a scratch chat, shows its permission card and stops the agent after', async () => {
     useChat.getState().reset();
-    vi.mocked(ipc.agentStart).mockResolvedValue();
+    vi.mocked(ipc.agentStart).mockResolvedValue(false);
     vi.mocked(ipc.agentPrompt).mockResolvedValue();
     vi.mocked(ipc.agentRespondPermission).mockResolvedValue();
     render(<Calendar today={new Date(2026, 10, 4)} />);
