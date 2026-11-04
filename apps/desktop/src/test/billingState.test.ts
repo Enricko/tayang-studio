@@ -9,11 +9,12 @@ vi.mock('@/lib/billing', async (importOriginal) => ({
 
 import * as billing from '@/lib/billing';
 import { POLL_MS } from '@/lib/billing';
+import { useAuth } from '@/state/auth';
 import { useBilling } from '@/state/billing';
 
 const NOW = new Date('2026-11-04T12:00:00.000Z');
-const free: BillingStatus = { plan: 'free', lastPlan: null, currentPeriodEnd: null, active: false, pending: null };
-const creator: BillingStatus = { plan: 'creator', lastPlan: 'creator', currentPeriodEnd: '2026-12-04T12:00:00.000Z', active: true, pending: null };
+const free: BillingStatus = { plan: 'free', lastPlan: null, currentPeriodEnd: null, active: false, pending: null, lastPaidOrderId: null };
+const creator: BillingStatus = { plan: 'creator', lastPlan: 'creator', currentPeriodEnd: '2026-12-04T12:00:00.000Z', active: true, pending: null, lastPaidOrderId: null };
 const checkout = { orderId: 'TYG-A', paymentLinkUrl: 'https://pay.sumopod.com/p/1', expiresAt: '2026-11-04T13:00:00.000Z', amount: 50000 };
 
 beforeEach(() => {
@@ -43,7 +44,7 @@ describe('the plans flow', () => {
     expect(billing.billingStatus).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1);
     expect(billing.billingStatus).toHaveBeenCalledTimes(1);
-    vi.mocked(billing.billingStatus).mockResolvedValue(creator);
+    vi.mocked(billing.billingStatus).mockResolvedValue({ ...creator, lastPaidOrderId: 'TYG-A' });
     await vi.advanceTimersByTimeAsync(POLL_MS);
     expect(useBilling.getState().flow).toEqual({ phase: 'done', plan: 'creator', currentPeriodEnd: creator.currentPeriodEnd });
     await vi.advanceTimersByTimeAsync(POLL_MS * 3);
@@ -63,7 +64,7 @@ describe('the plans flow', () => {
     await useBilling.getState().pay('creator');
     await vi.advanceTimersByTimeAsync(POLL_MS * 2);
     expect(useBilling.getState().flow.phase).toBe('waiting');
-    vi.mocked(billing.billingStatus).mockResolvedValue({ ...creator, currentPeriodEnd: '2027-01-03T12:00:00.000Z' });
+    vi.mocked(billing.billingStatus).mockResolvedValue({ ...creator, currentPeriodEnd: '2027-01-03T12:00:00.000Z', lastPaidOrderId: 'TYG-A' });
     await vi.advanceTimersByTimeAsync(POLL_MS);
     expect(useBilling.getState().flow).toMatchObject({ phase: 'done', currentPeriodEnd: '2027-01-03T12:00:00.000Z' });
   });
@@ -113,7 +114,7 @@ describe('the plans flow', () => {
     vi.mocked(billing.billingStatus).mockRejectedValueOnce('billing:network');
     await vi.advanceTimersByTimeAsync(POLL_MS);
     expect(useBilling.getState().flow.phase).toBe('waiting');
-    vi.mocked(billing.billingStatus).mockResolvedValue({ ...creator, plan: 'lite', lastPlan: 'lite' });
+    vi.mocked(billing.billingStatus).mockResolvedValue({ ...creator, plan: 'lite', lastPlan: 'lite', lastPaidOrderId: 'TYG-A' });
     await vi.advanceTimersByTimeAsync(POLL_MS);
     expect(useBilling.getState().flow.phase).toBe('done');
   });
@@ -150,6 +151,48 @@ describe('the plans flow', () => {
     expect(billing.billingStatus).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(POLL_MS);
     expect(useBilling.getState().flow.phase).toBe('waiting');
+  });
+
+  it("success needs this checkout's order AND a later end: another payment, or an unchanged end, is not it (review2 I-A)", async () => {
+    vi.mocked(billing.billingStatus).mockResolvedValue(creator);
+    await useBilling.getState().pay('creator');
+    // Someone else's payment moved the end.
+    vi.mocked(billing.billingStatus).mockResolvedValue({ ...creator, currentPeriodEnd: '2027-01-03T12:00:00.000Z', lastPaidOrderId: 'TYG-OTHER' });
+    await vi.advanceTimersByTimeAsync(POLL_MS);
+    expect(useBilling.getState().flow.phase).toBe('waiting');
+    // Our order, but the end didn't move.
+    vi.mocked(billing.billingStatus).mockResolvedValue({ ...creator, lastPaidOrderId: 'TYG-A' });
+    await vi.advanceTimersByTimeAsync(POLL_MS);
+    expect(useBilling.getState().flow.phase).toBe('waiting');
+  });
+
+  it('a late lower-plan payment that became days on the current plan still counts as done (B3)', async () => {
+    vi.mocked(billing.billingStatus).mockResolvedValue({ ...creator, plan: 'pro', lastPlan: 'pro' });
+    await useBilling.getState().refresh();
+    useBilling.setState({ flow: { phase: 'review', plan: 'pro' } });
+    await useBilling.getState().pay('pro');
+    vi.mocked(billing.billingStatus).mockResolvedValue({ ...creator, plan: 'pro', lastPlan: 'pro', currentPeriodEnd: '2027-01-03T12:00:00.000Z', lastPaidOrderId: 'TYG-A' });
+    await vi.advanceTimersByTimeAsync(POLL_MS);
+    expect(useBilling.getState().flow.phase).toBe('done');
+  });
+
+  it("pay always reads the status first, and never checks out when it can't (review2 I-A)", async () => {
+    vi.mocked(billing.billingStatus).mockResolvedValue(free);
+    await useBilling.getState().refresh();
+    vi.mocked(billing.billingStatus).mockClear();
+    vi.mocked(billing.billingStatus).mockRejectedValueOnce('billing:network');
+    await useBilling.getState().pay('creator');
+    expect(billing.billingStatus).toHaveBeenCalledTimes(1);
+    expect(billing.billingCheckout).not.toHaveBeenCalled();
+    expect(useBilling.getState().flow).toEqual({ phase: 'failed', plan: 'creator', error: 'network' });
+  });
+
+  it('a signed-out read while the app is signed in is "unknown", never free (review2 Gratis)', async () => {
+    useAuth.setState({ status: { state: 'signed-in', signedIn: true, offline: false, apiUrl: 'x' } });
+    vi.mocked(billing.billingStatus).mockRejectedValue('billing:signed-out');
+    expect(await useBilling.getState().refresh()).toBeNull();
+    expect(useBilling.getState().failed).toBe(true);
+    useAuth.setState({ status: null });
   });
 
   it('signed out clears the status', async () => {

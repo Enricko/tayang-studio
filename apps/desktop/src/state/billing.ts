@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { useAuth } from '@/state/auth';
 import { findPlan, type BillingStatus, type CheckoutResponse, type PaidPlanId } from '@tayang/shared';
 import { POLL_LIMIT_MS, POLL_MS, billingCheckout, billingErrorCode, billingStatus, isPaymentLink, type BillingErrorCode } from '@/lib/billing';
 
@@ -55,9 +56,13 @@ const stopPolling = () => {
   pollTimer = undefined;
 };
 
-/** The payment went through once the plan runs with a different end than before paying. */
-const paid = (s: BillingStatus, plan: PaidPlanId, endBefore: string | null) =>
-  s.active && s.plan === plan && s.currentPeriodEnd !== endBefore;
+/** *This* checkout's payment went through: the API names its order as the last paid one, and the
+ * period end moved past the one seen before paying (a renewal, an upgrade, or a lower plan that
+ * became days on the current one all move it). */
+const paid = (s: BillingStatus, orderId: string, endBefore: string | null) =>
+  s.lastPaidOrderId === orderId &&
+  !!s.currentPeriodEnd &&
+  (endBefore === null || Date.parse(s.currentPeriodEnd) > Date.parse(endBefore));
 
 export const useBilling = create<BillingStore>((set, get) => {
   /** Asks every POLL_MS until paid, the flow closes or another attempt starts, until the link expires. */
@@ -69,7 +74,7 @@ export const useBilling = create<BillingStore>((set, get) => {
       if (get().attempt !== attempt) return;
       const s = await get().refresh();
       if (get().attempt !== attempt) return;
-      if (s && paid(s, plan, endBefore)) {
+      if (s && paid(s, checkout.orderId, endBefore)) {
         set({ flow: { phase: 'done', plan, currentPeriodEnd: s.currentPeriodEnd } });
         return;
       }
@@ -101,8 +106,11 @@ export const useBilling = create<BillingStore>((set, get) => {
         set({ status: s, loadedAt: Date.now(), failed: false });
         return s;
       } catch (e) {
-        if (billingErrorCode(e) === 'signed-out') set({ status: null, loadedAt: Date.now(), failed: false });
-        else set({ failed: true });
+        // Signed out per Rust while the app shows signed in (the keychain couldn't be read, say) is
+        // "unknown", never "free"; the auth refresh Rust starts settles which it is.
+        if (billingErrorCode(e) === 'signed-out' && !useAuth.getState().status?.signedIn) {
+          set({ status: null, loadedAt: Date.now(), failed: false });
+        } else set({ failed: true });
         return null;
       }
     },
@@ -144,10 +152,15 @@ export const useBilling = create<BillingStore>((set, get) => {
       stopPolling();
       const attempt = get().attempt + 1;
       set({ attempt, flow: { phase: 'starting', plan } });
-      // The end before paying is what "paid" is measured against, so it must be known first.
-      if (!get().loadedAt) await get().refresh();
+      // The end before paying is what "paid" is measured against: always read it fresh, and don't
+      // start a payment when it can't be read.
+      const before = await get().refresh();
       if (get().attempt !== attempt) return;
-      const endBefore = get().status?.currentPeriodEnd ?? null;
+      if (!before) {
+        set({ flow: { phase: 'failed', plan, error: get().failed ? 'network' : 'signed-out' } });
+        return;
+      }
+      const endBefore = before.currentPeriodEnd;
       try {
         const checkout = await billingCheckout(plan);
         if (get().attempt !== attempt) return;
