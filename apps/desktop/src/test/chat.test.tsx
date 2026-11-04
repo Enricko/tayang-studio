@@ -285,6 +285,21 @@ describe('ChatProject', () => {
     expect(useChat.getState().permissions['c1']).toEqual([]);
   });
 
+  it.each([true, false])('frame check setting %s: skip line only when off', async (frameCheck) => {
+    useApp.setState({ settings: { ...settings, frameCheck } });
+    const user = userEvent.setup();
+    render(<ChatProject chatId="c1" />);
+    await user.type(await screen.findByRole('textbox', { name: 'Message' }), 'faster');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
+    const parts = vi.mocked(ipc.agentPrompt).mock.calls[0]![1];
+    expect(parts[0]).toEqual(
+      frameCheck ? { type: 'text', text: 'faster' } : { type: 'text', text: 'Skip the frame check this time.' },
+    );
+    // The visible message never shows the instruction.
+    expect(screen.queryByText('Skip the frame check this time.')).not.toBeInTheDocument();
+  });
+
   it('shows Stop while the agent works and cancels the turn', async () => {
     const user = userEvent.setup();
     vi.mocked(ipc.agentCancel).mockResolvedValue();

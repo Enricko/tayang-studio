@@ -3,7 +3,15 @@ import { FRAME_CHECK_PROMPT } from './frameCheck';
 
 const LANGUAGE: Record<VideoLanguage, string> = { id: 'Indonesian', en: 'English' };
 
-export function buildProjectBrief(p: Project, style: Style | null, settings: Settings): string {
+/** Sent before a project chat's prompt when the frame check is turned off in Settings. */
+export const SKIP_FRAME_CHECK = 'Skip the frame check this time.';
+
+/** The project's AGENTS.md. The quality loop is only included when `settings.frameCheck` is on. */
+export function buildProjectBrief(
+  p: Project,
+  style: Style | null,
+  settings: Pick<Settings, 'fps' | 'frameCheck'>,
+): string {
   const lines = [
     `# ${p.title}`,
     '',
@@ -19,9 +27,7 @@ export function buildProjectBrief(p: Project, style: Style | null, settings: Set
     '## Style',
     style ? `Style: ${style.name}\n${style.prompt}` : 'No style selected. Choose a clean, readable look and keep it consistent.',
     '',
-    '## Quality loop',
-    FRAME_CHECK_PROMPT,
-    '',
+    ...(settings.frameCheck ? ['## Quality loop', FRAME_CHECK_PROMPT, ''] : []),
   ];
   return lines.join('\n');
 }

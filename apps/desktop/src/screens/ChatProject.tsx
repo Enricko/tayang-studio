@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { Chat, MessagePart, Project, VideoKind } from '@tayang/shared';
+import { SKIP_FRAME_CHECK } from '@tayang/skills';
 import { Button } from '@/components/Button';
 import { Composer } from '@/components/Composer';
 import { MessageList } from '@/components/MessageList';
@@ -42,7 +43,13 @@ export function ChatProject({ chatId }: { chatId: string }) {
     };
   }, [chatId]);
 
-  const send = (parts: MessagePart[]) => void useChat.getState().send(chatId, parts);
+  const send = (parts: MessagePart[]) => {
+    // The brief's frame check applies to projects made while it was on; this covers turning it off later.
+    const skip = useApp.getState().settings?.frameCheck === false;
+    void useChat
+      .getState()
+      .send(chatId, parts, skip ? { promptParts: [{ type: 'text', text: SKIP_FRAME_CHECK }, ...parts] } : undefined);
+  };
 
   return (
     <div className="flex h-full min-w-0 flex-col">

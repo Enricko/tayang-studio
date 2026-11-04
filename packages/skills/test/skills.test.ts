@@ -84,11 +84,19 @@ describe('style', () => {
 describe('brief', () => {
   it('contains style prompt and Frames checked', () => {
     const project = { title: 'Promo', kind: 'promo', format: '9:16', language: 'id' } as Project;
-    const settings = { fps: 30 } as Settings;
+    const settings = { fps: 30, frameCheck: true } as Settings;
     const b = buildProjectBrief(project, BUILTIN_STYLES[0]!, settings);
     expect(b).toContain(BUILTIN_STYLES[0]!.prompt);
     expect(b).toContain('Frames checked');
+    expect(b).toContain(FRAME_CHECK_PROMPT);
     expect(b).toContain('npx hyperframes');
     expect(FRAME_CHECK_PROMPT).toContain('Frames checked');
+  });
+  it('leaves out the frame check when it is off', () => {
+    const project = { title: 'Promo', kind: 'promo', format: '9:16', language: 'id' } as Project;
+    const b = buildProjectBrief(project, null, { fps: 30, frameCheck: false });
+    expect(b).not.toContain(FRAME_CHECK_PROMPT);
+    expect(b).not.toContain('Quality loop');
+    expect(b).toContain('npx hyperframes');
   });
 });
