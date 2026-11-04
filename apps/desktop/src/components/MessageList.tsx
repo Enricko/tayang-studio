@@ -208,9 +208,12 @@ export function MessageList({
   children,
   onA2uiAction,
   sendOptions,
+  busy = false,
 }: {
   messages: ChatMessage[];
   streaming: boolean;
+  /** The screen is busy with an earlier action (setting up a topic): surfaces wait, like while streaming. */
+  busy?: boolean;
   /** Return true when the screen handled the action itself. */
   onA2uiAction?: (a: A2uiAction) => boolean;
   /** How an answered surface is sent: the same options as the screen's composer. */
@@ -225,8 +228,8 @@ export function MessageList({
 
   const a2ui = useMemo(() => deriveA2ui(messages), [messages]);
   const actions = useMemo(
-    () => ({ handle: onA2uiAction, locked: streaming, sendOptions }),
-    [onA2uiAction, streaming, sendOptions],
+    () => ({ handle: onA2uiAction, locked: streaming || busy, sendOptions }),
+    [onA2uiAction, streaming, busy, sendOptions],
   );
   const last = messages[messages.length - 1];
   return (

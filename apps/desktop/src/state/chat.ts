@@ -54,6 +54,8 @@ interface ChatState {
   stop(chatId: string): Promise<void>;
   /** Moves the chat to another agent; it starts fresh on the next send. */
   switchAgent(chatId: string, agent: AgentId): Promise<void>;
+  /** Adds a system line to the chat and stores it; resolves once it is stored (best effort). */
+  appendSystem(chatId: string, text: string): Promise<void>;
   attach(chatId: string, part: MessagePart): void;
   detach(chatId: string, index: number): void;
   listen(): void;
@@ -106,6 +108,9 @@ export function buildRecap(messages: ChatMessage[]): string {
   }
   return kept.join('\n');
 }
+
+/** A system line that shows in the live chat and is stored with it. */
+export const appendSystem = (chatId: string, text: string) => useChat.getState().appendSystem(chatId, text);
 
 export const buildJobId = (chatId: string) => `build-${chatId}`;
 
@@ -328,6 +333,12 @@ export const useChat = create<ChatState>((set, get) => {
       ]);
       append(chatId, sys);
       void persist(chatId, sys);
+    },
+
+    async appendSystem(chatId, text) {
+      const sys = localMessage(chatId, 'system', [{ type: 'text', text }]);
+      append(chatId, sys);
+      await persist(chatId, sys);
     },
 
     attach: (chatId, part) =>

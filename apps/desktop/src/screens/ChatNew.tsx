@@ -35,7 +35,9 @@ export function ChatNew() {
   const [seen, setSeen] = useState<string[]>([]);
   const [ideas, setIdeas] = useState<Idea[]>([]);
   const [signal, setSignal] = useState(0);
+  /** A picked topic is being set up (project, chat, template). */
   const [busy, setBusy] = useState(false);
+  const [setupLine, setSetupLine] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const topicPending = useRef(false);
 
@@ -155,14 +157,18 @@ export function ChatNew() {
   };
 
   const pickIdea = async (idea: Idea) => {
-    if (!settings || busy) return;
+    if (!settings || busy || streaming) return;
     setBusy(true);
+    setSetupLine('Setting up the project…');
+    setError(null);
     try {
       // The idea's own style wins when it is a synced one; else the template chip's style.
-      await startTopic(idea, { settings, agent, styleId });
+      await startTopic(idea, { settings, agent, styleId, onStatus: setSetupLine });
       setStyleId(null);
-    } catch {
+    } catch (e) {
       setBusy(false);
+      setSetupLine(null);
+      setError(`Couldn't start "${idea.title}": ${e instanceof Error ? e.message : String(e)}`);
     }
   };
 
@@ -209,6 +215,7 @@ export function ChatNew() {
               <MessageList
                 messages={messages}
                 streaming={streaming}
+                busy={busy}
                 onA2uiAction={onA2uiAction}
                 sendOptions={() => ({ agentId: agent })}
               >
@@ -238,6 +245,11 @@ export function ChatNew() {
                     ))}
                   </div>
                 )}
+                {busy && setupLine && (
+                  <p role="status" className="m-0 text-[13px] text-text-3">
+                    {setupLine}
+                  </p>
+                )}
               </MessageList>
             </div>
           )}
@@ -264,7 +276,7 @@ export function ChatNew() {
             chatId={chatId}
             ensureChat={() => ensureChat('New chat')}
             onSend={onSend}
-            disabled={streaming}
+            disabled={streaming || busy}
             onStop={chatId ? () => void useChat.getState().cancel(chatId) : undefined}
             projects={projects}
             mention={mention}

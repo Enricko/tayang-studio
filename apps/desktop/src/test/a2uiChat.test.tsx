@@ -136,6 +136,11 @@ describe('one gate while the agent replies', () => {
     expect(screen.getByRole('button', { name: 'Pick me' })).toBeEnabled();
   });
 
+  it('disables surfaces while the screen is busy', () => {
+    render(<MessageList streaming={false} busy messages={[msg('1', 'agent', [{ type: 'text', text: block('s1', 'Make this') }])]} />);
+    expect(screen.getByRole('button', { name: 'Make this' })).toBeDisabled();
+  });
+
   it('a prompt refused because the agent is busy leaves the running turn alone', async () => {
     vi.mocked(agentStart).mockClear();
     await useChat.getState().send('c1', [{ type: 'text', text: 'first' }], {

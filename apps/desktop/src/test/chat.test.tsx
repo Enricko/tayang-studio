@@ -239,6 +239,44 @@ describe('ChatNew template style', () => {
     await waitFor(() => expect(useApp.getState().route).toEqual({ name: 'chat', chatId: 'c9' }));
   });
 
+  it('puts the setup lines into the live chat, not only the database', async () => {
+    vi.mocked(ipc.installStyleTemplate).mockRejectedValue('offline');
+    await pick();
+    await waitFor(() => expect(useApp.getState().route).toEqual({ name: 'chat', chatId: 'c9' }));
+    const texts = (useChat.getState().messages.c9 ?? []).filter((m) => m.role === 'system').map((m) => m.parts[0]);
+    expect(texts).toEqual([
+      { type: 'text', text: 'Setting up the Atlas journey template…' },
+      { type: 'text', text: "Couldn't set up the Atlas journey template: offline. Continuing without it." },
+    ]);
+  });
+
+  it('shows the setup inline and blocks every pick while it runs', async () => {
+    let finish: (v: { installed: boolean }) => void = () => {};
+    vi.mocked(ipc.installStyleTemplate).mockReturnValue(new Promise((r) => (finish = r)));
+    await pick();
+    expect(await screen.findByRole('status')).toHaveTextContent('Setting up the Atlas journey template…');
+    expect(screen.getByRole('button', { name: /Ide satu/ })).toBeDisabled();
+    expect(screen.getByRole('textbox', { name: 'Message' })).toBeDisabled();
+    await act(async () => finish({ installed: true }));
+    await waitFor(() => expect(useApp.getState().route).toEqual({ name: 'chat', chatId: 'c9' }));
+    expect(ipc.createProject).toHaveBeenCalledTimes(1);
+  });
+
+  it('says why when the topic could not be started', async () => {
+    vi.mocked(ipc.installStyleTemplate).mockResolvedValue({ installed: true });
+    const user = userEvent.setup();
+    vi.mocked(ipc.listStyles).mockResolvedValue([]);
+    vi.mocked(ipc.createProject).mockRejectedValue(new Error('disk full'));
+    render(<ChatNew />);
+    await user.click(await screen.findByRole('button', { name: /From a topic/ }));
+    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
+    await emit('c-new', { kind: 'text', text: '```json\n[{"title":"Ide satu","kind":"explainer","lengthSec":30}]\n```' });
+    await emit('c-new', { kind: 'done', stopReason: 'end_turn' });
+    await user.click(await screen.findByRole('button', { name: /Ide satu/ }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Couldn\'t start "Ide satu": disk full');
+    expect(screen.getByRole('button', { name: /Ide satu/ })).toBeEnabled();
+  });
+
   it('shows the error as a system line and carries on without the template', async () => {
     vi.mocked(ipc.installStyleTemplate).mockRejectedValue('Couldn\'t download the template');
     await pick();

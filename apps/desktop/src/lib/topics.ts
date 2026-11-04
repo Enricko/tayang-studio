@@ -1,9 +1,9 @@
 import type { Project, Settings, Style, VideoKind } from '@tayang/shared';
 import { buildProjectBrief, splitTopicJson, topicIdeaFromAction } from '@tayang/skills';
 import { extractA2ui } from '@/a2ui/parse';
-import { addMessage, createChat, createProject, installStyleTemplate, listStyles, syncStyles, writeBrief } from '@/lib/ipc';
+import { createChat, createProject, installStyleTemplate, listStyles, syncStyles, writeBrief } from '@/lib/ipc';
 import { useApp } from '@/state/app';
-import { useChat } from '@/state/chat';
+import { appendSystem, useChat } from '@/state/chat';
 
 export interface TopicIdea {
   title: string;
@@ -47,7 +47,13 @@ export function ideasFromReply(text: string): TopicIdea[] {
  */
 export async function startTopic(
   idea: TopicIdea,
-  opts: { settings: Settings; agent: Settings['defaultAgent']; styleId?: string | null },
+  opts: {
+    settings: Settings;
+    agent: Settings['defaultAgent'];
+    styleId?: string | null;
+    /** What setup is doing right now, for a busy line on the calling screen. */
+    onStatus?: (text: string) => void;
+  },
 ): Promise<void> {
   const { settings, agent } = opts;
   const fallbackId = opts.styleId ?? null;
@@ -93,10 +99,12 @@ export async function startTopic(
   const project = await createProject(input, buildProjectBrief(draft, style, settings));
   useApp.getState().bumpProjects();
   const chat = await createChat(project.id, agent, idea.title);
-  const say = (text: string) => addMessage(chat.id, 'system', [{ type: 'text', text }]).catch(() => {});
+  const say = (text: string) => appendSystem(chat.id, text);
   if (styleProblem) await say(`Couldn't set up the template: ${styleProblem}. Continuing without it.`);
   if (style?.template) {
-    await say(`Setting up the ${style.name} template…`);
+    const setting = `Setting up the ${style.name} template…`;
+    opts.onStatus?.(setting);
+    await say(setting);
     let reason: string | null = null;
     try {
       const r = await installStyleTemplate(project.id);
