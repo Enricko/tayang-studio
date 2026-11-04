@@ -10,6 +10,7 @@ import { startAutopilot } from '@/state/autopilot';
 import { useWindowDrag } from '@/lib/windowDrag';
 import { Agents } from '@/screens/Agents';
 import { Autopilot } from '@/screens/Autopilot';
+import { AutopilotWizard } from '@/screens/AutopilotWizard';
 import { Calendar } from '@/screens/Calendar';
 import { ChatNew } from '@/screens/ChatNew';
 import { ChatProject } from '@/screens/ChatProject';
@@ -139,6 +140,8 @@ export default function App() {
           <Style />
         ) : route.name === 'autopilot' ? (
           <Autopilot key={route.id ?? 'list'} id={route.id} />
+        ) : route.name === 'autopilot-wizard' ? (
+          <AutopilotWizard key={route.id ?? 'new'} id={route.id} />
         ) : route.name === 'agents' ? (
           <Agents />
         ) : route.name === 'calendar' ? (
