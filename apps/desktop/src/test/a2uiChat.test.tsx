@@ -1,7 +1,7 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
-import type { ChatMessage } from '@tayang/shared';
+import type { AgentUpdate, ChatMessage } from '@tayang/shared';
 
 vi.mock('@/lib/ipc', () => ({
   getChat: vi.fn().mockResolvedValue(null),
@@ -16,9 +16,16 @@ vi.mock('@/lib/ipc', () => ({
   listJobs: vi.fn().mockResolvedValue([]),
   assetUrl: (p: string) => p,
 }));
-vi.mock('@/lib/events', () => ({ onAgentUpdate: vi.fn(async () => () => {}), onPermission: vi.fn(async () => () => {}) }));
+const updates: ((e: { chatId: string; update: AgentUpdate }) => void)[] = [];
+vi.mock('@/lib/events', () => ({
+  onAgentUpdate: vi.fn(async (cb: (e: { chatId: string; update: AgentUpdate }) => void) => {
+    updates.push(cb);
+    return () => {};
+  }),
+  onPermission: vi.fn(async () => () => {}),
+}));
 vi.mock('@tauri-apps/plugin-opener', () => ({ openUrl: vi.fn() }));
-import { agentPrompt, agentRespondPermission, agentStart, getChat, upsertJob } from '@/lib/ipc';
+import { addMessage, agentPrompt, agentRespondPermission, agentStart, getChat, upsertJob } from '@/lib/ipc';
 import { MessageList } from '@/components/MessageList';
 import { BUSY_NOTE, useChat } from '@/state/chat';
 
@@ -53,6 +60,7 @@ const msg = (id: string, role: ChatMessage['role'], parts: ChatMessage['parts'])
 
 beforeEach(() => {
   useChat.getState().reset();
+  updates.length = 0;
   vi.mocked(agentPrompt).mockClear();
 });
 
@@ -233,6 +241,34 @@ describe('answering a surface after a restart', () => {
     expect(parts.at(-2)).toEqual({ type: 'text', text: 'SKIP' });
     expect(parts.at(-1)).toMatchObject({ type: 'a2ui-action', summary: 'Picked: Pick me' });
     expect(upsertJob).toHaveBeenCalledWith(expect.objectContaining({ kind: 'build', projectId: 'p1' }));
+  });
+});
+
+describe('a surface while its message is stored', () => {
+  it('keeps what the user typed when the local message becomes the stored one', async () => {
+    const form =
+      '```a2ui\n' +
+      [
+        { version: V, createSurface: { surfaceId: 'f', catalogId: 'basic' } },
+        { version: V, updateComponents: { surfaceId: 'f', components: [{ id: 'root', component: 'TextField', label: 'Title', value: { path: '/t' } }] } },
+      ]
+        .map((m) => JSON.stringify(m))
+        .join('\n') +
+      '\n```';
+    function Live() {
+      const messages = useChat((st) => st.messages.c1) ?? [];
+      return <MessageList streaming={false} messages={messages} />;
+    }
+    useChat.getState().listen();
+    await useChat.getState().load('c1');
+    const emit = (update: AgentUpdate) => act(async () => updates.forEach((cb) => cb({ chatId: 'c1', update })));
+    render(<Live />);
+    await emit({ kind: 'text', text: form });
+    await userEvent.type(screen.getByRole('textbox', { name: 'Title' }), 'Selat');
+    vi.mocked(addMessage).mockImplementationOnce(async (chatId, role, parts) => ({ id: 'stored-1', chatId, role, parts, createdAt: '' }));
+    await emit({ kind: 'done', stopReason: 'end_turn' });
+    await waitFor(() => expect(useChat.getState().messages.c1!.at(-1)!.id).toBe('stored-1'));
+    expect(screen.getByRole('textbox', { name: 'Title' })).toHaveValue('Selat');
   });
 });
 

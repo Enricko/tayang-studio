@@ -79,6 +79,11 @@ const chatAgent = new Map<string, AgentId>();
 /** Project chats whose turns are tracked as a build job. */
 const chatJobs = new Map<string, ChatJob>();
 
+/** Stored message id → the local id it had before it was stored, so the list keeps its React key. */
+const clientKeys = new Map<string, string>();
+/** A key for a message that stays the same when the local copy is swapped for the stored one. */
+export const messageKey = (m: ChatMessage) => clientKeys.get(m.id) ?? m.id;
+
 /** Recaps waiting for the first prompt after an agent switch. */
 const pendingRecap = new Map<string, string>();
 
@@ -168,6 +173,7 @@ export const useChat = create<ChatState>((set, get) => {
     try {
       const saved = await addMessage(chatId, m.role, m.parts);
       if (!saved) return;
+      clientKeys.set(saved.id, m.id);
       set((s) => ({
         messages: {
           ...s.messages,
@@ -377,6 +383,7 @@ export const useChat = create<ChatState>((set, get) => {
       chatAgent.clear();
       chatJobs.clear();
       pendingRecap.clear();
+      clientKeys.clear();
       set({ messages: {}, streaming: {}, permissions: {}, attachments: {}, started: {} });
     },
   };

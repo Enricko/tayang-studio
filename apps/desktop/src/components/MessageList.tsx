@@ -4,7 +4,7 @@ import { formatTimecode, type AgentId, type ChatMessage, type MessagePart } from
 import { Oyen } from '@/components/Oyen';
 import { AGENT_NAMES } from '@/lib/agents';
 import { useApp } from '@/state/app';
-import { useChat, type SendOpts } from '@/state/chat';
+import { messageKey, useChat, type SendOpts } from '@/state/chat';
 import { splitTopicJson } from '@tayang/skills';
 import { extractA2ui } from '@/a2ui/parse';
 import { A2uiSurface, type A2uiAction } from '@/a2ui/render';
@@ -249,7 +249,7 @@ export function MessageList({
       {messages.map((m, i) => {
         if (m.role === 'user') {
           return (
-            <div key={m.id} className="flex justify-end">
+            <div key={messageKey(m)} className="flex justify-end">
               <div className="flex max-w-[80%] flex-wrap items-center gap-2 rounded-lg bg-raised px-3 py-2 text-[14px] leading-[1.6]">
                 {m.parts.map((p, j) =>
                   p.type === 'text' ? (
@@ -270,7 +270,7 @@ export function MessageList({
         }
         if (m.role === 'system') {
           return (
-            <div key={m.id} className="flex items-center gap-3">
+            <div key={messageKey(m)} className="flex items-center gap-3">
               <Oyen mood="surprised" size={28} />
               <p className="m-0 text-[14px] text-text-2">
                 {m.parts.map((p) => (p.type === 'text' ? p.text : '')).join('')}
@@ -284,7 +284,7 @@ export function MessageList({
           return null;
         }
         return (
-          <div key={m.id} data-testid="agent-message" className="flex items-start gap-3">
+          <div key={messageKey(m)} data-testid="agent-message" className="flex items-start gap-3">
             <Oyen mood={working ? 'sleepy' : 'default'} size={28} />
             <div className="flex min-w-0 flex-1 flex-col gap-3">
               <Parts parts={m.parts} working={working} messageId={m.id} a2ui={a2ui} />
