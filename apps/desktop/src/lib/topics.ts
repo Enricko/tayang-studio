@@ -1,4 +1,4 @@
-import type { MessagePart, Project, Settings, Style, VideoKind } from '@tayang/shared';
+import type { Chat, MessagePart, Project, Settings, Style, VideoKind } from '@tayang/shared';
 import { buildProjectBrief, SKIP_FRAME_CHECK, splitTopicJson, topicIdeaFromAction } from '@tayang/skills';
 import { extractA2ui } from '@/a2ui/parse';
 import { createChat, createProject, installStyleTemplate, listStyles, syncStyles, writeBrief } from '@/lib/ipc';
@@ -39,24 +39,24 @@ export function ideasFromReply(text: string): TopicIdea[] {
     .slice(0, 3);
 }
 
+export interface TopicProjectOpts {
+  settings: Settings;
+  agent: Settings['defaultAgent'];
+  styleId?: string | null;
+  /** What setup is doing right now, for a busy line on the calling screen. */
+  onStatus?: (text: string) => void;
+}
+
 /**
- * Creates the project and its chat for a picked idea, sets up the style's template when it has one,
- * opens the chat and asks for the script. Shared by every screen that starts a topic (new chat, calendar).
+ * Creates the project and its chat for a picked idea and sets up the style's template when it has one.
+ * It neither opens the chat nor sends anything: `startTopic` does that for the screens, the autopilot
+ * sends its own prompt. The video language and format come from `opts.settings`.
  *
  * The style is the idea's own `styleId` when it names a synced style, else `opts.styleId` (a template the
- * user picked on the Style screen). A template that can't be set up is reported in the chat as a system
- * line and the brief is rewritten without it.
+ * user picked on the Style screen, or the autopilot's style). A template that can't be set up is reported
+ * in the chat as a system line and the brief is rewritten without it.
  */
-export async function startTopic(
-  idea: TopicIdea,
-  opts: {
-    settings: Settings;
-    agent: Settings['defaultAgent'];
-    styleId?: string | null;
-    /** What setup is doing right now, for a busy line on the calling screen. */
-    onStatus?: (text: string) => void;
-  },
-): Promise<void> {
+export async function createTopicProject(idea: TopicIdea, opts: TopicProjectOpts): Promise<{ project: Project; chat: Chat }> {
   const { settings, agent } = opts;
   const fallbackId = opts.styleId ?? null;
   let style: Style | null = null;
@@ -119,6 +119,13 @@ export async function startTopic(
       await say(stored('chat.templateFailed', { name: style.name, reason }));
     }
   }
+  return { project, chat };
+}
+
+/** Creates the project and its chat for a picked idea, opens the chat and asks for the script. Shared by every screen that starts a topic (new chat, calendar). */
+export async function startTopic(idea: TopicIdea, opts: TopicProjectOpts): Promise<void> {
+  const { settings, agent } = opts;
+  const { project, chat } = await createTopicProject(idea, opts);
   useApp.getState().navigate({ name: 'chat', chatId: chat.id });
   const ask: MessagePart[] = [{ type: 'text', text: i18n.t('chat.writeScript', { title: idea.title, seconds: idea.lengthSec }) }];
   void useChat.getState().send(chat.id, ask, {

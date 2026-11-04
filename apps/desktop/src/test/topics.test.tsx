@@ -43,7 +43,7 @@ import * as ipc from '@/lib/ipc';
 import { buildTopicIdeasPrompt } from '@tayang/skills';
 import { extractA2ui } from '@/a2ui/parse';
 import { applyMessages, emptySurfaces } from '@/a2ui/surface';
-import { ideasFromReply } from '@/lib/topics';
+import { createTopicProject, ideasFromReply, startTopic } from '@/lib/topics';
 import { MessageList } from '@/components/MessageList';
 import { Calendar } from '@/screens/Calendar';
 import { ChatNew } from '@/screens/ChatNew';
@@ -187,6 +187,49 @@ describe('Calendar make it with a template style', () => {
     );
     expect(ipc.writeBrief).toHaveBeenCalledWith('p1', expect.not.stringContaining('This project starts from'));
     localStorage.clear();
+  });
+});
+
+describe('createTopicProject', () => {
+  const idea = { title: 'Kenapa kopi pahit', kind: 'explainer' as const, lengthSec: 45 };
+
+  it('makes the project (with the style and language given) and its chat, without opening or sending', async () => {
+    vi.mocked(ipc.createProject).mockResolvedValue({ id: 'p1', title: idea.title } as never);
+    const statuses: string[] = [];
+    const out = await createTopicProject(idea, {
+      settings: { ...settings, language: 'en' },
+      agent: 'codex',
+      styleId: 'atlas-journey',
+      onStatus: (s) => statuses.push(s),
+    });
+    expect(out.project.id).toBe('p1');
+    expect(out.chat.id).toBe('chat-1');
+    expect(vi.mocked(ipc.createProject).mock.calls[0]![0]).toEqual({
+      title: idea.title,
+      kind: 'explainer',
+      format: '9:16',
+      language: 'en',
+      styleId: 'atlas-journey',
+    });
+    expect(ipc.createChat).toHaveBeenCalledWith('p1', 'codex', idea.title);
+    expect(useApp.getState().route).toEqual({ name: 'chat-new' });
+    expect(ipc.agentStart).not.toHaveBeenCalled();
+    expect(ipc.agentPrompt).not.toHaveBeenCalled();
+  });
+
+  it('says in the chat when the picked style is gone', async () => {
+    await createTopicProject(idea, { settings, agent: 'claude', styleId: 'gone' });
+    expect(vi.mocked(ipc.createProject).mock.calls[0]![0]).not.toHaveProperty('styleId');
+    expect(ipc.addMessage).toHaveBeenCalledWith('chat-1', 'system', [
+      { type: 'text', text: expect.stringContaining('no longer in your library') },
+    ]);
+  });
+
+  it('startTopic still opens the chat and asks for the script', async () => {
+    await startTopic(idea, { settings, agent: 'claude' });
+    expect(useApp.getState().route).toEqual({ name: 'chat', chatId: 'chat-1' });
+    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
+    expect(JSON.stringify(vi.mocked(ipc.agentPrompt).mock.calls[0]![1])).toContain('Kenapa kopi pahit');
   });
 });
 
