@@ -101,7 +101,8 @@ describe('agent plugin', () => {
   it('teaches scheduling with one schedule_videos card, also in the text preamble', () => {
     const t = read('skills/tayang-studio/SKILL.md');
     expect(t).toContain('## Scheduling videos');
-    expect(t).toContain('Never say a video is scheduled until the user has pressed the button.');
+    expect(t).toContain('Never say a video is scheduled until the user has confirmed it.');
+    expect(t).toContain('Use a new `surfaceId` for every schedule card');
     // The example block is valid A2UI: every line parses, and the button carries well-formed items.
     const block = /```a2ui\n([\s\S]*?)```/.exec(t.slice(t.indexOf('## Scheduling videos')))![1]!;
     const lines = block.trim().split('\n').map((l) => JSON.parse(l.replace('"<id>"', '"p1"')));
