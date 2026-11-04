@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { ArrowUp, Check, ChevronDown, File as FileIcon, Paperclip, Square, X, Zap } from 'lucide-react';
@@ -21,7 +22,7 @@ import { cn } from '@/lib/utils';
 import { useApp } from '@/state/app';
 import { autoOn, useChat } from '@/state/chat';
 
-export const QUICK_CHIPS = ['Faster pace', 'Bigger text', 'Change colors', 'Add music', 'Make it 15s'];
+export const QUICK_CHIPS = ['faster', 'bigger', 'colors', 'music', 'short'] as const;
 
 const TOKEN = /(^|\s)@(\S*)$/;
 const NONE: MessagePart[] = [];
@@ -42,6 +43,7 @@ export interface MentionRef {
 }
 
 function FileChip({ part, onRemove }: { part: FilePart; onRemove(): void }) {
+  const { t } = useTranslation();
   const image = part.mime.startsWith('image/');
   return (
     <span className="inline-flex h-8 max-w-60 items-center gap-2 rounded-sm border border-hairline bg-transparent pl-2 pr-1 text-xs text-text-2">
@@ -54,7 +56,7 @@ function FileChip({ part, onRemove }: { part: FilePart; onRemove(): void }) {
       <span className="shrink-0 font-mono text-text-3">{fileSize(part.size)}</span>
       <button
         type="button"
-        aria-label="Remove file"
+        aria-label={t('composer.removeFile')}
         onClick={onRemove}
         className="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center border-none bg-transparent p-0 text-text-3"
       >
@@ -78,6 +80,7 @@ function AgentPicker({
   disabled?: boolean;
   onChange(id: AgentId): void;
 }) {
+  const { t } = useTranslation();
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const load = (open: boolean) => {
     if (!open) return;
@@ -106,7 +109,7 @@ function AgentPicker({
             <AgentLogo id={a.id} size={16} />
             <span className="font-medium">{AGENT_NAMES[a.id]}</span>
             <span className="ml-auto font-mono text-[11px] text-text-3">
-              {a.installed ? (a.version ?? '') : 'Not installed'}
+              {a.installed ? (a.version ?? '') : t('composer.notInstalled')}
             </span>
             {a.id === agent && <Check data-testid="agent-check" size={14} strokeWidth={1.5} aria-hidden="true" />}
           </DropdownMenuItem>
@@ -116,7 +119,7 @@ function AgentPicker({
           onSelect={() => useApp.getState().navigate({ name: 'settings' })}
           className="h-9 text-[13px]"
         >
-          Set up agents
+          {t('composer.setUpAgents')}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -132,7 +135,7 @@ export function Composer({
   onMention,
   quickChips,
   sees,
-  placeholder = 'Say what to change. Bahasa Indonesia is fine',
+  placeholder,
   mentionSignal = 0,
   onStop,
   agentId,
@@ -165,6 +168,7 @@ export function Composer({
   /** Starts the box with this text (not sent). */
   initialText?: string;
 }) {
+  const { t } = useTranslation();
   const defaultAgent = useApp((s) => s.settings?.defaultAgent ?? 'claude');
   const agent = agentId ?? defaultAgent;
   const settingsAuto = useApp((s) => s.settings?.autoMode ?? false);
@@ -319,10 +323,10 @@ export function Composer({
               key={q}
               type="button"
               disabled={disabled}
-              onClick={() => void onSend([{ type: 'text', text: q }])}
+              onClick={() => void onSend([{ type: 'text', text: t(`composer.chips.${q}`) }])}
               className="h-8 cursor-pointer rounded-full border border-hairline bg-transparent px-3 text-[13px] text-text-2 transition-colors hover:bg-raised hover:text-foreground disabled:cursor-default disabled:opacity-50"
             >
-              {q}
+              {t(`composer.chips.${q}`)}
             </button>
           ))}
         </div>
@@ -346,7 +350,7 @@ export function Composer({
                     @{mention.title}
                     <button
                       type="button"
-                      aria-label="Remove video"
+                      aria-label={t('composer.removeVideo')}
                       onClick={() => onMention?.(null)}
                       className="inline-flex size-4 cursor-pointer items-center justify-center border-none bg-transparent p-0 text-orange-light"
                     >
@@ -360,7 +364,7 @@ export function Composer({
                       <FrameChip part={a} />
                       <button
                         type="button"
-                        aria-label="Remove frame"
+                        aria-label={t('composer.removeFrame')}
                         onClick={() => chatId && useChat.getState().detach(chatId, i)}
                         className="inline-flex size-5 cursor-pointer items-center justify-center border-none bg-transparent p-0 text-text-3"
                       >
@@ -374,7 +378,7 @@ export function Composer({
               </div>
             )}
             <label htmlFor="composer-message" className="sr-only">
-              Message
+              {t('composer.message')}
             </label>
             <Textarea
               id="composer-message"
@@ -382,7 +386,7 @@ export function Composer({
               rows={2}
               value={text}
               disabled={disabled}
-              placeholder={placeholder}
+              placeholder={placeholder ?? t('composer.placeholder')}
               onChange={(e) => {
                 setText(e.target.value);
                 setActive('');
@@ -393,7 +397,7 @@ export function Composer({
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                aria-label="Attach files"
+                aria-label={t('composer.attach')}
                 disabled={disabled}
                 onClick={() => void pickFiles()}
                 className="inline-flex size-7 cursor-pointer items-center justify-center rounded-sm border-none bg-transparent p-0 text-text-2 hover:text-foreground disabled:cursor-default disabled:opacity-50"
@@ -414,8 +418,8 @@ export function Composer({
                   type="button"
                   role="switch"
                   aria-checked={auto}
-                  aria-label="Auto"
-                  title="Your agent runs commands without asking"
+                  aria-label={t('composer.auto')}
+                  title={t('composer.autoTitle')}
                   disabled={disabled || autoBusy}
                   onClick={() => void useChat.getState().setAuto(chatId, !auto)}
                   className={cn(
@@ -424,7 +428,7 @@ export function Composer({
                   )}
                 >
                   <Zap size={14} strokeWidth={1.5} aria-hidden="true" />
-                  Auto
+                  {t('composer.auto')}
                 </button>
               )}
               {projects && (
@@ -438,14 +442,14 @@ export function Composer({
                   }}
                   className="h-7 cursor-pointer rounded-sm border-none bg-transparent px-2 text-xs font-medium text-text-2 hover:text-foreground"
                 >
-                  @ Mention a video
+                  {t('composer.mention')}
                 </button>
               )}
-              {sees && <span className="truncate text-xs text-text-3">This chat sees {sees}</span>}
+              {sees && <span className="truncate text-xs text-text-3">{t('composer.sees', { title: sees })}</span>}
               {disabled && onStop ? (
                 <button
                   type="button"
-                  aria-label="Stop"
+                  aria-label={t('composer.stop')}
                   onClick={onStop}
                   className="ml-auto inline-flex size-8 cursor-pointer items-center justify-center rounded-md border border-hairline bg-raised text-foreground transition-colors hover:bg-[#333333]"
                 >
@@ -454,7 +458,7 @@ export function Composer({
               ) : (
                 <button
                   type="button"
-                  aria-label="Send"
+                  aria-label={t('composer.send')}
                   disabled={!canSend}
                   onClick={() => void send()}
                   className="ml-auto inline-flex size-8 cursor-pointer items-center justify-center rounded-md border-none bg-primary text-primary-foreground transition-colors hover:bg-accent-hover disabled:cursor-default disabled:opacity-50"

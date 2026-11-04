@@ -1,17 +1,13 @@
+import { useTranslation } from 'react-i18next';
 import type { Project } from '@tayang/shared';
+import { i18n } from '@/i18n';
 import { Command, CommandGroup, CommandItem, CommandList } from '@/components/ui/command';
 
-const STATUS: Record<Project['status'], string> = {
-  draft: 'Draft',
-  building: 'Building',
-  rendered: 'Rendered',
-  scheduled: 'Scheduled',
-};
-
 function meta(p: Project) {
-  if (p.durationSec == null) return STATUS[p.status];
+  const status = i18n.t(`mention.status.${p.status}`);
+  if (p.durationSec == null) return status;
   const s = Math.round(p.durationSec);
-  return `${STATUS[p.status]} · ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  return `${status} · ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
 export function filterProjects(projects: Project[], query: string): Project[] {
@@ -31,11 +27,12 @@ export function MentionMenu({
   onValueChange(id: string): void;
   onPick(p: Project): void;
 }) {
+  const { t } = useTranslation();
   return (
     <Command shouldFilter={false} value={value} onValueChange={onValueChange} className="bg-transparent">
-      <CommandList aria-label="Mention a video" className="max-h-[240px]">
-        <CommandGroup heading="Videos">
-          {projects.length === 0 && <div className="px-2 py-3 text-[13px] text-text-3">No videos yet</div>}
+      <CommandList aria-label={t('mention.aria')} className="max-h-[240px]">
+        <CommandGroup heading={t('mention.videos')}>
+          {projects.length === 0 && <div className="px-2 py-3 text-[13px] text-text-3">{t('mention.none')}</div>}
           {projects.map((p) => (
             <CommandItem key={p.id} value={p.id} onSelect={() => onPick(p)} className="h-12 gap-3 px-2">
               <span aria-hidden="true" className="h-9 w-5 shrink-0 rounded-xs border border-hairline bg-raised" />
@@ -53,11 +50,11 @@ export function MentionMenu({
             {k}
           </kbd>
         ))}
-        <span>move</span>
+        <span>{t('mention.move')}</span>
         <kbd className="ml-2 rounded-xs border border-hairline border-b-2 px-1 font-mono text-[11px] text-[#D9D9D9]">↵</kbd>
-        <span>attach</span>
+        <span>{t('mention.attach')}</span>
         <kbd className="ml-2 rounded-xs border border-hairline border-b-2 px-1 font-mono text-[11px] text-[#D9D9D9]">Esc</kbd>
-        <span>close</span>
+        <span>{t('mention.close')}</span>
       </div>
     </Command>
   );

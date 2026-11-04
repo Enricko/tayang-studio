@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { ChatMessage } from '@tayang/shared';
+import { i18n } from '@/i18n';
 
 /** What a user message says, for the preview and the label: text, @mentions, attached file names. */
 export function turnText(m: ChatMessage): string {
@@ -15,9 +17,9 @@ export function turnText(m: ChatMessage): string {
   const frame = m.parts.find((p) => p.type === 'frame');
   if (frame) {
     const sec = Math.max(0, Math.floor(frame.timeSec));
-    return `Frame at ${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+    return i18n.t('chat.turnFrame', { time: `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}` });
   }
-  return 'Message';
+  return i18n.t('chat.turnMessage');
 }
 
 const reduced = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -45,6 +47,7 @@ export function TurnRail({
   /** Where the rail sits horizontally inside its positioned parent. */
   className?: string;
 }) {
+  const { t } = useTranslation();
   const turns = useMemo(
     () =>
       messages.flatMap((m, i) => (m.role === 'user' ? [{ index: i, text: turnText(m) }] : [])),
@@ -143,7 +146,7 @@ export function TurnRail({
   return (
     <nav
       ref={nav}
-      aria-label="Jump to a message"
+      aria-label={t('chat.jumpAria')}
       className={`absolute top-1/2 z-10 flex w-6 -translate-y-1/2 justify-end ${className}`}
       style={{ maxHeight: '70%' }}
       onKeyDown={onKeyDown}
@@ -153,17 +156,17 @@ export function TurnRail({
         onScroll={onStripScroll}
         className="no-scrollbar flex max-h-full flex-col items-end overflow-y-auto py-1"
       >
-        {turns.map((t, i) => {
+        {turns.map((turn, i) => {
           const isActive = i === active;
           const isHover = hover?.turn === i;
           return (
             <button
-              key={t.index}
+              key={turn.index}
               type="button"
-              aria-label={`Jump to: ${t.text.slice(0, 80)}`}
+              aria-label={t('chat.jumpTo', { text: turn.text.slice(0, 80) })}
               aria-current={isActive ? 'true' : undefined}
               tabIndex={isActive ? 0 : -1}
-              onClick={() => jump(t.index)}
+              onClick={() => jump(turn.index)}
               onMouseEnter={(e) => show(i, e.currentTarget)}
               onMouseLeave={() => setHover(null)}
               onFocus={(e) => show(i, e.currentTarget)}

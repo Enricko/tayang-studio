@@ -1,4 +1,5 @@
 import { useEffect, useState, type RefObject } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ArrowDown } from 'lucide-react';
 
 const FAR = 200;
@@ -8,6 +9,7 @@ export const STICK_EVENT = 'tayang:stick';
 
 /** A pill at the bottom centre that appears once the chat is scrolled well above the end. */
 export function ScrollToBottom({ scrollRef }: { scrollRef: RefObject<HTMLElement | null> }) {
+  const { t } = useTranslation();
   const [far, setFar] = useState(false);
   useEffect(() => {
     const box = scrollRef.current;
@@ -37,7 +39,7 @@ export function ScrollToBottom({ scrollRef }: { scrollRef: RefObject<HTMLElement
       className="absolute bottom-3 left-1/2 z-10 inline-flex h-8 -translate-x-1/2 cursor-pointer items-center gap-1.5 rounded-full border border-border bg-card px-3 text-[13px] text-foreground shadow-lg hover:bg-raised"
     >
       <ArrowDown size={14} strokeWidth={1.5} aria-hidden="true" />
-      Scroll to bottom
+      {t('chat.scrollToBottom')}
     </button>
   );
 }
