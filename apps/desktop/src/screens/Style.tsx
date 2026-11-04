@@ -174,14 +174,33 @@ function prefersReducedMotion(): boolean {
   return typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
-/** The popup's media: the muted looping preview video, or the image (swatch frames) when there is none or it fails. */
+const VIDEO_TIMEOUT_MS = 5000;
+
+/**
+ * The popup's media: the image (or swatch frames) is a layer under the muted looping video until the video has
+ * data; the image alone shows when there is no clip, it errors, or it has no data after 5 s.
+ */
 function StylePreview({ style }: { style: StyleT }) {
   const [bg] = swatch(style.id);
   const [failed, setFailed] = useState<string | null>(null);
   const [playing, setPlaying] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const loadedRef = useRef(false);
   const [reduced] = useState(prefersReducedMotion);
   const video = useRef<HTMLVideoElement>(null);
   const src = style.previewVideoUrl;
+
+  // No data after 5 s (blocked, offline, stalled): fall back to the image instead of a black box.
+  useEffect(() => {
+    loadedRef.current = false;
+    setLoaded(false);
+    setPlaying(false);
+    if (!src) return;
+    const t = setTimeout(() => {
+      if (!loadedRef.current) setFailed(src);
+    }, VIDEO_TIMEOUT_MS);
+    return () => clearTimeout(t);
+  }, [src]);
 
   // Closing (or switching style) pauses and unloads the clip so nothing keeps downloading.
   useEffect(() => {
@@ -194,24 +213,26 @@ function StylePreview({ style }: { style: StyleT }) {
     };
   }, [src]);
 
-  const image = (
-    <PreviewImage
-      src={style.previewUrl}
-      className="aspect-[9/16] max-h-[60vh] w-full rounded-md border border-[#333] bg-black object-cover"
-      fallback={
-        <div className="flex gap-1" aria-label="Sampled frames">
-          {[0, 1, 2, 3, 4, 5].map((i) => (
-            <span
-              key={i}
-              className="aspect-[9/16] flex-1 rounded-sm border border-[#333]"
-              style={{ background: bg, opacity: 1 - i * 0.08 }}
-            />
-          ))}
-        </div>
-      }
-    />
+  const frames = (
+    <div className="flex gap-1" aria-label="Sampled frames">
+      {[0, 1, 2, 3, 4, 5].map((i) => (
+        <span
+          key={i}
+          className="aspect-[9/16] flex-1 rounded-sm border border-[#333]"
+          style={{ background: bg, opacity: 1 - i * 0.08 }}
+        />
+      ))}
+    </div>
   );
-  if (!src || failed === src) return image;
+  if (!src || failed === src) {
+    return (
+      <PreviewImage
+        src={style.previewUrl}
+        className="aspect-[9/16] max-h-[60vh] w-full rounded-md border border-[#333] bg-black object-cover"
+        fallback={frames}
+      />
+    );
+  }
 
   const toggle = () => {
     const el = video.current;
@@ -232,10 +253,19 @@ function StylePreview({ style }: { style: StyleT }) {
         preload="auto"
         aria-label={`${style.name} preview`}
         className="size-full object-cover"
-        onPlay={() => setPlaying(true)}
+        onLoadedData={() => {
+          loadedRef.current = true;
+          setLoaded(true);
+        }}
+        onPlaying={() => setPlaying(true)}
         onPause={() => setPlaying(false)}
         onError={() => setFailed(src)}
       />
+      {!loaded && (
+        <div data-testid="preview-poster" className="pointer-events-none absolute inset-0 flex items-center bg-black">
+          <PreviewImage src={style.previewUrl} className="size-full object-cover" fallback={frames} />
+        </div>
+      )}
       <button
         type="button"
         aria-label={playing ? 'Pause preview' : 'Play preview'}
