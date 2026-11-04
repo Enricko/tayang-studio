@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ChevronLeft, ChevronRight, MapPin, Pause, Play, SquarePlus } from 'lucide-react';
 import { formatTimecode, frameAt, secAt } from '@tayang/shared';
 import type { MediaInfo, Mark } from '@tayang/shared';
@@ -43,6 +44,7 @@ export function Preview({
   onRender?(): void;
   rendering?: boolean;
 }) {
+  const { t } = useTranslation();
   const [videoPath, setVideoPath] = useState<string | null>(null);
   const [info, setInfo] = useState<MediaInfo | null>(null);
   const [thumbs, setThumbs] = useState<string[]>([]);
@@ -101,8 +103,8 @@ export function Preview({
     return (
       <div className="flex h-full flex-col items-center justify-center gap-4 bg-[#101010] px-5 text-center">
         <Oyen mood={busy ? 'sleepy' : 'default'} size={56} />
-        <span className="text-[13px] text-text-2">{busy ? 'Rendering…' : 'Nothing rendered yet'}</span>
-        {!busy && <Button variant="secondary" onClick={() => void render()}>Render preview</Button>}
+        <span className="text-[13px] text-text-2">{busy ? t('preview.rendering') : t('preview.nothing')}</span>
+        {!busy && <Button variant="secondary" onClick={() => void render()}>{t('preview.renderPreview')}</Button>}
         {error && (
           <p role="alert" className="text-xs text-[#FFB08F]">
             {error}
@@ -189,18 +191,18 @@ export function Preview({
       </div>
 
       <div className="flex items-center gap-2">
-        <Button variant="secondary" size="icon" aria-label={playing ? 'Pause' : 'Play'} onClick={toggle} className="size-8 px-0">
+        <Button variant="secondary" size="icon" aria-label={playing ? t('preview.pause') : t('preview.play')} onClick={toggle} className="size-8 px-0">
           {playing ? <Pause size={12} fill="currentColor" /> : <Play size={12} fill="currentColor" />}
         </Button>
-        <Button variant="ghost" size="icon" aria-label="Previous frame" onClick={() => seek(frame - 1)} className="size-8 px-0">
+        <Button variant="ghost" size="icon" aria-label={t('preview.previousFrame')} onClick={() => seek(frame - 1)} className="size-8 px-0">
           <ChevronLeft size={16} strokeWidth={1.5} />
         </Button>
-        <Button variant="ghost" size="icon" aria-label="Next frame" onClick={() => seek(frame + 1)} className="size-8 px-0">
+        <Button variant="ghost" size="icon" aria-label={t('preview.nextFrame')} onClick={() => seek(frame + 1)} className="size-8 px-0">
           <ChevronRight size={16} strokeWidth={1.5} />
         </Button>
         <span className="font-mono text-xs tabular-nums text-foreground">{formatTimecode(secAt(frame, fps), fps)}</span>
         <span className="font-mono text-xs tabular-nums text-text-3">/ {formatTimecode(durationSec, fps)}</span>
-        <span className="ml-auto font-mono text-xs tabular-nums text-text-3">Frame {frame}</span>
+        <span className="ml-auto font-mono text-xs tabular-nums text-text-3">{t('preview.frame', { n: frame })}</span>
       </div>
 
       <Scrubber durationSec={durationSec} fps={fps} frame={frame} thumbnails={thumbs} onSeek={seek} scenes={scenes} />
@@ -208,7 +210,7 @@ export function Preview({
       <div className="flex items-center gap-2">
         <Button variant="secondary" disabled={sending} onClick={() => void sendFrame()} className="px-3 text-[13px]">
           <SquarePlus size={16} strokeWidth={1.5} />
-          Send frame to chat
+          {t('preview.sendFrame')}
         </Button>
         <Button
           variant="ghost"
@@ -217,7 +219,7 @@ export function Preview({
           className={`px-3 text-[13px] ${marking ? 'text-foreground' : ''}`}
         >
           <MapPin size={16} strokeWidth={1.5} />
-          Mark a spot
+          {t('preview.markSpot')}
         </Button>
       </div>
       {error && (
@@ -229,13 +231,13 @@ export function Preview({
       <div className="flex items-center gap-2 text-xs text-text-3">
         <Key>←</Key>
         <Key>→</Key>
-        <span>one frame</span>
+        <span>{t('preview.oneFrame')}</span>
         <Key className="ml-2">Shift</Key>
-        <span>one second</span>
+        <span>{t('preview.oneSecond')}</span>
         {checked && (
           <span className="ml-auto inline-flex items-center gap-1 text-text-2">
             <Oyen mood="happy" size={24} />
-            Frames checked
+            {t('preview.framesChecked')}
           </span>
         )}
       </div>

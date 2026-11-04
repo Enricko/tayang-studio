@@ -1,4 +1,5 @@
 import { useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { formatTimecode } from '@tayang/shared';
 
 export interface Scene {
@@ -21,6 +22,7 @@ export interface ScrubberProps {
 const HATCH = 'repeating-linear-gradient(135deg, #1A1A1A 0 6px, #202020 6px 12px)';
 
 export function Scrubber({ durationSec, fps, frame, thumbnails, onSeek, scenes }: ScrubberProps) {
+  const { t } = useTranslation();
   const total = Math.max(1, Math.round(durationSec * fps));
   const last = total - 1;
   const ref = useRef<HTMLDivElement>(null);
@@ -63,7 +65,7 @@ export function Scrubber({ durationSec, fps, frame, thumbnails, onSeek, scenes }
         ref={ref}
         role="slider"
         tabIndex={0}
-        aria-label="Frames"
+        aria-label={t('preview.framesAria')}
         aria-valuemin={0}
         aria-valuemax={last}
         aria-valuenow={frame}
