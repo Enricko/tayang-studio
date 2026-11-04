@@ -215,7 +215,7 @@ export const useChat = create<ChatState>((set, get) => {
       append(chatId, user);
       void persist(chatId, user);
       try {
-        const agent = opts?.agentId ?? useApp.getState().settings?.defaultAgent ?? 'claude';
+        const agent = opts?.agentId ?? chatAgent.get(chatId) ?? useApp.getState().settings?.defaultAgent ?? 'claude';
         chatAgent.set(chatId, agent);
         if (opts?.job) chatJobs.set(chatId, opts.job);
         writeJob(chatId, 'working');

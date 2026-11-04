@@ -90,7 +90,9 @@ export type MessagePart =
       toolCallId: string;
       title: string;
       status: 'pending' | 'running' | 'done' | 'failed';
-    };
+    }
+  | { type: 'a2ui'; surfaceId: string; messages: unknown[] }
+  | { type: 'a2ui-action'; summary: string; action: object };
 
 export interface ChatMessage {
   id: string;

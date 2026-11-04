@@ -198,6 +198,15 @@ pub enum MessagePart {
         title: String,
         status: ToolCallStatus,
     },
+    A2ui {
+        surface_id: String,
+        messages: Vec<serde_json::Value>,
+    },
+    #[serde(rename = "a2ui-action")]
+    A2uiAction {
+        summary: String,
+        action: serde_json::Value,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -418,6 +427,18 @@ mod tests {
             "imagePath":"/x.png","marks":[{"x":0.5,"y":0.25}]});
         let part: MessagePart = serde_json::from_value(v.clone()).unwrap();
         assert!(matches!(&part, MessagePart::Frame { frame: 12, .. }));
+        assert_eq!(serde_json::to_value(&part).unwrap(), v);
+    }
+
+    #[test]
+    fn message_part_a2ui_round_trips() {
+        let v = json!({"type":"a2ui","surfaceId":"s","messages":[]});
+        let part: MessagePart = serde_json::from_value(v.clone()).unwrap();
+        assert!(matches!(&part, MessagePart::A2ui { surface_id, .. } if surface_id == "s"));
+        assert_eq!(serde_json::to_value(&part).unwrap(), v);
+        let v = json!({"type":"a2ui-action","summary":"Picked: A","action":{"version":"v0.9"}});
+        let part: MessagePart = serde_json::from_value(v.clone()).unwrap();
+        assert!(matches!(&part, MessagePart::A2uiAction { summary, .. } if summary == "Picked: A"));
         assert_eq!(serde_json::to_value(&part).unwrap(), v);
     }
 
