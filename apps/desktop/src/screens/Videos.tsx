@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Search } from 'lucide-react';
+import { CalendarClock, Search } from 'lucide-react';
 import type { Project, ProjectStatus } from '@tayang/shared';
 import { Button } from '@/components/Button';
 import { Oyen } from '@/components/Oyen';
+import { ScheduleDialog } from '@/components/ScheduleDialog';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { locale } from '@/i18n';
 import { listProjects } from '@/lib/ipc';
 import { openProjectChat } from '@/lib/openProject';
 import { ago, mmss } from '@/lib/time';
@@ -51,6 +53,7 @@ export function Videos() {
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [tab, setTab] = useState<Tab>('all');
   const [q, setQ] = useState('');
+  const [scheduleFor, setScheduleFor] = useState<Project | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -111,11 +114,11 @@ export function Videos() {
           {shown.map((p) => {
             const [bg, fg] = thumbFor(p.id);
             return (
+              <div key={p.id} className="relative">
               <button
-                key={p.id}
                 type="button"
                 onClick={() => void openProjectChat(p).catch(() => {})}
-                className="flex flex-col gap-3 bg-transparent p-0 text-left text-foreground"
+                className="flex w-full flex-col gap-3 bg-transparent p-0 text-left text-foreground"
               >
                 <div
                   className="relative flex aspect-[9/16] w-full flex-col justify-between overflow-hidden rounded-xl border border-[#333] p-4"
@@ -136,12 +139,33 @@ export function Videos() {
                     <span className="text-text-2">{t(`videos.status.${p.status}`)}</span>
                     <span className="text-text-3">· {p.format} · {ago(p.updatedAt)}</span>
                   </div>
+                  {p.scheduledAt && !Number.isNaN(new Date(p.scheduledAt).getTime()) && (
+                    <span className="font-mono text-[11px] text-text-3">
+                      {new Intl.DateTimeFormat(locale(), { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(p.scheduledAt))}
+                    </span>
+                  )}
                 </div>
               </button>
+              <button
+                type="button"
+                aria-label={t('schedule.actionFor', { title: p.title })}
+                title={t('schedule.action')}
+                onClick={() => setScheduleFor(p)}
+                className="absolute top-2 right-2 inline-flex size-8 items-center justify-center rounded-md bg-black/60 text-white hover:bg-black/80"
+              >
+                <CalendarClock size={16} strokeWidth={1.5} aria-hidden="true" />
+              </button>
+              </div>
             );
           })}
         </div>
       )}
+      <ScheduleDialog
+        open={scheduleFor !== null}
+        onOpenChange={(o) => !o && setScheduleFor(null)}
+        project={scheduleFor}
+        onSaved={(saved) => setProjects((l) => l && l.map((x) => (x.id === saved.id ? saved : x)))}
+      />
     </div>
   );
 }

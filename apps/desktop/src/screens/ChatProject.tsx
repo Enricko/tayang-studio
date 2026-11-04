@@ -7,6 +7,7 @@ import { Composer } from '@/components/Composer';
 import { MessageList } from '@/components/MessageList';
 import { PermissionCard } from '@/components/PermissionCard';
 import { Preview } from '@/screens/preview/Preview';
+import { ScheduleDialog } from '@/components/ScheduleDialog';
 import { ScrollToBottom } from '@/components/ScrollToBottom';
 import { TurnRail } from '@/components/TurnRail';
 import { StepBar } from '@/components/StepBar';
@@ -27,6 +28,7 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
   const [chat, setChat] = useState<Chat | null>(null);
   const agent = chat?.agentId ?? defaultAgent;
   const [project, setProject] = useState<Project | null>(null);
+  const [scheduling, setScheduling] = useState(false);
   const [rendering, setRendering] = useState(false);
   const [renderError, setRenderError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
@@ -136,6 +138,11 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
             <StepBar status={project.status} />
           </div>
         )}
+        {project && (
+          <Button variant="secondary" onClick={() => setScheduling(true)}>
+            {t('schedule.action')}
+          </Button>
+        )}
         <Button
           variant="primary"
           disabled={!project || rendering || streaming}
@@ -145,6 +152,7 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
           {rendering ? t('chat.rendering') : t('chat.render')}
         </Button>
       </header>
+      <ScheduleDialog open={scheduling} onOpenChange={setScheduling} project={project} onSaved={setProject} />
       {runs && runs.render.length > 0 && (
         <p className="m-0 border-b border-border px-6 py-2 font-mono text-xs break-words text-text-3">
           {t('chat.runs', { commands: [...(runs.install?.length ? [runs.install] : []), runs.render].map(shellDisplay).join(' && ') })}
