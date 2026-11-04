@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { Fragment, useState, type ReactNode } from 'react';
 import {
   AlertCircle,
   ArrowRight,
@@ -39,6 +39,9 @@ export interface A2uiAction {
 }
 
 const MAX_DEPTH = 24;
+/** Most nodes one surface render may produce; keeps cycles and repeated children cheap. */
+const NODE_BUDGET = 500;
+const TRUNCATED = "Some options couldn't be shown";
 const UNSUPPORTED = "This option can't be shown here";
 
 const ICONS: Record<string, LucideIcon> = {
@@ -85,6 +88,7 @@ interface Ctx {
   setData: (path: string, value: unknown) => void;
   disabled: boolean;
   fire: (component: A2uiComponent, base: string) => void;
+  budget: { used: number; over: boolean };
 }
 
 const stringOf = (v: unknown): string => (v === undefined || v === null ? '' : typeof v === 'string' ? v : String(v));
@@ -138,11 +142,18 @@ function optionList(v: unknown): { label: string; value: string }[] {
   );
 }
 
-function Node({ id, base, ctx, depth }: { id: string; base: string; ctx: Ctx; depth: number }): ReactNode {
+/** A plain function (not a component) so the node budget is counted once per surface render. */
+function renderNode(id: string, base: string, ctx: Ctx, anc: string[]): ReactNode {
   const c = ctx.surface.components[id];
-  if (!c || depth > MAX_DEPTH) return null;
+  if (!c || anc.length > MAX_DEPTH || anc.includes(id)) return null;
+  if (ctx.budget.used >= NODE_BUDGET) {
+    ctx.budget.over = true;
+    return null;
+  }
+  ctx.budget.used++;
+  const chain = [...anc, id];
   const sub = (cid: unknown, b = base) =>
-    typeof cid === 'string' ? <Node key={`${cid}@${b}`} id={cid} base={b} ctx={ctx} depth={depth + 1} /> : null;
+    typeof cid === 'string' ? <Fragment key={`${cid}@${b}`}>{renderNode(cid, b, ctx, chain)}</Fragment> : null;
   const text = (v: unknown) => stringOf(resolve(ctx, v, base));
   const bindPath = (v: unknown) => (isBinding(v) ? absPath(v.path, base) : null);
 
@@ -339,18 +350,22 @@ function Node({ id, base, ctx, depth }: { id: string; base: string; ctx: Ctx; de
 }
 
 /** The readable line for an action: the chosen option labels, else the button's own label. */
-function summarize(ctx: Ctx, button: A2uiComponent): string {
+function summarize(ctx: Ctx, button: A2uiComponent, base: string): string {
   const labels: string[] = [];
+  // Only pickers the button's own context reads count as its choice.
+  const ev = (button.action as { event?: { context?: unknown } } | undefined)?.event;
+  const bound = new Set<string>();
+  if (isObj(ev?.context)) for (const v of Object.values(ev.context)) if (isBinding(v)) bound.add(absPath(v.path, base));
   for (const c of Object.values(ctx.surface.components)) {
-    if (c.component !== 'ChoicePicker' || !isBinding(c.selections)) continue;
-    const sel = getAt(ctx.data, c.selections.path);
+    if (c.component !== 'ChoicePicker' || !isBinding(c.selections) || !bound.has(absPath(c.selections.path, base))) continue;
+    const sel = getAt(ctx.data, absPath(c.selections.path, base));
     if (!Array.isArray(sel)) continue;
     const options = optionList(c.options);
     for (const v of sel) labels.push(options.find((o) => o.value === stringOf(v))?.label ?? stringOf(v));
   }
   if (labels.length) return `Picked: ${labels.join(', ')}`;
   const child = typeof button.child === 'string' ? ctx.surface.components[button.child] : undefined;
-  const label = child ? stringOf(resolve(ctx, child.text, '')) : '';
+  const label = child ? stringOf(resolve(ctx, child.text, base)) : '';
   return label ? `Picked: ${label}` : 'Sent a reply';
 }
 
@@ -368,6 +383,7 @@ export function A2uiSurface({
   const [confirmUrl, setConfirmUrl] = useState<string | null>(null);
 
   const ctx: Ctx = {
+    budget: { used: 0, over: false },
     surface,
     data,
     disabled,
@@ -391,7 +407,7 @@ export function A2uiSurface({
         sourceComponentId: c.id,
         timestamp: new Date().toISOString(),
         context,
-        summary: summarize(ctx, c),
+        summary: summarize(ctx, c, base),
       });
     },
   };
@@ -399,7 +415,8 @@ export function A2uiSurface({
   if (!surface.components.root) return null;
   return (
     <div data-testid="a2ui-surface" data-answered={disabled || undefined} className="flex max-w-[520px] flex-col gap-3">
-      <Node id="root" base="" ctx={ctx} depth={0} />
+      {renderNode('root', '', ctx, [])}
+      {ctx.budget.over && <p className="m-0 text-[12px] text-text-3">{TRUNCATED}</p>}
       <Dialog open={confirmUrl !== null} onOpenChange={(o) => !o && setConfirmUrl(null)}>
         <DialogContent>
           <DialogHeader>
