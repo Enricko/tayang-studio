@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { useRef } from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ChatMessage, MessagePart } from '@tayang/shared';
 import { MessageList } from '@/components/MessageList';
 import { ScrollToBottom } from '@/components/ScrollToBottom';
@@ -183,6 +183,83 @@ describe('fix round', () => {
     view.rerender(<Both n={3} />);
     expect(spy).toHaveBeenCalled();
     spy.mockRestore();
+  });
+
+  describe('opening a chat lands on the latest message', () => {
+    const msgs = (chatId: string, n: number): ChatMessage[] =>
+      Array.from({ length: n }, (_, i) => ({ ...agent([text(`${chatId}-${i}`)]), id: `${chatId}-${i}`, chatId }));
+    function Chat({ messages }: { messages: ChatMessage[] }) {
+      const ref = useRef<HTMLDivElement>(null);
+      return (
+        <div
+          data-testid="box"
+          ref={(el) => {
+            ref.current = el;
+            if (el) {
+              Object.defineProperty(el, 'clientHeight', { configurable: true, value: 500 });
+              Object.defineProperty(el, 'scrollHeight', { configurable: true, value: 2000 });
+            }
+          }}
+        >
+          <MessageList streaming={false} messages={messages} scrollRef={ref} />
+        </div>
+      );
+    }
+    let resized: (() => void)[] = [];
+    beforeEach(() => {
+      resized = [];
+      vi.stubGlobal(
+        'ResizeObserver',
+        class {
+          constructor(cb: () => void) {
+            resized.push(cb);
+          }
+          observe() {}
+          disconnect() {}
+        },
+      );
+    });
+    afterEach(() => vi.unstubAllGlobals());
+
+    it('switching to another chat scrolls to its end, even after reading up in the last one', () => {
+      const spy = vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(() => {});
+      const view = render(<Chat messages={msgs('c1', 5)} />);
+      expect(spy).toHaveBeenCalledWith({ block: 'end' });
+      const box = screen.getByTestId('box');
+      box.scrollTop = 100;
+      fireEvent.scroll(box);
+      spy.mockClear();
+      view.rerender(<Chat messages={msgs('c2', 8)} />);
+      expect(spy).toHaveBeenCalledWith({ block: 'end' });
+      spy.mockRestore();
+    });
+
+    it('history loaded after the screen opened also lands at the end', () => {
+      const spy = vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(() => {});
+      const view = render(<Chat messages={[]} />);
+      spy.mockClear();
+      view.rerender(<Chat messages={msgs('c1', 6)} />);
+      expect(spy).toHaveBeenCalledWith({ block: 'end' });
+      spy.mockRestore();
+    });
+
+    it('keeps to the end while the messages finish laying out, unless the reader scrolled up', () => {
+      const spy = vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(() => {});
+      render(<Chat messages={msgs('c1', 5)} />);
+      const box = screen.getByTestId('box');
+      box.scrollTop = 1500;
+      fireEvent.scroll(box);
+      spy.mockClear();
+      // Images and cards grow the list after the first scroll.
+      resized.forEach((cb) => cb());
+      expect(spy).toHaveBeenCalledWith({ block: 'end' });
+      box.scrollTop = 100;
+      fireEvent.scroll(box);
+      spy.mockClear();
+      resized.forEach((cb) => cb());
+      expect(spy).not.toHaveBeenCalled();
+      spy.mockRestore();
+    });
   });
 
   it('never pairs outline-none with a focus outline width but no outline style', () => {

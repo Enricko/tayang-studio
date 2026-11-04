@@ -312,6 +312,9 @@ export function MessageList({
   // to an earlier turn while the agent streams stays put.
   const stick = useRef(true);
   const prev = useRef({ count: messages.length, last: messages[messages.length - 1]?.id });
+  const log = useRef<HTMLDivElement>(null);
+  /** The chat whose messages were last shown: opening or switching to another starts at its end. */
+  const shownChat = useRef<string | null>(null);
   useEffect(() => {
     const box = scrollRef?.current;
     if (!box) return;
@@ -324,9 +327,19 @@ export function MessageList({
     };
     box.addEventListener('scroll', onScroll, { passive: true });
     box.addEventListener(STICK_EVENT, onStick);
+    // Images, cards and code blocks keep growing the list after the first scroll; stay at the end
+    // through that while following, so opening a chat doesn't land mid-conversation.
+    const ro =
+      typeof ResizeObserver === 'undefined'
+        ? null
+        : new ResizeObserver(() => {
+            if (stick.current) end.current?.scrollIntoView?.({ block: 'end' });
+          });
+    if (log.current) ro?.observe(log.current);
     return () => {
       box.removeEventListener('scroll', onScroll);
       box.removeEventListener(STICK_EVENT, onStick);
+      ro?.disconnect();
     };
   }, [scrollRef]);
   useEffect(() => {
@@ -334,6 +347,11 @@ export function MessageList({
     const sent = last?.role === 'user' && (messages.length !== prev.current.count || last.id !== prev.current.last);
     prev.current = { count: messages.length, last: last?.id };
     if (sent) stick.current = true;
+    // A chat just opened (or its history just loaded): start at the latest message.
+    if (last && last.chatId !== shownChat.current) {
+      shownChat.current = last.chatId;
+      stick.current = true;
+    }
     if (stick.current) end.current?.scrollIntoView?.({ block: 'end' });
   }, [messages, streaming]);
 
@@ -375,7 +393,7 @@ export function MessageList({
   const turn = useMemo<LiveTurn>(() => ({ startedAt, render }), [startedAt, render]);
   return (
     <ActionsContext.Provider value={actions}>
-    <div className="flex flex-col gap-6" role="log" aria-label={t('chat.conversation')}>
+    <div ref={log} className="flex flex-col gap-6" role="log" aria-label={t('chat.conversation')}>
       {messages.map((m, i) => {
         if (m.role === 'user') {
           return (
