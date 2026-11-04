@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { AgentId, AgentUpdate, Job, JobStatus, PermissionRequest } from '@tayang/shared';
-import { buildStudyStylePrompt, parseStyleResult } from '@tayang/skills';
+import { buildStudyStylePrompt, parseStarterTemplate, parseStyleResult, type StarterTemplate } from '@tayang/skills';
 import {
   agentCancel,
   agentPrompt,
@@ -9,6 +9,7 @@ import {
   agentStop,
   assetUrl,
   deleteJob,
+  listStyles,
   makeStylePreview,
   readStyleResult,
   saveStyle,
@@ -46,6 +47,15 @@ interface StudyState {
   /** Stop a running study; its job ends failed "Cancelled". */
   cancel(): Promise<void>;
   dismiss(): void;
+}
+
+/** Built-in styles that carry a starter template (the engines a copied style can be built on). Never throws. */
+async function builtinTemplates() {
+  try {
+    return (await listStyles()).filter((s) => s.source === 'builtin' && s.template);
+  } catch {
+    return [];
+  }
 }
 
 export const studyChatId = (studyId: string) => `study-${studyId}`;
@@ -148,7 +158,16 @@ export const useStudy = create<StudyState>((set, get) => {
       const parsed = raw ? parseStyleResult(raw, url) : null;
       if (!mine()) return;
       if (!parsed) return fail(i18n.t('agents.studyUnreadable'), stored('agents.studyUnreadable'));
-      const style = { ...parsed, id: `copied-${studyId}`, createdAt: new Date().toISOString() };
+      // The starter template the study picked, when it is a real built-in one: its engine, this style's look.
+      const starterId = raw ? parseStarterTemplate(raw) : null;
+      const starter = starterId ? (await builtinTemplates()).find((s) => s.id === starterId) : undefined;
+      if (!mine()) return;
+      const style = {
+        ...parsed,
+        id: `copied-${studyId}`,
+        createdAt: new Date().toISOString(),
+        ...(starter?.template ? { template: starter.template, basedOn: starter.id } : {}),
+      };
       await saveStyle(style);
       // A short silent preview from the downloaded video. Never fails the study.
       try {
@@ -226,7 +245,9 @@ export const useStudy = create<StudyState>((set, get) => {
         // Style studies always run in auto mode (the app enforces it too).
         await agentStart(studyChatId(studyId), agentId, true);
         if (gone()) return await abandon();
-        await agentPrompt(studyChatId(studyId), [{ type: 'text', text: buildStudyStylePrompt(url, dir) }]);
+        const templates: StarterTemplate[] = (await builtinTemplates()).map((t) => ({ id: t.id, name: t.name }));
+        if (gone()) return await abandon();
+        await agentPrompt(studyChatId(studyId), [{ type: 'text', text: buildStudyStylePrompt(url, dir, templates) }]);
       } catch (e) {
         if (gone()) return await abandon();
         {

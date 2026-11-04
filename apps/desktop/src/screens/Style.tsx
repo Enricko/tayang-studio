@@ -317,8 +317,11 @@ function Detail({
   onDirty,
   onClone,
   onEditStarted,
+  starters,
 }: {
   style: StyleT;
+  /** Built-in styles with a starter template: what a copied or own style can be built on. */
+  starters: StyleT[];
   startInEdit: boolean;
   onChanged(): void;
   onDeleted(id: string): void;
@@ -334,6 +337,17 @@ function Detail({
   const [prompt, setPrompt] = useState(style.prompt);
   const [error, setError] = useState<string | null>(null);
   const builtin = style.source === 'builtin';
+
+  /** Builds this style on a built-in starter template (its engine), or on none. The look stays this style's. */
+  const setStarter = async (id: string) => {
+    const starter = starters.find((s) => s.id === id);
+    try {
+      await saveStyle({ ...style, template: starter?.template ?? null, basedOn: starter ? starter.id : null });
+      onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
 
   const reset = () => {
     setName(style.name);
@@ -453,6 +467,27 @@ function Detail({
             </dl>
           )
         )}
+        {!builtin && !editing && (
+          <div className="flex flex-col gap-2">
+            <label htmlFor="style-starter" className="text-xs text-text-3">
+              {t('style.starterTemplate')}
+            </label>
+            <select
+              id="style-starter"
+              value={style.template && style.basedOn ? style.basedOn : ''}
+              onChange={(e) => void setStarter(e.target.value)}
+              className="h-9 w-full rounded-md border border-border bg-background px-2 text-[13px] text-foreground"
+            >
+              <option value="">{t('style.starterNone')}</option>
+              {starters.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+            <span className="text-xs leading-normal text-text-3">{t('style.starterHint')}</span>
+          </div>
+        )}
         <div className="flex flex-col gap-2">
           <label htmlFor="style-prompt" className="text-xs text-text-3">
             {t('style.promptLabel')}
@@ -506,10 +541,7 @@ function Detail({
                 variant="secondary"
                 className="h-9 px-3 text-[13px]"
                 onClick={() =>
-                  navigate({
-                    name: 'chat-new',
-                    ...(style.template ? { styleId: style.id } : {}),
-                  })
+                  navigate({ name: 'chat-new', styleId: style.id })
                 }
               >
                 {t('style.useInChat')}
@@ -747,6 +779,7 @@ export function Style() {
               onChanged={() => setVersion((v) => v + 1)}
               onDirty={setDirty}
               onEditStarted={() => setEditNew(null)}
+              starters={stored.filter((x) => x.source === 'builtin' && x.template)}
               onClone={async (clone) => {
                 await saveStyle(clone);
                 setStored((prev) => (prev.some((x) => x.id === clone.id) ? prev : [...prev, clone]));
