@@ -132,6 +132,7 @@ describe('Sign in with Google', () => {
     ['server', `The Tayang API at ${API} answered something unexpected`],
     ['rate-limited', 'Too many sign-in attempts'],
     ['storage', "couldn't keep your sign-in on this computer"],
+    ['keychain', "Tayang couldn't save your sign-in in the keychain"],
   ] as const)('shows %s from the poller with Try again', async (error, text) => {
     const dialog = await openDialog();
     await within(dialog).findByText('ABCD-EFGH');

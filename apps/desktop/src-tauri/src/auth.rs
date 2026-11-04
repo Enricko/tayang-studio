@@ -40,12 +40,38 @@ pub fn account_key(base: &str) -> Result<String, AuthError> {
 
 // ---- token storage ----
 
+/// Why a token store call failed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StoreError {
+    /// There's no keychain on this computer (no backend, no Secret Service): auth.json stands in.
+    Unavailable(String),
+    /// The keychain is there but said no (the user clicked Deny, or it stayed locked). Never a
+    /// reason to put the token in a file instead.
+    Refused(String),
+    /// Anything else, such as auth.json that couldn't be written.
+    Failed(String),
+}
+
+impl std::fmt::Display for StoreError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Unavailable(e) => write!(f, "no keychain: {e}"),
+            Self::Refused(e) => write!(f, "the keychain refused: {e}"),
+            Self::Failed(e) => f.write_str(e),
+        }
+    }
+}
+
+fn io_err(e: impl ToString) -> StoreError {
+    StoreError::Failed(e.to_string())
+}
+
 /// Where sign-in tokens live, by keychain account. Injectable so tests never touch the OS keychain.
 pub trait TokenStore: Send + Sync {
-    fn get(&self, account: &str) -> Result<Option<String>, String>;
-    fn set(&self, account: &str, token: &str) -> Result<(), String>;
+    fn get(&self, account: &str) -> Result<Option<String>, StoreError>;
+    fn set(&self, account: &str, token: &str) -> Result<(), StoreError>;
     /// Deleting a token that isn't there is not an error.
-    fn delete(&self, account: &str) -> Result<(), String>;
+    fn delete(&self, account: &str) -> Result<(), StoreError>;
 }
 
 /// In-memory store, for tests.
@@ -53,14 +79,14 @@ pub trait TokenStore: Send + Sync {
 pub struct MemoryStore(Mutex<HashMap<String, String>>);
 
 impl TokenStore for MemoryStore {
-    fn get(&self, account: &str) -> Result<Option<String>, String> {
+    fn get(&self, account: &str) -> Result<Option<String>, StoreError> {
         Ok(self.0.lock().unwrap_or_else(|e| e.into_inner()).get(account).cloned())
     }
-    fn set(&self, account: &str, token: &str) -> Result<(), String> {
+    fn set(&self, account: &str, token: &str) -> Result<(), StoreError> {
         self.0.lock().unwrap_or_else(|e| e.into_inner()).insert(account.into(), token.into());
         Ok(())
     }
-    fn delete(&self, account: &str) -> Result<(), String> {
+    fn delete(&self, account: &str) -> Result<(), StoreError> {
         self.0.lock().unwrap_or_else(|e| e.into_inner()).remove(account);
         Ok(())
     }
@@ -70,26 +96,46 @@ impl TokenStore for MemoryStore {
 pub struct KeyringStore;
 
 impl KeyringStore {
-    fn entry(account: &str) -> Result<keyring::Entry, String> {
-        keyring::Entry::new(SERVICE, account).map_err(|e| e.to_string())
+    fn entry(account: &str) -> Result<keyring::Entry, StoreError> {
+        keyring::Entry::new(SERVICE, account).map_err(classify)
+    }
+}
+
+/// Only "there is no keychain here" is `Unavailable`; a keychain that is there but says no
+/// (Deny, a dismissed or locked prompt) is `Refused`.
+/// - macOS: no keychain / not available is `NoStorageAccess`; Deny is a `PlatformFailure`
+///   (errSecUserCanceled, errSecAuthFailed).
+/// - Windows: `NoStorageAccess` is no logon session.
+/// - Linux: no Secret Service on the bus fails to connect, a `PlatformFailure`; a locked
+///   collection or a dismissed prompt is `NoStorageAccess`.
+pub fn classify(e: keyring::Error) -> StoreError {
+    let none_here = if cfg!(target_os = "linux") {
+        matches!(e, keyring::Error::PlatformFailure(_))
+    } else {
+        matches!(e, keyring::Error::NoStorageAccess(_))
+    };
+    if none_here {
+        StoreError::Unavailable(e.to_string())
+    } else {
+        StoreError::Refused(e.to_string())
     }
 }
 
 impl TokenStore for KeyringStore {
-    fn get(&self, account: &str) -> Result<Option<String>, String> {
+    fn get(&self, account: &str) -> Result<Option<String>, StoreError> {
         match Self::entry(account)?.get_password() {
             Ok(t) => Ok(Some(t)),
             Err(keyring::Error::NoEntry) => Ok(None),
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(classify(e)),
         }
     }
-    fn set(&self, account: &str, token: &str) -> Result<(), String> {
-        Self::entry(account)?.set_password(token).map_err(|e| e.to_string())
+    fn set(&self, account: &str, token: &str) -> Result<(), StoreError> {
+        Self::entry(account)?.set_password(token).map_err(classify)
     }
-    fn delete(&self, account: &str) -> Result<(), String> {
+    fn delete(&self, account: &str) -> Result<(), StoreError> {
         match Self::entry(account)?.delete_credential() {
             Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(classify(e)),
         }
     }
 }
@@ -106,24 +152,24 @@ impl FileStore {
     }
 
     /// A missing or damaged file holds no tokens.
-    fn read(&self) -> Result<FileMap, String> {
+    fn read(&self) -> Result<FileMap, StoreError> {
         match std::fs::read(&self.path) {
             Ok(bytes) => Ok(serde_json::from_slice(&bytes).unwrap_or_default()),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(FileMap::new()),
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(io_err(e)),
         }
     }
 
     /// Writes a fresh 0600 file and renames it into place; no tokens left means no file.
-    fn write(&self, map: &FileMap) -> Result<(), String> {
+    fn write(&self, map: &FileMap) -> Result<(), StoreError> {
         if map.is_empty() {
             return match std::fs::remove_file(&self.path) {
-                Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.to_string()),
+                Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(io_err(e)),
                 _ => Ok(()),
             };
         }
         if let Some(dir) = self.path.parent() {
-            std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+            std::fs::create_dir_all(dir).map_err(io_err)?;
         }
         let tmp = self.path.with_extension("json.tmp");
         let _ = std::fs::remove_file(&tmp);
@@ -131,29 +177,29 @@ impl FileStore {
         opts.write(true).create_new(true);
         #[cfg(unix)]
         std::os::unix::fs::OpenOptionsExt::mode(&mut opts, 0o600);
-        let body = serde_json::to_vec(map).map_err(|e| e.to_string())?;
+        let body = serde_json::to_vec(map).map_err(io_err)?;
         let written = opts.open(&tmp).and_then(|mut f| {
             std::io::Write::write_all(&mut f, &body)?;
             f.sync_all()
         });
         if let Err(e) = written.and_then(|_| std::fs::rename(&tmp, &self.path)) {
             let _ = std::fs::remove_file(&tmp);
-            return Err(e.to_string());
+            return Err(io_err(e));
         }
         Ok(())
     }
 }
 
 impl TokenStore for FileStore {
-    fn get(&self, account: &str) -> Result<Option<String>, String> {
+    fn get(&self, account: &str) -> Result<Option<String>, StoreError> {
         Ok(self.read()?.remove(account))
     }
-    fn set(&self, account: &str, token: &str) -> Result<(), String> {
+    fn set(&self, account: &str, token: &str) -> Result<(), StoreError> {
         let mut map = self.read()?;
         map.insert(account.into(), token.into());
         self.write(&map)
     }
-    fn delete(&self, account: &str) -> Result<(), String> {
+    fn delete(&self, account: &str) -> Result<(), StoreError> {
         let mut map = self.read()?;
         if map.remove(account).is_none() {
             return Ok(());
@@ -162,8 +208,8 @@ impl TokenStore for FileStore {
     }
 }
 
-/// The keychain, falling back to the file only when the keychain itself fails. The fallback
-/// is logged once.
+/// The keychain, falling back to the file only when there is no keychain at all. A keychain
+/// that refuses (Deny) is an error, never a quiet move to the file. The fallback is logged once.
 pub struct SecureStore<K: TokenStore> {
     keychain: K,
     file: FileStore,
@@ -175,7 +221,7 @@ impl<K: TokenStore> SecureStore<K> {
         Self { keychain, file, warned: AtomicBool::new(false) }
     }
 
-    fn fallback(&self, why: &str) {
+    fn fallback(&self, why: &StoreError) {
         if !self.warned.swap(true, Ordering::Relaxed) {
             eprintln!("[auth] the keychain isn't available ({why}); keeping the sign-in token in auth.json instead");
         }
@@ -183,40 +229,42 @@ impl<K: TokenStore> SecureStore<K> {
 }
 
 impl<K: TokenStore> TokenStore for SecureStore<K> {
-    /// The keychain first; the file holds a token saved while the keychain was down.
-    fn get(&self, account: &str) -> Result<Option<String>, String> {
+    /// The keychain first; the file holds a token saved while there was no keychain.
+    fn get(&self, account: &str) -> Result<Option<String>, StoreError> {
         match self.keychain.get(account) {
             Ok(Some(t)) => Ok(Some(t)),
             Ok(None) => self.file.get(account),
-            Err(e) => {
+            Err(e @ StoreError::Unavailable(_)) => {
                 self.fallback(&e);
                 self.file.get(account)
             }
+            Err(e) => Err(e),
         }
     }
-    fn set(&self, account: &str, token: &str) -> Result<(), String> {
+    fn set(&self, account: &str, token: &str) -> Result<(), StoreError> {
         match self.keychain.set(account, token) {
             Ok(()) => {
                 // A copy from a keychain outage would otherwise linger in the file.
                 let _ = self.file.delete(account);
                 Ok(())
             }
-            Err(e) => {
+            Err(e @ StoreError::Unavailable(_)) => {
                 self.fallback(&e);
                 self.file.set(account, token)
             }
+            Err(e) => Err(e),
         }
     }
-    fn delete(&self, account: &str) -> Result<(), String> {
+    fn delete(&self, account: &str) -> Result<(), StoreError> {
         let keychain = self.keychain.delete(account);
         let file = self.file.delete(account);
-        match (keychain, file) {
-            (Err(e), Err(_)) => Err(e),
-            (Err(e), Ok(())) => {
+        match keychain {
+            Ok(()) => Ok(()),
+            Err(e @ StoreError::Unavailable(_)) => {
                 self.fallback(&e);
-                Ok(())
+                file
             }
-            _ => Ok(()),
+            Err(e) => Err(e),
         }
     }
 }
@@ -519,8 +567,8 @@ impl Auth {
     /// The keychain can block (or ask the user), so it runs off the async threads.
     async fn blocking<T: Send + 'static>(
         &self,
-        f: impl FnOnce(&dyn TokenStore) -> Result<T, String> + Send + 'static,
-    ) -> Result<T, String> {
+        f: impl FnOnce(&dyn TokenStore) -> Result<T, StoreError> + Send + 'static,
+    ) -> Result<T, StoreError> {
         let store = self.store.clone();
         let lock = self.store_lock.clone();
         tokio::task::spawn_blocking(move || {
@@ -528,7 +576,7 @@ impl Auth {
             f(store.as_ref())
         })
         .await
-        .map_err(|e| e.to_string())?
+        .map_err(io_err)?
     }
 
     async fn load_token(&self, key: &str) -> Option<String> {
@@ -676,6 +724,7 @@ impl Auth {
             Ok(Issued { token, account }) => match account_key(&base) {
                 Ok(key) => {
                     let k = key.clone();
+                    let token_copy = token.clone();
                     match self.blocking(move |s| s.set(&k, &token)).await {
                         Ok(()) => {
                             self.cache.save(&key, Some(&account));
@@ -683,7 +732,10 @@ impl Auth {
                         }
                         Err(e) => {
                             eprintln!("[auth] couldn't save the sign-in token: {e}");
-                            make_status(AuthState::Error, &base, None, Some(AuthError::Storage), false)
+                            // Nobody holds it now, so it shouldn't stay live at the API.
+                            revoke(&self.client, &base, &token_copy).await;
+                            let why = if matches!(e, StoreError::Refused(_)) { AuthError::Keychain } else { AuthError::Storage };
+                            make_status(AuthState::Error, &base, None, Some(why), false)
                         }
                     }
                 }
@@ -764,18 +816,26 @@ mod tests {
         assert_eq!(account_key("not a url"), Err(AuthError::Server));
     }
 
-    /// A keychain that is never there.
-    struct Broken;
+    /// A keychain that always fails the same way.
+    struct Broken(StoreError);
     impl TokenStore for Broken {
-        fn get(&self, _: &str) -> Result<Option<String>, String> {
-            Err("no keychain".into())
+        fn get(&self, _: &str) -> Result<Option<String>, StoreError> {
+            Err(self.0.clone())
         }
-        fn set(&self, _: &str, _: &str) -> Result<(), String> {
-            Err("no keychain".into())
+        fn set(&self, _: &str, _: &str) -> Result<(), StoreError> {
+            Err(self.0.clone())
         }
-        fn delete(&self, _: &str) -> Result<(), String> {
-            Err("no keychain".into())
+        fn delete(&self, _: &str) -> Result<(), StoreError> {
+            Err(self.0.clone())
         }
+    }
+
+    fn no_keychain() -> Broken {
+        Broken(StoreError::Unavailable("no backend".into()))
+    }
+
+    fn denied() -> Broken {
+        Broken(StoreError::Refused("user canceled".into()))
     }
 
     #[test]
@@ -831,16 +891,40 @@ mod tests {
     }
 
     #[test]
-    fn secure_store_falls_back_to_the_file_when_the_keychain_fails() {
+    fn secure_store_falls_back_to_the_file_when_there_is_no_keychain() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("auth.json");
-        let s = SecureStore::new(Broken, FileStore::new(path.clone()));
+        let s = SecureStore::new(no_keychain(), FileStore::new(path.clone()));
         s.set("api:a", "tyg_a").unwrap();
         assert!(path.exists());
         assert!(s.warned.load(Ordering::Relaxed));
         assert_eq!(s.get("api:a").unwrap().as_deref(), Some("tyg_a"));
         s.delete("api:a").unwrap();
         assert_eq!(s.get("api:a").unwrap(), None);
+    }
+
+    #[test]
+    fn a_keychain_that_says_no_is_an_error_and_never_the_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("auth.json");
+        let s = SecureStore::new(denied(), FileStore::new(path.clone()));
+        assert!(matches!(s.set("api:a", "tyg_a"), Err(StoreError::Refused(_))));
+        assert!(!path.exists(), "a Deny never moves the token to a file");
+        assert!(!s.warned.load(Ordering::Relaxed));
+        assert!(matches!(s.get("api:a"), Err(StoreError::Refused(_))));
+        assert!(matches!(s.delete("api:a"), Err(StoreError::Refused(_))));
+    }
+
+    #[test]
+    fn keychain_errors_are_sorted_into_none_here_and_said_no() {
+        let boxed = || -> Box<dyn std::error::Error + Send + Sync> { "x".into() };
+        let (none_here, said_no) = if cfg!(target_os = "linux") {
+            (keyring::Error::PlatformFailure(boxed()), keyring::Error::NoStorageAccess(boxed()))
+        } else {
+            (keyring::Error::NoStorageAccess(boxed()), keyring::Error::PlatformFailure(boxed()))
+        };
+        assert!(matches!(classify(none_here), StoreError::Unavailable(_)));
+        assert!(matches!(classify(said_no), StoreError::Refused(_)));
     }
 
     #[test]
@@ -1240,6 +1324,22 @@ mod tests {
         assert_eq!(r.cache.load(&key(&f.base)).map(|a| a.id), Some("acc_1".into()));
         let shown = serde_json::to_string(&(r.rec.all(), started, r.auth.status())).unwrap();
         assert!(!shown.contains("tyg_") && !shown.contains("dev-secret"), "{shown}");
+    }
+
+    #[tokio::test]
+    async fn a_keychain_deny_fails_the_sign_in_and_leaves_no_token_anywhere() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("auth.json");
+        let store = Arc::new(SecureStore::new(denied(), FileStore::new(path.clone())));
+        let rec = Arc::new(Rec::default());
+        let auth = Auth::new(store, Arc::new(MemCache::default()), rec.clone(), TICK).unwrap();
+        let f = api().await;
+        auth.start(&f.base).await.unwrap();
+        let s = until(&rec, |s| s.state == AuthState::Error).await;
+        assert_eq!((s.error, s.signed_in, s.account), (Some(AuthError::Keychain), false, None));
+        assert!(!path.exists());
+        let revoked = f.hits("/api/v1/auth/logout");
+        assert_eq!(revoked.first().and_then(|r| r.auth.as_deref()), Some("Bearer tyg_abc"), "the unsaved token is revoked");
     }
 
     #[tokio::test]

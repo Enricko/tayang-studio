@@ -244,6 +244,7 @@ export const en = {
       rateLimited: 'Too many sign-in attempts. Wait a few minutes, then try again',
       storage: "Signed in, but Tayang couldn't keep your sign-in on this computer. Try again",
       insecure: 'Signing in needs a secure (https) API address. Check the API address in Settings',
+      keychain: "Tayang couldn't save your sign-in in the keychain. Allow access when your computer asks, then try again",
       unexpected: "Signing in didn't work: {{message}}",
     },
   },

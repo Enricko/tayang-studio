@@ -772,6 +772,8 @@ pub enum AuthError {
     Storage,
     /// The API address is plain http to another computer, so a token would travel unencrypted.
     Insecure,
+    /// The keychain refused to keep the token (the user clicked Deny, or it stayed locked).
+    Keychain,
 }
 
 /// `auth_status()` and the `auth://changed` event. Never carries the token.

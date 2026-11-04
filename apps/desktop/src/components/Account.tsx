@@ -17,6 +17,7 @@ const ERROR_KEYS = {
   'rate-limited': 'account.errors.rateLimited',
   storage: 'account.errors.storage',
   insecure: 'account.errors.insecure',
+  keychain: 'account.errors.keychain',
 } as const satisfies Record<AuthErrorCode, string>;
 
 /** Google's "G", in its own colours, as Google asks sign-in buttons to show it. */

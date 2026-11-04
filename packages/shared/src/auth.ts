@@ -60,7 +60,7 @@ export function isAuthTokenError(v: unknown): v is AuthTokenError {
 export type AuthState = 'signed-in' | 'signed-out' | 'pending' | 'error';
 
 /** Why signing in stopped or couldn't start. Rust also rejects commands with `auth:<code>`. */
-export type AuthErrorCode = 'expired' | 'denied' | 'network' | 'server' | 'rate-limited' | 'storage' | 'insecure';
+export type AuthErrorCode = 'expired' | 'denied' | 'network' | 'server' | 'rate-limited' | 'storage' | 'insecure' | 'keychain';
 
 /** `auth_status()` and the `auth://changed` event. */
 export interface AuthStatus {
