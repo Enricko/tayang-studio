@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { buildSessionPreamble, languageHint } from '../src/preamble';
+import { buildSessionPreamble, languageHint, sessionFacts } from '../src/preamble';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', 'agent-plugin');
 const read = (p: string) => readFileSync(join(root, p), 'utf8');
@@ -93,5 +93,31 @@ describe('agent plugin', () => {
     expect(buildSessionPreamble()).not.toContain('The user reads');
     expect(languageHint('id')).toContain('Keep code, commands and file names as they are.');
     expect(languageHint('en')).toBe('');
+  });
+
+  it('teaches scheduling with one schedule_videos card, also in the text preamble', () => {
+    const t = read('skills/tayang-studio/SKILL.md');
+    expect(t).toContain('## Scheduling videos');
+    expect(t).toContain('Never say a video is scheduled until the user has pressed the button.');
+    // The example block is valid A2UI: every line parses, and the button carries well-formed items.
+    const block = /```a2ui\n([\s\S]*?)```/.exec(t.slice(t.indexOf('## Scheduling videos')))![1]!;
+    const lines = block.trim().split('\n').map((l) => JSON.parse(l.replace('"<id>"', '"p1"')));
+    const comps = lines[1].updateComponents.components as { component: string; action?: { event: { name: string; context: { items: { at: string }[] } } } }[];
+    const ev = comps.find((c) => c.component === 'Button')!.action!.event;
+    expect(ev.name).toBe('schedule_videos');
+    for (const item of ev.context.items) expect(item.at).toMatch(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d[+-]\d\d:\d\d$/);
+    expect(read('skills/a2ui-options/SKILL.md')).toContain('`schedule_videos` is reserved');
+    expect(buildSessionPreamble()).toContain('## Scheduling videos');
+  });
+
+  it("states the user's time zone and the project id", () => {
+    const facts = { timeZone: 'Asia/Jakarta', offset: '+07:00', localNow: 'Wednesday 2026-11-04 17:55' };
+    expect(sessionFacts(facts)).toBe(
+      "The user's local time zone is Asia/Jakarta (UTC+07:00). It was Wednesday 2026-11-04 17:55 when this chat started.",
+    );
+    expect(sessionFacts({ ...facts, projectId: 'p1' })).toContain("\nThis video's Tayang id is p1.");
+    expect(sessionFacts(null)).toBe('');
+    expect(buildSessionPreamble('en', { ...facts, projectId: 'p1' })).toContain("This video's Tayang id is p1.");
+    expect(buildSessionPreamble('en')).not.toContain('time zone is');
   });
 });

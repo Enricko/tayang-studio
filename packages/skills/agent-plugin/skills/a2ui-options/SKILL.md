@@ -50,7 +50,7 @@ When the user presses a Button you receive one message:
 
 Read `name` and `context`, then continue. Send `deleteSurface` when the question is answered.
 
-The event name `pick_topic` is reserved for topic ideas: a "Make this" button whose context is `title`, `kind`, `lengthSec` and `styleId` (see the tayang-studio skill). Name every other event yourself, such as `pick_option`.
+The event name `pick_topic` is reserved for topic ideas: a "Make this" button whose context is `title`, `kind`, `lengthSec` and `styleId` (see the tayang-studio skill). `schedule_videos` is reserved for a schedule card (see the tayang-studio skill). Name every other event yourself, such as `pick_option`.
 
 ## Example 1: pick one of 3 options
 
