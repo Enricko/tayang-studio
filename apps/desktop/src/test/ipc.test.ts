@@ -17,6 +17,23 @@ describe('ipc', () => {
     expect(calls).toEqual([{ cmd: 'create_project', args: { input, brief: 'brief text' } }]);
   });
 
+  it('schedule, posted and approve call the Rust commands with camelCase args', async () => {
+    const calls: { cmd: string; args: unknown }[] = [];
+    mockIPC((cmd, args) => {
+      calls.push({ cmd, args });
+    });
+    await ipc.setSchedule('p1', '2026-11-05T02:00:00.000Z');
+    await ipc.setSchedule('p1', null);
+    await ipc.setPosted('p1', true);
+    await ipc.approveProject('p1');
+    expect(calls).toEqual([
+      { cmd: 'set_schedule', args: { projectId: 'p1', at: '2026-11-05T02:00:00.000Z' } },
+      { cmd: 'set_schedule', args: { projectId: 'p1', at: null } },
+      { cmd: 'set_posted', args: { projectId: 'p1', posted: true } },
+      { cmd: 'approve_project', args: { projectId: 'p1' } },
+    ]);
+  });
+
   it('style sync, template install and render command call the Rust commands', async () => {
     const calls: { cmd: string; args: unknown }[] = [];
     mockIPC((cmd, args) => {

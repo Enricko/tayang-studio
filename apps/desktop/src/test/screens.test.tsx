@@ -77,7 +77,7 @@ const settings: Settings = {
   uiLanguage: null,
 };
 
-const project = (id: string, title: string, status: Project['status'], scheduledAt: string | null = null): Project => ({
+const project = (id: string, title: string, status: Project['status'], scheduledAt: string | null = null, extra: Partial<Project> = {}): Project => ({
   id,
   title,
   slug: id,
@@ -88,9 +88,13 @@ const project = (id: string, title: string, status: Project['status'], scheduled
   status,
   styleId: null,
   scheduledAt,
+  reviewState: 'none',
+  postedAt: null,
+  remindedAt: null,
   durationSec: 30,
   createdAt: '2026-11-01T00:00:00Z',
   updatedAt: '2026-11-02T00:00:00Z',
+  ...extra,
 });
 
 const agents: AgentInfo[] = [

@@ -36,6 +36,11 @@ export const createProject = (input: NewProject, brief: string) =>
   invoke<Project>('create_project', { input, brief });
 export const updateProject = (id: string, patch: Partial<Project>) =>
   invoke<Project>('update_project', { id, patch });
+export const setSchedule = (projectId: string, at: string | null) =>
+  invoke<Project>('set_schedule', { projectId, at });
+export const setPosted = (projectId: string, posted: boolean) =>
+  invoke<Project>('set_posted', { projectId, posted });
+export const approveProject = (projectId: string) => invoke<Project>('approve_project', { projectId });
 
 // ---- chats ----
 export const listChats = (projectId?: string) =>

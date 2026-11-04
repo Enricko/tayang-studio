@@ -37,6 +37,9 @@ export type VideoLanguage = 'id' | 'en';
 export type UiLanguage = 'en' | 'id';
 export type ProjectStatus = 'draft' | 'building' | 'rendered' | 'scheduled';
 
+/** Whether a finished video still waits for the user's approval. */
+export type ReviewState = 'none' | 'pending' | 'approved';
+
 export interface Project {
   id: string;
   title: string;
@@ -48,6 +51,11 @@ export interface Project {
   status: ProjectStatus;
   styleId: string | null;
   scheduledAt: string | null;
+  reviewState: ReviewState;
+  /** When the user marked the video as posted (RFC 3339). */
+  postedAt: string | null;
+  /** When the post-time reminder was shown (RFC 3339); cleared when the schedule changes. */
+  remindedAt: string | null;
   durationSec: number | null;
   createdAt: string;
   updatedAt: string;

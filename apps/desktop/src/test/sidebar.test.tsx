@@ -20,7 +20,7 @@ const mk = (id: string, title: string): Project => ({
   language: 'id',
   status: 'draft',
   styleId: null,
-  scheduledAt: null,
+  scheduledAt: null, reviewState: 'none', postedAt: null, remindedAt: null,
   durationSec: null,
   createdAt: '2026-11-01T00:00:00Z',
   updatedAt: '2026-11-01T00:00:00Z',
