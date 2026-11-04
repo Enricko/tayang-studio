@@ -27,7 +27,7 @@ vi.mock('@/lib/events', () => ({
 }));
 
 import { latestRenderInfo, mediaProbe, upsertJob } from '@/lib/ipc';
-import { renderTiming } from '@/lib/renderCheck';
+import { renderTiming, resetRenderCheck } from '@/lib/renderCheck';
 import { resetLateRenders, settleLateRenders } from '@/lib/buildJobs';
 import { isRenderTool } from '@/lib/renderTool';
 import { setUiLanguage } from '@/i18n';
@@ -213,6 +213,30 @@ describe('a project chat build job at the end of a turn', () => {
     const waiting = { ...lastJob(), updatedAt: new Date(at.getTime() + 60_000).toISOString() };
     await settleLateRenders(Date.now() + 120_000, [waiting]);
     expect(lastJob()).toMatchObject({ status: 'done', note: 'v.mp4' });
+  });
+
+  it('without ffprobe, a video that stays the same is done; the skipped probe is logged once', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    resetRenderCheck();
+    try {
+      vi.mocked(mediaProbe).mockRejectedValue(new Error('could not run ffprobe: No such file or directory (os error 2)'));
+      for (const text of ['go', 'again']) {
+        await useChat.getState().send('c1', [{ type: 'text', text }], { agentId: 'claude', job });
+        vi.mocked(latestRenderInfo).mockResolvedValue(render(new Date(Date.now() + 500)));
+        await emit('c1', { kind: 'done', stopReason: 'end_turn' });
+        await waitFor(() => expect(lastJob()).toMatchObject({ status: 'done', note: 'v.mp4' }));
+      }
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(String(warn.mock.calls[0]![0])).toContain('ffprobe');
+      // A file ffprobe can run on but can't read is still no video.
+      vi.mocked(mediaProbe).mockRejectedValue(new Error('no video stream found'));
+      await useChat.getState().send('c1', [{ type: 'text', text: 'third' }], { agentId: 'claude', job });
+      await emit('c1', { kind: 'done', stopReason: 'end_turn' });
+      await waitFor(() => expect(lastJob()).toMatchObject({ status: 'needs-you' }));
+    } finally {
+      warn.mockRestore();
+      vi.mocked(mediaProbe).mockResolvedValue({ durationSec: 12, fps: 30, frames: 360, width: 1080, height: 1920 });
+    }
   });
 
   it("leaves the autopilot's job to the autopilot: done at the turn's end, no lookup", async () => {
