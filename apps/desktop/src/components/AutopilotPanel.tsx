@@ -9,7 +9,7 @@ import { dayName } from '@/components/AutopilotDialog';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { locale } from '@/i18n';
 import { planSlots } from '@/lib/autopilot';
-import { canStopNow, stopNow } from '@/lib/autopilotHooks';
+import { useCanStopNow } from '@/lib/autopilotHooks';
 import { cn } from '@/lib/utils';
 
 const WEEK = [1, 2, 3, 4, 5, 6, 0];
@@ -33,6 +33,7 @@ export function AutopilotPanel({
   onNew,
   onEdit,
   onToggle,
+  onStop,
   onDelete,
 }: {
   autopilots: Autopilot[];
@@ -42,11 +43,13 @@ export function AutopilotPanel({
   onNew(): void;
   onEdit(a: Autopilot): void;
   onToggle(a: Autopilot): void | Promise<void>;
+  onStop(slot: AutopilotSlot): void | Promise<void>;
   onDelete(a: Autopilot): void | Promise<void>;
 }) {
   const { t } = useTranslation();
   const [deleting, setDeleting] = useState<Autopilot | null>(null);
   const [busy, setBusy] = useState(false);
+  const canStop = useCanStopNow();
 
   return (
     <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4">
@@ -81,8 +84,8 @@ export function AutopilotPanel({
             {making ? (
               <div className="flex items-center gap-2 text-xs text-text-2">
                 <span className="mr-auto">{t('autopilot.makingNow')}</span>
-                {canStopNow() && (
-                  <Button variant="secondary" className="h-7 rounded-sm px-2 text-xs" onClick={() => void stopNow(making)}>
+                {canStop && (
+                  <Button variant="secondary" className="h-7 rounded-sm px-2 text-xs" onClick={() => void onStop(making)}>
                     {t('autopilot.stopNow')}
                   </Button>
                 )}
