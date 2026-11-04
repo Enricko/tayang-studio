@@ -167,6 +167,7 @@ export function Composer({
   onAgentChange,
   ensureChat,
   initialText,
+  draftKey,
 }: {
   chatId: string | null;
   /** Resolve to false when sending failed: the draft is then kept. */
@@ -192,6 +193,8 @@ export function Composer({
   ensureChat?(): Promise<string>;
   /** Starts the box with this text (not sent). */
   initialText?: string;
+  /** Keeps the unsent text in the chat store under this key, so it is still there when the screen comes back. */
+  draftKey?: string;
 }) {
   const { t } = useTranslation();
   const defaultAgent = useApp((s) => s.settings?.defaultAgent ?? 'claude');
@@ -200,7 +203,10 @@ export function Composer({
   const auto = useChat((s) => autoOn(s, chatId, settingsAuto));
   const autoBusy = useChat((s) => !!chatId && !!s.autoBusy[chatId]);
   const attachments = useChat((s) => (chatId ? s.attachments[chatId] : undefined)) ?? NONE;
-  const [text, setText] = useState(initialText ?? '');
+  const [text, setText] = useState(() => initialText ?? (draftKey ? useChat.getState().drafts[draftKey] : undefined) ?? '');
+  useEffect(() => {
+    if (draftKey) useChat.getState().setDraft(draftKey, text);
+  }, [draftKey, text]);
   const [dismissed, setDismissed] = useState<string | null>(null);
   const [active, setActive] = useState('');
   const ref = useRef<HTMLTextAreaElement>(null);

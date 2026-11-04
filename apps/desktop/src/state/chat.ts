@@ -109,6 +109,9 @@ interface ChatState {
   reset(): void;
 }
 
+/** The draft key of the New chat screen, which has no chat id yet. */
+export const NEW_CHAT_DRAFT = 'new';
+
 const isLocal = (m: ChatMessage) => m.id.startsWith('local-');
 
 /** Agent chats that have no chat row: the setup installs, style studies, calendar ideas and the autopilots' topic chats. */
