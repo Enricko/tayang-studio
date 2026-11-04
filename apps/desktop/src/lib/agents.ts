@@ -25,14 +25,15 @@ const SIGN_IN_COMMAND: Record<AgentId, string> = {
 const AUTH = /\bauth|sign[ -]?in|log[ -]?in|-32000/i;
 
 /** What the user sees when the agent fails: its own message, or how to sign in. */
-export function agentErrorText(message: string | null | undefined, agent: AgentId): string {
+/** `lng: 'en'` gives the English text that gets saved with a chat or job (see `lib/stored.ts`). */
+export function agentErrorText(message: string | null | undefined, agent: AgentId, lng?: 'en'): string {
   const msg = (message ?? '').trim();
   if (AUTH.test(msg)) {
     const cmd = SIGN_IN_COMMAND[agent] || i18n.t('errors.yourAgentCommand');
     const run = agent === 'custom' ? cmd : `\`${cmd}\``;
-    return i18n.t('errors.signIn', { agent: AGENT_NAMES[agent], command: run });
+    return i18n.t('errors.signIn', { agent: AGENT_NAMES[agent], command: run, ...(lng && { lng }) });
   }
-  return msg || i18n.t('errors.agentStopped');
+  return msg || i18n.t('errors.agentStopped', lng ? { lng } : {});
 }
 
 /** The note Rust writes on a job whose agent died with the app (`fail_stale_jobs`). */

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Link2, Lightbulb, Disc3, X } from 'lucide-react';
 import type { AgentId, MessagePart, Project, Style, VideoKind } from '@tayang/shared';
 import { buildProjectBrief, buildTopicIdeasPrompt, topicIdeaFromAction } from '@tayang/skills';
@@ -25,6 +26,7 @@ function agentText(parts: MessagePart[]) {
 }
 
 export function ChatNew() {
+  const { t } = useTranslation();
   const settings = useApp((s) => s.settings);
   const navigate = useApp((s) => s.navigate);
   const routeStyleId = useApp((s) => (s.route.name === 'chat-new' ? (s.route.styleId ?? null) : null));
@@ -135,7 +137,7 @@ export function ChatNew() {
     setMention(null);
     try {
       const text = parts.find((p) => p.type === 'text');
-      const id = await ensureChat(text?.type === 'text' ? text.text.slice(0, 48) : 'New chat');
+      const id = await ensureChat(text?.type === 'text' ? text.text.slice(0, 48) : t('chat.newChat'));
       const ctx = await context(parts);
       const failure = await useChat
         .getState()
@@ -146,18 +148,18 @@ export function ChatNew() {
       return true;
     } catch (e) {
       setMention(sentMention);
-      setError(`Couldn't start the chat: ${e instanceof Error ? e.message : String(e)}`);
+      setError(t('chat.couldntStartChat', { message: e instanceof Error ? e.message : String(e) }));
       return false;
     }
   };
 
   const askTopics = async () => {
     if (!settings || streaming) return;
-    const id = await ensureChat('Topic ideas');
+    const id = await ensureChat(t('chat.topicIdeas'));
     topicPending.current = true;
     setIdeas([]);
     const styles = await listStyles().catch(() => [] as Style[]);
-    void useChat.getState().send(id, [{ type: 'text', text: 'Suggest video topics for my channel' }], {
+    void useChat.getState().send(id, [{ type: 'text', text: t('chat.suggestTopics') }], {
       agentId: agent,
       promptParts: [{ type: 'text', text: buildTopicIdeasPrompt(KINDS, settings.language, styles.map((s) => ({ id: s.id, name: s.name }))) }],
     });
@@ -166,7 +168,7 @@ export function ChatNew() {
   const pickIdea = async (idea: Idea) => {
     if (!settings || busy || streaming) return;
     setBusy(true);
-    setSetupLine('Setting up the project…');
+    setSetupLine(t('chat.settingUp'));
     setError(null);
     try {
       // The idea's own style wins when it is a synced one; else the template chip's style.
@@ -175,7 +177,7 @@ export function ChatNew() {
     } catch (e) {
       setBusy(false);
       setSetupLine(null);
-      setError(`Couldn't start "${idea.title}": ${e instanceof Error ? e.message : String(e)}`);
+      setError(t('chat.couldntStartTopic', { title: idea.title, message: e instanceof Error ? e.message : String(e) }));
     }
   };
 
@@ -196,8 +198,8 @@ export function ChatNew() {
         data-tauri-drag-region
         className="flex h-16 shrink-0 items-center gap-3 border-b border-border px-6"
       >
-        <span className="text-[15px] font-medium">New chat</span>
-        <span className="text-xs text-text-3">{attached === 0 ? 'No video attached' : `${attached} video attached`}</span>
+        <span className="text-[15px] font-medium">{t('chat.newChat')}</span>
+        <span className="text-xs text-text-3">{attached === 0 ? t('chat.noVideo') : t('chat.videosAttached', { count: attached })}</span>
       </header>
 
       <div className="flex min-h-0 flex-1 flex-col items-center px-6">
@@ -207,15 +209,15 @@ export function ChatNew() {
             <div className="my-auto flex flex-col gap-6">
               <div className="flex flex-col items-start gap-3">
                 <img src={oyen} alt="Oyen" className="size-14" />
-                <h1 className="m-0 text-[28px] font-semibold tracking-[-0.01em]">What are we making?</h1>
+                <h1 className="m-0 text-[28px] font-semibold tracking-[-0.01em]">{t('chat.whatMaking')}</h1>
                 <p className="m-0 text-[15px] leading-[1.6] text-text-2">
-                  Start from a topic, remix a video you already made, or copy a style from a link.
+                  {t('chat.intro')}
                 </p>
               </div>
               <div className="grid grid-cols-3 gap-3">
-                <OptionCard icon={Lightbulb} title="From a topic" body="Oyen suggests ideas for your channel" onClick={askTopics} />
-                <OptionCard icon={Disc3} title="Remix a video" body="Type @ and pick the video to work from" onClick={() => setSignal((n) => n + 1)} />
-                <OptionCard icon={Link2} title="Copy a style" body="Paste a TikTok, Reels or YouTube link" onClick={() => navigate({ name: 'style' })} />
+                <OptionCard icon={Lightbulb} title={t('chat.fromTopic')} body={t('chat.fromTopicBody')} onClick={askTopics} />
+                <OptionCard icon={Disc3} title={t('chat.remix')} body={t('chat.remixBody')} onClick={() => setSignal((n) => n + 1)} />
+                <OptionCard icon={Link2} title={t('chat.copyStyle')} body={t('chat.copyStyleBody')} onClick={() => navigate({ name: 'style' })} />
               </div>
             </div>
           ) : (
@@ -232,7 +234,7 @@ export function ChatNew() {
                   <PermissionCard
                     request={permission}
                     agentId={agent}
-                    allowLabel="Allow"
+                    allowLabel={t('permission.allow')}
                     onRespond={(o) => void useChat.getState().respondPermission(chatId, o)}
                   />
                 )}
@@ -248,7 +250,7 @@ export function ChatNew() {
                       >
                         <span className="text-[14px] font-medium">{idea.title}</span>
                         <span className="font-mono text-xs text-text-3">
-                          {idea.kind} · {idea.lengthSec}s
+                          {t(`kinds.${idea.kind}`)} · {t('chat.seconds', { n: idea.lengthSec })}
                         </span>
                       </button>
                     ))}
@@ -270,13 +272,13 @@ export function ChatNew() {
         <div className="w-full max-w-[720px] pb-6 pt-4">
           {styleId && pendingStyle?.template && (
             <div
-              title="Pick a topic to start from this template"
+              title={t('chat.templateChipTitle')}
               className="mb-2 inline-flex items-center gap-1 rounded-full border border-border bg-card py-1 pr-1 pl-3 text-xs text-text-2"
             >
-              <span>Starting from the {pendingStyle.name} template</span>
+              <span>{t('chat.startingFrom', { name: pendingStyle.name })}</span>
               <button
                 type="button"
-                aria-label={`Remove the ${pendingStyle.name} template`}
+                aria-label={t('chat.removeTemplate', { name: pendingStyle.name })}
                 onClick={() => setStyleId(null)}
                 className="inline-flex size-5 cursor-pointer items-center justify-center rounded-full text-text-3 hover:text-foreground"
               >
@@ -286,7 +288,7 @@ export function ChatNew() {
           )}
           <Composer
             chatId={chatId}
-            ensureChat={() => ensureChat('New chat')}
+            ensureChat={() => ensureChat(t('chat.newChat'))}
             onSend={onSend}
             disabled={streaming || busy}
             onStop={chatId ? () => void useChat.getState().cancel(chatId) : undefined}
@@ -296,7 +298,7 @@ export function ChatNew() {
             agentId={agent}
             onAgentChange={(a) => void changeAgent(a)}
             mentionSignal={signal}
-            placeholder="Describe the video you want, or type @ to start from one you made"
+            placeholder={t('chat.placeholderNew')}
           />
           {error && (
             <p role="alert" className="m-0 mt-2 text-xs text-orange-light">
@@ -304,7 +306,7 @@ export function ChatNew() {
             </p>
           )}
           <p className="m-0 mt-2 text-xs text-text-3">
-            A new chat doesn't see any of your videos until you mention one with @
+            {t('chat.newChatNote')}
           </p>
         </div>
       </div>

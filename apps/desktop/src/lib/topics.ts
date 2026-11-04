@@ -2,6 +2,8 @@ import type { MessagePart, Project, Settings, Style, VideoKind } from '@tayang/s
 import { buildProjectBrief, SKIP_FRAME_CHECK, splitTopicJson, topicIdeaFromAction } from '@tayang/skills';
 import { extractA2ui } from '@/a2ui/parse';
 import { createChat, createProject, installStyleTemplate, listStyles, syncStyles, writeBrief } from '@/lib/ipc';
+import { i18n } from '@/i18n';
+import { stored } from '@/lib/stored';
 import { useApp } from '@/state/app';
 import { appendSystem, useChat } from '@/state/chat';
 
@@ -72,7 +74,7 @@ export async function startTopic(
         (fallbackId ? styles.find((s) => s.id === fallbackId) : undefined) ??
         null;
       // An unknown style the agent suggested is ignored; a template the user picked is reported.
-      if (!style && fallbackId) styleProblem = 'that style is no longer in your library';
+      if (!style && fallbackId) styleProblem = stored('chat.templateGone');
     } catch (e) {
       styleProblem = e instanceof Error ? e.message : String(e);
     }
@@ -100,26 +102,25 @@ export async function startTopic(
   useApp.getState().bumpProjects();
   const chat = await createChat(project.id, agent, idea.title);
   const say = (text: string) => appendSystem(chat.id, text);
-  if (styleProblem) await say(`Couldn't set up the template: ${styleProblem}. Continuing without it.`);
+  if (styleProblem) await say(stored('chat.templateProblem', { problem: styleProblem }));
   if (style?.template) {
-    const setting = `Setting up the ${style.name} template…`;
-    opts.onStatus?.(setting);
-    await say(setting);
+    opts.onStatus?.(i18n.t('chat.settingTemplate', { name: style.name }));
+    await say(stored('chat.settingTemplate', { name: style.name }));
     let reason: string | null = null;
     try {
       const r = await installStyleTemplate(project.id);
-      if (!r.installed) reason = 'the template files were not added';
+      if (!r.installed) reason = stored('chat.templateFilesMissing');
     } catch (e) {
       reason = e instanceof Error ? e.message : String(e);
     }
     if (reason !== null) {
       // The brief promised a template: take that promise back.
       await writeBrief(project.id, buildProjectBrief(draft, { ...style, template: null }, settings)).catch(() => {});
-      await say(`Couldn't set up the ${style.name} template: ${reason}. Continuing without it.`);
+      await say(stored('chat.templateFailed', { name: style.name, reason }));
     }
   }
   useApp.getState().navigate({ name: 'chat', chatId: chat.id });
-  const ask: MessagePart[] = [{ type: 'text', text: `Write the script for "${idea.title}", about ${idea.lengthSec} seconds.` }];
+  const ask: MessagePart[] = [{ type: 'text', text: i18n.t('chat.writeScript', { title: idea.title, seconds: idea.lengthSec }) }];
   void useChat.getState().send(chat.id, ask, {
     agentId: agent,
     job: { projectId: project.id, title: project.title },

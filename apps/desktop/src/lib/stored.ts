@@ -15,6 +15,16 @@ export const STORED_KEYS = [
   'agents.studyUnreadable',
   'errors.agentStopped',
   'errors.signIn',
+  'chat.ranWithoutAsking',
+  'chat.busyNote',
+  'chat.switched',
+  'chat.switchedProject',
+  'chat.autoOffFailed',
+  'chat.templateProblem',
+  'chat.templateGone',
+  'chat.templateFilesMissing',
+  'chat.settingTemplate',
+  'chat.templateFailed',
 ] as const;
 export type StoredKey = (typeof STORED_KEYS)[number];
 
@@ -51,7 +61,10 @@ export function localized(text: string): string {
   if (i18n.language === 'en') return text;
   for (const { key, re } of patterns()) {
     const m = re.exec(text);
-    if (m) return say(key, { ...(m.groups ?? {}) });
+    if (!m) continue;
+    // Parameters can be saved text too (a template problem is one of ours).
+    const params = Object.fromEntries(Object.entries(m.groups ?? {}).map(([k, v]) => [k, localized(v)]));
+    return say(key, params);
   }
   return text;
 }

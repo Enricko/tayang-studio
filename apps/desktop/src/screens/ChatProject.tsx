@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import type { AgentId, Chat, MessagePart, Project, VideoKind } from '@tayang/shared';
+import { useTranslation } from 'react-i18next';
+import type { AgentId, Chat, MessagePart, Project } from '@tayang/shared';
 import { SKIP_FRAME_CHECK } from '@tayang/skills';
 import { Button } from '@/components/Button';
 import { Composer } from '@/components/Composer';
@@ -10,6 +11,7 @@ import { ScrollToBottom } from '@/components/ScrollToBottom';
 import { TurnRail } from '@/components/TurnRail';
 import { StepBar } from '@/components/StepBar';
 import { getChat, listProjects, mediaProbe, mediaRender, renderCommand, updateProject, type RenderCommand } from '@/lib/ipc';
+import { LANGUAGE_NAMES } from '@/i18n';
 import { useApp } from '@/state/app';
 import { headPermission, useChat, type SendOpts } from '@/state/chat';
 import { useUsage } from '@/state/usage';
@@ -18,17 +20,9 @@ const NO_MESSAGES: never[] = [];
 /** One argv as a shell-looking line: arguments with spaces or quotes are double-quoted. */
 const shellDisplay = (argv: string[]) =>
   argv.map((a) => (/[\s"']/.test(a) ? `"${a.replace(/(["\\])/g, '\\$1')}"` : a)).join(' ');
-const KIND: Record<VideoKind, string> = {
-  explainer: 'Explainer',
-  promo: 'Promo',
-  quote: 'Quote',
-  news: 'News',
-  tutorial: 'Tutorial',
-  data: 'Data',
-  event: 'Event',
-};
 
 export function ChatProject({ chatId, draft }: { chatId: string; draft?: string }) {
+  const { t } = useTranslation();
   const defaultAgent = useApp((s) => s.settings?.defaultAgent ?? 'claude');
   const [chat, setChat] = useState<Chat | null>(null);
   const agent = chat?.agentId ?? defaultAgent;
@@ -120,7 +114,7 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
       useApp.getState().bumpProjects();
       setReloadKey((k) => k + 1);
     } catch (e) {
-      setRenderError(`Couldn't render: ${e instanceof Error ? e.message : String(e)}`);
+      setRenderError(t('chat.couldntRender', { message: e instanceof Error ? e.message : String(e) }));
     } finally {
       setRendering(false);
     }
@@ -130,10 +124,10 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
     <div className="flex h-full min-w-0 flex-col">
       <header data-tauri-drag-region className="flex h-16 shrink-0 items-center gap-6 border-b border-border px-6">
         <div className="flex min-w-0 flex-col">
-          <span className="truncate text-[15px] font-medium">{project?.title ?? 'Chat'}</span>
+          <span className="truncate text-[15px] font-medium">{project?.title ?? t('chat.title')}</span>
           {project && (
             <span className="text-xs text-text-3">
-              {KIND[project.kind]} · {project.format} · {project.language === 'id' ? 'Bahasa Indonesia' : 'English'}
+              {t(`kinds.${project.kind}`)} · {project.format} · {LANGUAGE_NAMES[project.language]}
             </span>
           )}
         </div>
@@ -148,12 +142,12 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
           className={project ? '' : 'ml-auto'}
           onClick={() => void renderVideo()}
         >
-          {rendering ? 'Rendering…' : 'Render video'}
+          {rendering ? t('chat.rendering') : t('chat.render')}
         </Button>
       </header>
       {runs && runs.render.length > 0 && (
         <p className="m-0 border-b border-border px-6 py-2 font-mono text-xs break-words text-text-3">
-          Runs: {[...(runs.install?.length ? [runs.install] : []), runs.render].map(shellDisplay).join(' && ')}
+          {t('chat.runs', { commands: [...(runs.install?.length ? [runs.install] : []), runs.render].map(shellDisplay).join(' && ') })}
         </p>
       )}
       {renderError && (
@@ -163,7 +157,7 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
       )}
 
       <div className="flex min-h-0 flex-1">
-        <section aria-label="Conversation" className="flex min-w-0 flex-1 flex-col">
+        <section aria-label={t('chat.conversation')} className="flex min-w-0 flex-1 flex-col">
           <div className="relative min-h-0 flex-1">
           <div ref={scrollRef} className="no-scrollbar h-full overflow-y-auto px-6 py-6">
             <MessageList messages={messages} streaming={streaming} sendOptions={sendOptions} scrollRef={scrollRef}>
@@ -171,7 +165,7 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
                 <PermissionCard
                   request={permission}
                   agentId={agent}
-                  allowLabel="Allow"
+                  allowLabel={t('permission.allow')}
                   onRespond={(o) => void useChat.getState().respondPermission(chatId, o)}
                 />
               )}
@@ -194,7 +188,7 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
             />
           </div>
         </section>
-        <section aria-label="Preview" className="w-[360px] shrink-0 border-l border-border">
+        <section aria-label={t('chat.preview')} className="w-[360px] shrink-0 border-l border-border">
           {project ? (
             <Preview
               projectId={project.id}

@@ -17,6 +17,7 @@ import {
 import { onAgentUpdate, onPermission } from '@/lib/events';
 import { extractA2ui } from '@/a2ui/parse';
 import { agentErrorText, AGENT_NAMES } from '@/lib/agents';
+import { stored } from '@/lib/stored';
 import { useApp } from '@/state/app';
 import { refreshJobs } from '@/state/jobs';
 
@@ -99,7 +100,7 @@ const pendingRecap = new Map<string, string>();
 
 /** What `agent_prompt` says when a turn is still running; that turn goes on untouched. */
 const BUSY = /still working/i;
-export const BUSY_NOTE = 'Wait for the agent to finish, then try again';
+export const BUSY_NOTE = stored('chat.busyNote');
 
 const RECAP_MESSAGES = 6;
 const RECAP_CHARS = 1500;
@@ -267,7 +268,8 @@ export const useChat = create<ChatState>((set, get) => {
     settleTools(chatId, 'failed');
     finish(chatId);
     set((s) => ({ started: { ...s.started, [chatId]: false } }));
-    const text = agentErrorText(u.message, chatAgent.get(chatId) ?? 'claude');
+    // Saved in English; the chat and the job board say it in the user's language when they show it.
+    const text = agentErrorText(u.message, chatAgent.get(chatId) ?? 'claude', 'en');
     writeJob(chatId, 'failed', text);
     const sys = localMessage(chatId, 'system', [{ type: 'text', text }]);
     append(chatId, sys);
@@ -306,7 +308,7 @@ export const useChat = create<ChatState>((set, get) => {
         const reason = e instanceof Error ? e.message : String(e);
         await get().appendSystem(
           chatId,
-          `Couldn't turn off Auto mode (${reason}). The agent was stopped; your next message starts a new session with Auto off`,
+          stored('chat.autoOffFailed', { reason }),
         );
       } finally {
         set((s) => ({ autoBusy: { ...s.autoBusy, [chatId]: false } }));
@@ -422,9 +424,7 @@ export const useChat = create<ChatState>((set, get) => {
       const sys = localMessage(chatId, 'system', [
         {
           type: 'text',
-          text: row?.projectId
-            ? `Switched to ${name}. It starts fresh: it sees this project's files but not the earlier messages.`
-            : `Switched to ${name}. It starts fresh and doesn't see the earlier messages.`,
+          text: stored(row?.projectId ? 'chat.switchedProject' : 'chat.switched', { name }),
         },
       ]);
       append(chatId, sys);
