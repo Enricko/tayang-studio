@@ -38,7 +38,8 @@ export default function App() {
   const route = useApp((s) => s.route);
   if (ONBOARDING.has(route.name)) {
     return (
-      <div className="h-full bg-background">
+      <div className="relative h-full bg-background">
+        <div data-tauri-drag-region className="absolute inset-x-0 top-0 h-8" />
         <Placeholder name={route.name} />
       </div>
     );
@@ -48,7 +49,8 @@ export default function App() {
       <div className="h-full w-[232px] shrink-0">
         <Sidebar active={SIDEBAR_KEY[route.name] ?? 'chat'} />
       </div>
-      <main className="min-w-0 flex-1">
+      <main className="relative min-w-0 flex-1">
+        <div data-tauri-drag-region className="absolute inset-x-0 top-0 z-10 h-8" />
         <Placeholder name={route.name} />
       </main>
     </div>
