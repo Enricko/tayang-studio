@@ -177,7 +177,7 @@ describe('ChatProject', () => {
     render(<ChatProject chatId="c1" />);
     expect(await screen.findByText('Kenapa rupiah melemah?', { selector: 'span' })).toBeInTheDocument();
     expect(screen.getByRole('list', { name: 'Progress' })).toBeInTheDocument();
-    expect(screen.getByTestId('preview-slot')).toBeInTheDocument();
+    expect(await screen.findByText('Nothing rendered yet')).toBeInTheDocument();
   });
 
   it('merges a text update sequence into one agent message', async () => {
