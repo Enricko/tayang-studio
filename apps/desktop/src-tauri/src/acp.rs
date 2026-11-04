@@ -330,6 +330,46 @@ struct ToolState {
     title: String,
     status: ToolCallStatus,
     raw_input: Option<Value>,
+    /// ACP `kind` (read, edit, execute ...), remembered from the first update that has it.
+    kind: Option<String>,
+    /// The first `locations[].path`.
+    path: Option<String>,
+}
+
+impl ToolState {
+    fn new() -> Self {
+        ToolState {
+            title: "Tool call".into(),
+            status: ToolCallStatus::Pending,
+            raw_input: None,
+            kind: None,
+            path: None,
+        }
+    }
+
+    fn apply(&mut self, call: &Value) {
+        if let Some(title) = call.get("title").and_then(Value::as_str) {
+            self.title = title.to_string();
+        }
+        if let Some(status) = call.get("status").and_then(Value::as_str).and_then(map_tool_status) {
+            self.status = status;
+        }
+        if let Some(raw) = call.get("rawInput").filter(|v| !v.is_null()) {
+            self.raw_input = Some(raw.clone());
+        }
+        if let Some(kind) = call.get("kind").and_then(Value::as_str) {
+            self.kind = Some(kind.to_string());
+        }
+        if self.path.is_none() {
+            self.path = call
+                .get("locations")
+                .and_then(Value::as_array)
+                .and_then(|l| l.first())
+                .and_then(|l| l.get("path"))
+                .and_then(Value::as_str)
+                .map(str::to_string);
+        }
+    }
 }
 
 fn map_tool_status(s: &str) -> Option<ToolCallStatus> {
@@ -506,6 +546,8 @@ impl SessionCore {
                     tool_call_id: format!("auto-{}", uuid::Uuid::new_v4()),
                     title: format!("Ran without asking: {what}"),
                     status: ToolCallStatus::Done,
+                    tool_kind: None,
+                    path: None,
                 });
                 return;
             }
@@ -566,6 +608,8 @@ impl SessionCore {
                         tool_call_id: id,
                         title: state.title,
                         status: state.status,
+                        tool_kind: state.kind,
+                        path: state.path,
                     });
                 }
             }
@@ -593,20 +637,8 @@ impl SessionCore {
     fn merge_tool(&self, call: &Value) -> Option<(String, ToolState)> {
         let id = call.get("toolCallId")?.as_str()?;
         let mut tools = self.tools.lock().unwrap();
-        let state = tools.entry(id.to_string()).or_insert_with(|| ToolState {
-            title: "Tool call".into(),
-            status: ToolCallStatus::Pending,
-            raw_input: None,
-        });
-        if let Some(title) = call.get("title").and_then(Value::as_str) {
-            state.title = title.to_string();
-        }
-        if let Some(status) = call.get("status").and_then(Value::as_str).and_then(map_tool_status) {
-            state.status = status;
-        }
-        if let Some(raw) = call.get("rawInput").filter(|v| !v.is_null()) {
-            state.raw_input = Some(raw.clone());
-        }
+        let state = tools.entry(id.to_string()).or_insert_with(ToolState::new);
+        state.apply(call);
         Some((id.to_string(), state.clone()))
     }
 
@@ -1256,6 +1288,22 @@ mod tests {
         fn assert_send_sync<T: Send + Sync + 'static>() {}
         assert_send_sync::<AcpManager>();
         assert_send_sync::<AgentSession>();
+    }
+
+    #[test]
+    fn tool_state_remembers_kind_and_first_location() {
+        let mut st = ToolState::new();
+        st.apply(&json!({
+            "toolCallId": "t", "title": "Edit a.ts", "kind": "edit", "status": "pending",
+            "locations": [{ "path": "/w/a.ts", "line": 3 }, { "path": "/w/b.ts" }]
+        }));
+        assert_eq!(st.kind.as_deref(), Some("edit"));
+        assert_eq!(st.path.as_deref(), Some("/w/a.ts"));
+        // An update without them keeps what was learned.
+        st.apply(&json!({ "toolCallId": "t", "status": "completed" }));
+        assert_eq!(st.kind.as_deref(), Some("edit"));
+        assert_eq!(st.path.as_deref(), Some("/w/a.ts"));
+        assert_eq!(st.status, ToolCallStatus::Done);
     }
 
     #[test]

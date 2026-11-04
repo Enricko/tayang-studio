@@ -603,7 +603,7 @@ pub fn build_prompt(
                     out.push(PromptPart::Text(format!("Attached file: {rel} ({name}, {size})")));
                 }
             }
-            MessagePart::Tool { .. } | MessagePart::A2ui { .. } => {}
+            MessagePart::Tool { .. } | MessagePart::Thought { .. } | MessagePart::A2ui { .. } => {}
             MessagePart::A2uiAction { summary, action } => {
                 out.push(PromptPart::Text(format!("{summary}\n\n```a2ui-action\n{action}\n```")));
             }
@@ -1241,7 +1241,10 @@ mod tests {
                 tool_call_id: "t".into(),
                 title: "x".into(),
                 status: ToolCallStatus::Done,
+                tool_kind: None,
+                path: None,
             },
+            MessagePart::Thought { text: "hmm".into() },
         ];
         let out = build_prompt(
             &parts,

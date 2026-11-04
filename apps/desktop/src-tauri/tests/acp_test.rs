@@ -124,6 +124,8 @@ async fn thoughts_and_tool_statuses_are_mapped() {
         tool_call_id: "t9".into(),
         title: "Read brief".into(),
         status,
+        tool_kind: Some("read".into()),
+        path: None,
     };
     assert_eq!(
         sink.updates(),
@@ -162,6 +164,8 @@ async fn install_allowed_runs_after_permission() {
         tool_call_id: "t1".into(),
         title: "Install FFmpeg".into(),
         status: ToolCallStatus::Done,
+        tool_kind: Some("execute".into()),
+        path: None,
     }));
     // A request can be answered only once.
     assert!(manager.respond_permission(&req.request_id, None).is_err());

@@ -197,6 +197,15 @@ pub enum MessagePart {
         tool_call_id: String,
         title: String,
         status: ToolCallStatus,
+        /// The ACP tool kind (`read`, `edit`, `execute` ...), when the agent said.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tool_kind: Option<String>,
+        /// The first file the tool touches.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        path: Option<String>,
+    },
+    Thought {
+        text: String,
     },
     A2ui {
         surface_id: String,
@@ -377,6 +386,10 @@ pub enum AgentUpdate {
         tool_call_id: String,
         title: String,
         status: ToolCallStatus,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tool_kind: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        path: Option<String>,
     },
     Done {
         stop_reason: String,
@@ -479,6 +492,19 @@ mod tests {
         let d = json!({"kind":"done","stopReason":"end_turn"});
         let u: AgentUpdate = serde_json::from_value(d.clone()).unwrap();
         assert_eq!(serde_json::to_value(&u).unwrap(), d);
+    }
+
+    #[test]
+    fn tool_kind_and_path_are_optional_and_camel_case() {
+        let v = json!({"kind":"tool","toolCallId":"t1","title":"Read","status":"done","toolKind":"read","path":"/a/b.ts"});
+        let u: AgentUpdate = serde_json::from_value(v.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&u).unwrap(), v);
+        let part = json!({"type":"tool","toolCallId":"t1","title":"Read","status":"done","toolKind":"read","path":"/a/b.ts"});
+        let p: MessagePart = serde_json::from_value(part.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&p).unwrap(), part);
+        let t = json!({"type":"thought","text":"hmm"});
+        let p: MessagePart = serde_json::from_value(t.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&p).unwrap(), t);
     }
 
     #[test]
