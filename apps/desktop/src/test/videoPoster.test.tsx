@@ -16,6 +16,7 @@ import { Videos } from '@/screens/Videos';
 import { VideoPoster } from '@/components/VideoPoster';
 import { setUiLanguage } from '@/i18n';
 import { useRender } from '@/state/render';
+import { useApp } from '@/state/app';
 
 const proj = (over: Partial<Project> = {}): Project => ({
   id: 'p1', title: 'Jalur Rempah', slug: 'p1', folder: '/w/p1', kind: 'explainer', format: '9:16', language: 'id', status: 'rendered',
@@ -91,6 +92,17 @@ describe('the Videos card poster', () => {
     useRender.getState().start('p1', { source: 'agent' });
     render(<VideoPoster project={proj()} />);
     expect(await screen.findByText('Sedang merender…')).toBeInTheDocument();
+  });
+
+  it('the Videos screen follows a project whose status moves while it is open', async () => {
+    vi.mocked(videoThumbnail).mockResolvedValue(null);
+    vi.mocked(listProjects).mockResolvedValue([proj({ status: 'draft' })]);
+    render(<Videos />);
+    const card = async () => (await screen.findByTestId('no-preview')).closest('button')!;
+    expect(within(await card()).getByText('Draft')).toBeInTheDocument();
+    vi.mocked(listProjects).mockResolvedValue([proj({ status: 'building' })]);
+    act(() => useApp.getState().bumpProjects());
+    await waitFor(async () => expect(within(await card()).getByText('Building')).toBeInTheDocument());
   });
 
   it('the Videos screen uses it, with the title and meta below the card', async () => {

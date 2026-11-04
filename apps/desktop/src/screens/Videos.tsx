@@ -39,16 +39,18 @@ export function Videos() {
   const [tab, setTab] = useState<Tab>('all');
   const [q, setQ] = useState('');
   const [scheduleFor, setScheduleFor] = useState<Project | null>(null);
+  // Statuses move on by themselves (a chat builds, a render finishes): follow them.
+  const version = useApp((s) => s.projectsVersion);
 
   useEffect(() => {
     let alive = true;
     listProjects()
       .then((p) => alive && setProjects(p))
-      .catch(() => alive && setProjects([]));
+      .catch(() => alive && setProjects((l) => l ?? []));
     return () => {
       alive = false;
     };
-  }, []);
+  }, [version]);
 
   const list = projects ?? [];
   const shown = useMemo(() => {
