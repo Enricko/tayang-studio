@@ -1228,6 +1228,13 @@ pub fn latest_render_info(state: State<'_, AppState>, project_id: String) -> Cmd
     Ok(media::latest_render_info(&folder))
 }
 
+/// The newest `*.mp4` anywhere in the project (empty too), for spotting a render that is being written.
+#[tauri::command]
+pub async fn newest_video_info(state: State<'_, AppState>, project_id: String) -> CmdResult<Option<crate::types::FileInfo>> {
+    let folder = project_folder(&state, &project_id)?;
+    tauri::async_runtime::spawn_blocking(move || media::newest_video_info(&folder)).await.map_err(err)
+}
+
 #[tauri::command]
 pub async fn media_probe(
     state: State<'_, AppState>,

@@ -127,6 +127,7 @@ pub fn run() {
             commands::agent_respond_permission,
             commands::media_latest_render,
             commands::latest_render_info,
+            commands::newest_video_info,
             commands::recent_images,
             commands::schedule_videos,
             commands::media_probe,

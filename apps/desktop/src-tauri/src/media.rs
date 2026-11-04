@@ -171,6 +171,38 @@ const IMAGES_MAX_ENTRIES: usize = 5_000;
 const IMAGE_MAX_BYTES: u64 = 20 * 1024 * 1024;
 pub const IMAGES_MAX_LIMIT: usize = 50;
 
+/// Every file in `folder` with its metadata, as read by the walk. Symlinks are never followed;
+/// dependency, git and dot folders are skipped; the walk stops 6 levels down and after 5 000 entries.
+fn walk_files(folder: &Path, mut visit: impl FnMut(PathBuf, std::fs::Metadata)) {
+    let mut stack = vec![(folder.to_path_buf(), 0usize)];
+    let mut seen = 0usize;
+    while let Some((dir, depth)) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+        for entry in entries.flatten() {
+            seen += 1;
+            if seen > IMAGES_MAX_ENTRIES {
+                return;
+            }
+            let path = entry.path();
+            // `symlink_metadata` describes the link itself: a link is never followed.
+            let Ok(meta) = std::fs::symlink_metadata(&path) else { continue };
+            if meta.file_type().is_symlink() {
+                continue;
+            }
+            if meta.is_dir() {
+                let name = entry.file_name().to_string_lossy().into_owned();
+                if depth + 1 < IMAGES_MAX_DEPTH && !name.starts_with('.') && !SKIP_DIRS.contains(&name.as_str()) {
+                    stack.push((path, depth + 1));
+                }
+                continue;
+            }
+            if meta.is_file() {
+                visit(path, meta);
+            }
+        }
+    }
+}
+
 /// Images (png, jpg, jpeg, webp, gif) in `folder` changed or created after `since` (see `changed_at`),
 /// newest first, at most
 /// `limit` (≤ 50). Symlinks are never followed; dependency, git and dot folders are skipped; the walk
@@ -179,39 +211,17 @@ pub const IMAGES_MAX_LIMIT: usize = 50;
 /// more than 50 new images only the newest 50 are listed.
 pub fn recent_images(folder: &Path, since: chrono::DateTime<chrono::Utc>, limit: usize) -> Vec<FileInfo> {
     let mut found: Vec<(std::time::SystemTime, PathBuf, std::fs::Metadata)> = Vec::new();
-    let mut stack = vec![(folder.to_path_buf(), 0usize)];
-    let mut seen = 0usize;
     let since: std::time::SystemTime = since.into();
-    'walk: while let Some((dir, depth)) = stack.pop() {
-        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
-        for entry in entries.flatten() {
-            seen += 1;
-            if seen > IMAGES_MAX_ENTRIES {
-                break 'walk;
-            }
-            let path = entry.path();
-            // `symlink_metadata` describes the link itself: a link is never followed.
-            let Ok(meta) = std::fs::symlink_metadata(&path) else { continue };
-            let name = entry.file_name().to_string_lossy().into_owned();
-            if meta.file_type().is_symlink() {
-                continue;
-            }
-            if meta.is_dir() {
-                if depth + 1 < IMAGES_MAX_DEPTH && !name.starts_with('.') && !SKIP_DIRS.contains(&name.as_str()) {
-                    stack.push((path, depth + 1));
-                }
-                continue;
-            }
-            let ext = path.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
-            if !meta.is_file() || !IMAGE_EXTS.contains(&ext.as_str()) || meta.len() == 0 || meta.len() > IMAGE_MAX_BYTES {
-                continue;
-            }
-            match changed_at(&meta) {
-                Some(m) if m > since && crate::projects::ensure_inside(folder, &path) => found.push((m, path, meta)),
-                _ => {}
-            }
+    walk_files(folder, |path, meta| {
+        let ext = path.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+        if !IMAGE_EXTS.contains(&ext.as_str()) || meta.len() == 0 || meta.len() > IMAGE_MAX_BYTES {
+            return;
         }
-    }
+        match changed_at(&meta) {
+            Some(m) if m > since && crate::projects::ensure_inside(folder, &path) => found.push((m, path, meta)),
+            _ => {}
+        }
+    });
     found.sort_by_key(|f| std::cmp::Reverse(f.0));
     found
         .into_iter()
@@ -219,6 +229,22 @@ pub fn recent_images(folder: &Path, since: chrono::DateTime<chrono::Utc>, limit:
         // From what the walk read: no second look that a swap for a symlink could change.
         .filter_map(|(_, p, meta)| info_from(&p, &meta))
         .collect()
+}
+
+/// The most recently written `*.mp4` anywhere in the project (same walk as `recent_images`), empty
+/// ones too: a render that just started. Lets the UI see a pipeline's render (`npm run make`) grow.
+pub fn newest_video_info(folder: &Path) -> Option<FileInfo> {
+    let mut best: Option<(std::time::SystemTime, PathBuf, std::fs::Metadata)> = None;
+    walk_files(folder, |path, meta| {
+        if !path.extension().is_some_and(|x| x.eq_ignore_ascii_case("mp4")) {
+            return;
+        }
+        let Ok(m) = meta.modified() else { return };
+        if best.as_ref().is_none_or(|b| m > b.0) && crate::projects::ensure_inside(folder, &path) {
+            best = Some((m, path, meta));
+        }
+    });
+    best.and_then(|(_, p, meta)| info_from(&p, &meta))
 }
 
 fn parse_fps(s: &str) -> Option<f64> {
@@ -1286,6 +1312,44 @@ mod tests {
         assert_eq!(latest_render(tmp.path()), Some(good));
         std::fs::remove_file(renders.join("a.mp4")).unwrap();
         assert_eq!(latest_render(tmp.path()), None);
+    }
+
+    #[test]
+    fn newest_video_looks_through_the_project_and_counts_files_still_empty() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        assert_eq!(newest_video_info(root), None);
+        let at = |secs: u64| std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_800_000_000 + secs);
+        let w = |rel: &str, bytes: &[u8], t: std::time::SystemTime| {
+            let p = root.join(rel);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(&p, bytes).unwrap();
+            std::fs::File::options().write(true).open(&p).unwrap().set_modified(t).unwrap();
+        };
+        w("renders/old.mp4", b"x", at(0));
+        w("runs/jalur-rempah/out/final.MP4", b"", at(10));
+        // Never: dependencies, git, dot folders, other files, or too deep.
+        w("node_modules/pkg/demo.mp4", b"x", at(50));
+        w(".git/x.mp4", b"x", at(50));
+        w(".cache/y.mp4", b"x", at(50));
+        w("runs/notes.txt", b"x", at(50));
+        w("1/2/3/4/5/6/too-deep.mp4", b"x", at(50));
+        let info = newest_video_info(root).unwrap();
+        assert_eq!(info.name, "final.MP4");
+        assert_eq!(info.size, 0, "a render that just started is still empty");
+        w("1/2/3/4/5/deep.mp4", b"abc", at(20));
+        assert_eq!(newest_video_info(root).unwrap().name, "deep.mp4");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn newest_video_never_follows_symlinks() {
+        let tmp = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::write(outside.path().join("v.mp4"), b"x").unwrap();
+        std::os::unix::fs::symlink(outside.path(), tmp.path().join("linked")).unwrap();
+        std::os::unix::fs::symlink(outside.path().join("v.mp4"), tmp.path().join("v.mp4")).unwrap();
+        assert_eq!(newest_video_info(tmp.path()), None);
     }
 
     #[test]
