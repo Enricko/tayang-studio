@@ -386,6 +386,26 @@ describe('ChatProject', () => {
     expect(screen.getAllByTestId('agent-message')).toHaveLength(1);
   });
 
+  it('merges thought chunks into one part, keeps tool kind and path, and persists them', async () => {
+    const user = userEvent.setup();
+    render(<ChatProject chatId="c1" />);
+    await user.type(await screen.findByRole('textbox', { name: 'Message' }), 'go');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
+    await emit('c1', { kind: 'thought', text: 'Let me ' });
+    await emit('c1', { kind: 'thought', text: 'think' });
+    await emit('c1', { kind: 'tool', toolCallId: 't1', title: 'Read a.ts', status: 'done', toolKind: 'read', path: '/w/a.ts' });
+    await emit('c1', { kind: 'text', text: 'Done' });
+    await emit('c1', { kind: 'done', stopReason: 'end_turn' });
+    const parts = useChat.getState().messages.c1!.at(-1)!.parts;
+    expect(parts).toEqual([
+      { type: 'thought', text: 'Let me think' },
+      { type: 'tool', toolCallId: 't1', title: 'Read a.ts', status: 'done', toolKind: 'read', path: '/w/a.ts' },
+      { type: 'text', text: 'Done' },
+    ]);
+    expect(ipc.addMessage).toHaveBeenCalledWith('c1', 'agent', parts);
+  });
+
   it('starts with auto mode when Settings has it on, and the Auto toggle switches the running session', async () => {
     const user = userEvent.setup();
     useApp.setState({ settings: { ...settings, autoMode: true } });
@@ -1114,6 +1134,21 @@ describe('buildRecap', () => {
     const recap = buildRecap([msg('agent', `Pick one:\n${block}\nThen tell me.`, 1), msg('agent', block, 2)]);
     expect(recap).toBe('Agent: Pick one:\n\nThen tell me.');
     expect(recap).not.toContain('createSurface');
+  });
+
+  it('leaves out thoughts and tools', () => {
+    const m = {
+      id: 'a',
+      chatId: 'c',
+      role: 'agent' as const,
+      parts: [
+        { type: 'thought' as const, text: 'secret musing' },
+        { type: 'tool' as const, toolCallId: 't', title: 'Run ls', status: 'done' as const },
+        { type: 'text' as const, text: 'Hello' },
+      ],
+      createdAt: '',
+    };
+    expect(buildRecap([m])).toBe('Agent: Hello');
   });
 
   it('stays within 1,500 characters and skips messages without text', () => {

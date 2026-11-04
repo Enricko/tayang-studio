@@ -215,8 +215,8 @@ export const useChat = create<ChatState>((set, get) => {
   };
 
   const onUpdate = (chatId: string, u: AgentUpdate) => {
-    if (!tracked.has(chatId) || u.kind === 'thought') return;
-    if (u.kind === 'text' || u.kind === 'tool') {
+    if (!tracked.has(chatId)) return;
+    if (u.kind === 'text' || u.kind === 'thought' || u.kind === 'tool') {
       const list = get().messages[chatId] ?? [];
       const last = list[list.length - 1];
       if (!last || last.role !== 'agent') {
@@ -224,12 +224,19 @@ export const useChat = create<ChatState>((set, get) => {
       }
       replaceLast(chatId, (m) => {
         const parts = [...m.parts];
-        if (u.kind === 'text') {
+        if (u.kind === 'text' || u.kind === 'thought') {
           const tail = parts[parts.length - 1];
-          if (tail?.type === 'text') parts[parts.length - 1] = { type: 'text', text: tail.text + u.text };
-          else parts.push({ type: 'text', text: u.text });
+          if (tail?.type === u.kind) parts[parts.length - 1] = { type: u.kind, text: tail.text + u.text };
+          else parts.push({ type: u.kind, text: u.text });
         } else {
-          const part: MessagePart = { type: 'tool', toolCallId: u.toolCallId, title: u.title, status: u.status };
+          const part: MessagePart = {
+            type: 'tool',
+            toolCallId: u.toolCallId,
+            title: u.title,
+            status: u.status,
+            ...(u.toolKind ? { toolKind: u.toolKind } : {}),
+            ...(u.path ? { path: u.path } : {}),
+          };
           const i = parts.findIndex((p) => p.type === 'tool' && p.toolCallId === u.toolCallId);
           if (i >= 0) parts[i] = part;
           else parts.push(part);

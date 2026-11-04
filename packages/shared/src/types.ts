@@ -73,6 +73,19 @@ export interface Mark {
   y: number;
 }
 
+/** What an agent says a tool call is (ACP tool kinds). */
+export type ToolKind =
+  | 'read'
+  | 'edit'
+  | 'delete'
+  | 'move'
+  | 'search'
+  | 'execute'
+  | 'think'
+  | 'fetch'
+  | 'switch_mode'
+  | 'other';
+
 export type MessagePart =
   | { type: 'text'; text: string }
   | { type: 'mention'; projectId: string; title: string }
@@ -90,7 +103,11 @@ export type MessagePart =
       toolCallId: string;
       title: string;
       status: 'pending' | 'running' | 'done' | 'failed';
+      toolKind?: ToolKind;
+      /** The first file the tool touches. */
+      path?: string;
     }
+  | { type: 'thought'; text: string }
   | { type: 'a2ui'; surfaceId: string; messages: unknown[] }
   | { type: 'a2ui-action'; summary: string; action: object };
 
@@ -192,6 +209,8 @@ export type AgentUpdate =
       toolCallId: string;
       title: string;
       status: 'pending' | 'running' | 'done' | 'failed';
+      toolKind?: ToolKind;
+      path?: string;
     }
   | { kind: 'done'; stopReason: string }
   | { kind: 'error'; message: string };
