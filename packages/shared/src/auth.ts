@@ -54,3 +54,30 @@ export function isAuthTokenError(v: unknown): v is AuthTokenError {
   const error = (v as { error?: unknown }).error;
   return typeof error === 'string' && (AUTH_TOKEN_ERRORS as readonly string[]).includes(error);
 }
+
+// ---- desktop: what Rust tells the webview (it never sees the token or the device code) ----
+
+export type AuthState = 'signed-in' | 'signed-out' | 'pending' | 'error';
+
+/** Why signing in stopped or couldn't start. Rust also rejects commands with `auth:<code>`. */
+export type AuthErrorCode = 'expired' | 'denied' | 'network' | 'server' | 'rate-limited' | 'storage';
+
+/** `auth_status()` and the `auth://changed` event. */
+export interface AuthStatus {
+  state: AuthState;
+  signedIn: boolean;
+  account?: Account;
+  error?: AuthErrorCode;
+  /** Signed in, but the API couldn't confirm it just now; `account` is the cached one. */
+  offline: boolean;
+  /** The API base this state belongs to. */
+  apiUrl: string;
+}
+
+/** `auth_start()`: what the sign-in dialog shows. */
+export interface AuthStart {
+  userCode: string;
+  verificationUri: string;
+  verificationUriComplete: string;
+  expiresIn: number;
+}
