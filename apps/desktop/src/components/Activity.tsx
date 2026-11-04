@@ -7,6 +7,9 @@ export type ThoughtPart = Extract<MessagePart, { type: 'thought' }>;
 export type ActivityItem = ToolPart | ThoughtPart;
 
 /** Skill loading is plumbing: never shown, never counted. */
+/** Tayang approved a command itself; it annotates the real tool call, so it is a note, not a tool. */
+export const isAutoNote = (p: ToolPart) => p.toolCallId.startsWith('auto-');
+
 export function isHiddenTool(p: ToolPart): boolean {
   return p.toolKind === 'switch_mode' || /^\s*(load skill|skill)\b/i.test(p.title);
 }
@@ -39,6 +42,7 @@ export function summarize(items: ActivityItem[]): { segments: string[]; failed: 
   const n: Record<Group, number> = { thought: 0, execute: 0, edit: 0, read: 0, search: 0, fetch: 0, other: 0 };
   let failed = 0;
   for (const it of items) {
+    if (it.type === 'tool' && isAutoNote(it)) continue;
     n[groupOf(it)]++;
     if (it.type === 'tool' && it.status === 'failed') failed++;
   }
@@ -73,9 +77,9 @@ const PulseDot = () => (
 
 function FileChip({ name }: { name: string }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-sm bg-raised px-1.5 py-0.5 text-[12px] text-foreground">
-      <FileText size={12} strokeWidth={1.5} aria-hidden="true" />
-      {name}
+    <span className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-sm bg-raised px-1.5 py-0.5 text-[12px] text-current">
+      <FileText size={12} strokeWidth={1.5} className="shrink-0" aria-hidden="true" />
+      <span className="truncate">{name}</span>
     </span>
   );
 }
@@ -145,7 +149,7 @@ function ToolRow({ part }: { part: ToolPart }) {
   const failed = part.status === 'failed';
   const running = part.status === 'running' || part.status === 'pending';
   return (
-    <li className={`flex min-w-0 items-center gap-2 text-[13px] ${failed ? 'text-destructive' : 'text-text-2'}`} data-status={part.status}>
+    <li className={`flex min-w-0 items-center gap-2 text-[13px] ${failed ? 'text-error' : 'text-text-2'}`} data-status={part.status}>
       <Icon size={16} strokeWidth={1.5} className="shrink-0" aria-hidden="true" />
       <span className="shrink-0">{verb}</span>
       {detail}
@@ -157,7 +161,10 @@ function ToolRow({ part }: { part: ToolPart }) {
 /** One run of tool calls and thoughts between text: a muted summary line that opens into a list. */
 export function ActivityGroup({ items, live }: { items: ActivityItem[]; live: boolean }) {
   const [open, setOpen] = useState(false);
+  const notes = items.filter((i): i is ToolPart => i.type === 'tool' && isAutoNote(i));
+  const rows = items.filter((i) => !(i.type === 'tool' && isAutoNote(i)));
   const { segments, failed } = summarize(items);
+  if (!segments.length && notes.length) segments.push('Ran without asking');
   const running = live ? [...items].reverse().find((i): i is ToolPart => i.type === 'tool' && (i.status === 'running' || i.status === 'pending')) : undefined;
   return (
     <div className="flex flex-col gap-1">
@@ -178,7 +185,7 @@ export function ActivityGroup({ items, live }: { items: ActivityItem[]; live: bo
           {failed > 0 && (
             <>
               {segments.length > 0 && ' · '}
-              <span className="text-destructive">{failed} failed</span>
+              <span className="text-error">{failed} failed</span>
             </>
           )}
           {running && (
@@ -191,9 +198,14 @@ export function ActivityGroup({ items, live }: { items: ActivityItem[]; live: bo
       </button>
       {open && (
         <ul className="m-0 ml-[7px] flex list-none flex-col gap-2 border-l border-border py-1 pl-4">
-          {items.map((it, i) =>
+          {rows.map((it, i) =>
             it.type === 'thought' ? <ThoughtRow key={i} text={it.text} /> : <ToolRow key={it.toolCallId} part={it} />,
           )}
+          {notes.map((n) => (
+            <li key={n.toolCallId} title={n.title} className="min-w-0 truncate font-mono text-[12px] text-text-3">
+              {n.title}
+            </li>
+          ))}
         </ul>
       )}
     </div>
