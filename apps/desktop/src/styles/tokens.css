@@ -92,3 +92,31 @@
   html, body, #root { height: 100%; }
   body { @apply bg-background text-foreground font-sans antialiased; margin: 0; }
 }
+
+/* Working indicators: transform and opacity only. */
+@keyframes tayang-indeterminate {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(300%); }
+}
+
+@keyframes tayang-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+/* A segment 35% of the track wide; 0 to 300% of its own width crosses the whole track. */
+.tayang-indeterminate {
+  width: 35%;
+  animation: tayang-indeterminate 1.4s linear infinite;
+}
+
+.tayang-pulse {
+  animation: tayang-pulse 1.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tayang-indeterminate,
+  .tayang-pulse {
+    animation: none;
+  }
+}

@@ -21,16 +21,25 @@ const COLUMNS: { name: string; mood: OyenMood; match(s: JobStatus): boolean }[] 
 function JobCard({ job, project }: { job: Job; project: string }) {
   const navigate = useApp((s) => s.navigate);
   const failed = job.status === 'failed';
+  const working = job.status === 'working';
   const needs = failed || job.status === 'needs-you';
   const open = () => {
     if (job.kind === 'study-style' || !job.chatId) navigate({ name: 'style' });
     else navigate({ name: 'chat', chatId: job.chatId });
   };
   return (
-    <article className={cn('flex flex-col gap-2 rounded-md border bg-card p-3', failed ? 'border-deep-orange' : 'border-border')}>
+    <article
+      className={cn(
+        'relative flex flex-col gap-2 overflow-hidden rounded-md border bg-card p-3',
+        failed ? 'border-deep-orange' : 'border-border',
+      )}
+    >
       <div className="flex items-center gap-2">
         <span className="font-mono text-[11px] text-text-2">{AGENT_NAMES[job.agentId]}</span>
-        <span className="ml-auto text-xs text-text-3">{ago(job.updatedAt)}</span>
+        <span className="ml-auto inline-flex items-center gap-1.5 text-xs text-text-3">
+          {working && <span aria-hidden="true" className="tayang-pulse size-1.5 rounded-full bg-primary" />}
+          {working ? `working · ${ago(job.updatedAt)}` : ago(job.updatedAt)}
+        </span>
       </div>
       <span className="text-sm leading-[1.4] font-medium">{job.title}</span>
       <span className="text-xs text-text-3">{project}</span>
@@ -55,6 +64,15 @@ function JobCard({ job, project }: { job: Job; project: string }) {
           <Button variant="secondary" className="h-8 self-start rounded-sm px-3 text-[13px]" onClick={open}>
             {failed ? 'Fix it' : 'Review'}
           </Button>
+        </div>
+      )}
+      {working && (
+        <div
+          role="progressbar"
+          aria-label="Working"
+          className="absolute inset-x-0 bottom-0 h-0.5 overflow-hidden bg-raised"
+        >
+          <div className="tayang-indeterminate h-full bg-primary" />
         </div>
       )}
     </article>
