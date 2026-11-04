@@ -17,6 +17,8 @@ vi.mock('@/lib/ipc', () => ({
   agentRespondPermission: vi.fn(),
   listMessages: vi.fn().mockResolvedValue([]),
   addMessage: vi.fn().mockResolvedValue(null),
+  installStyleTemplate: vi.fn(),
+  writeBrief: vi.fn().mockResolvedValue(undefined),
   detectAgents: vi.fn().mockResolvedValue([]),
   assetUrl: (p: string) => p,
 }));
@@ -139,6 +141,44 @@ describe('Calendar make it', () => {
   });
 });
 
+describe('Calendar make it with a template style', () => {
+  const tmpl: Style = { ...atlas, id: 'tmpl', name: 'Paper cut', engine: 'remotion', template: { sha256: 'a', size: 1, version: 1 } };
+  const makeIt = async () => {
+    localStorage.setItem(
+      'tayang.ideas.2026-11-02',
+      JSON.stringify([{ title: 'Ide Kalender', kind: 'explainer', lengthSec: 30, styleId: 'tmpl' }]),
+    );
+    vi.mocked(ipc.listStyles).mockResolvedValue([atlas, tmpl]);
+    vi.mocked(ipc.createProject).mockResolvedValue({ id: 'p1', title: 'Ide Kalender' } as never);
+    render(<Calendar today={new Date(2026, 10, 4)} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Make it' }));
+  };
+
+  it('installs the template, with the system line and the template paragraph in the brief', async () => {
+    vi.mocked(ipc.installStyleTemplate).mockResolvedValue({ installed: true });
+    await makeIt();
+    await waitFor(() => expect(ipc.installStyleTemplate).toHaveBeenCalledWith('p1'));
+    expect(vi.mocked(ipc.createProject).mock.calls[0]![0]).toMatchObject({ styleId: 'tmpl' });
+    expect(vi.mocked(ipc.createProject).mock.calls[0]![1]).toContain('This project starts from the Paper cut template.');
+    expect(ipc.addMessage).toHaveBeenCalledWith('chat-1', 'system', [{ type: 'text', text: 'Setting up the Paper cut template…' }]);
+    expect(ipc.writeBrief).not.toHaveBeenCalled();
+    await waitFor(() => expect(useApp.getState().route).toEqual({ name: 'chat', chatId: 'chat-1' }));
+    localStorage.clear();
+  });
+
+  it('rewrites the brief and says so when the template fails', async () => {
+    vi.mocked(ipc.installStyleTemplate).mockRejectedValue('offline');
+    await makeIt();
+    await waitFor(() =>
+      expect(ipc.addMessage).toHaveBeenCalledWith('chat-1', 'system', [
+        { type: 'text', text: "Couldn't set up the Paper cut template: offline. Continuing without it." },
+      ]),
+    );
+    expect(ipc.writeBrief).toHaveBeenCalledWith('p1', expect.not.stringContaining('This project starts from'));
+    localStorage.clear();
+  });
+});
+
 describe('the prompt example', () => {
   const prompt = buildTopicIdeasPrompt(['data'], 'id');
   const example = /```a2ui\n[\s\S]*?\n```/.exec(prompt.slice(prompt.indexOf('Example of the block')))![0];
@@ -237,6 +277,29 @@ describe('topic ideas in a new chat', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Make this' }));
     await waitFor(() => expect(ipc.createProject).toHaveBeenCalled());
     expect(vi.mocked(ipc.createProject).mock.calls[0]![0]).not.toHaveProperty('styleId');
+  });
+
+  it('a synced idea style wins over the template chip; otherwise the chip style is used', async () => {
+    const tmpl: Style = { ...atlas, id: 'tmpl', name: 'Paper cut', template: { sha256: 'a', size: 1, version: 1 } };
+    vi.mocked(ipc.listStyles).mockResolvedValue([atlas, tmpl]);
+    vi.mocked(ipc.installStyleTemplate).mockResolvedValue({ installed: true });
+    useApp.setState({ route: { name: 'chat-new', styleId: 'tmpl' } });
+    await askTopics(reply('atlas-journey'));
+    await userEvent.click(await screen.findByRole('button', { name: 'Make this' }));
+    await waitFor(() => expect(ipc.createProject).toHaveBeenCalled());
+    expect(vi.mocked(ipc.createProject).mock.calls[0]![0]).toMatchObject({ styleId: 'atlas-journey' });
+    expect(ipc.installStyleTemplate).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the template chip style when the idea style is unknown, and installs it', async () => {
+    const tmpl: Style = { ...atlas, id: 'tmpl', name: 'Paper cut', template: { sha256: 'a', size: 1, version: 1 } };
+    vi.mocked(ipc.listStyles).mockResolvedValue([atlas, tmpl]);
+    vi.mocked(ipc.installStyleTemplate).mockResolvedValue({ installed: true });
+    useApp.setState({ route: { name: 'chat-new', styleId: 'tmpl' } });
+    await askTopics(reply('unknown-style'));
+    await userEvent.click(await screen.findByRole('button', { name: 'Make this' }));
+    await waitFor(() => expect(ipc.installStyleTemplate).toHaveBeenCalledWith('p1'));
+    expect(vi.mocked(ipc.createProject).mock.calls[0]![0]).toMatchObject({ styleId: 'tmpl' });
   });
 
   it('json fallback shows cards and hides the raw block, keeping the intro', async () => {
