@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Button } from '@/components/Button';
 import { Sidebar, type SidebarKey } from '@/components/Sidebar';
-import { getSettings } from '@/lib/ipc';
+import { getSettings, syncStyles } from '@/lib/ipc';
 import { useWindowDrag } from '@/lib/windowDrag';
 import { Agents } from '@/screens/Agents';
 import { Calendar } from '@/screens/Calendar';
@@ -47,6 +47,10 @@ export default function App() {
     getSettings()
       .then((st) => {
         useApp.getState().setSettings(st);
+        // Built-in styles in the background, like the install ping: never blocks, failures are ignored.
+        void Promise.resolve()
+          .then(syncStyles)
+          .catch(() => {});
         if (st.onboarded) {
           useApp.getState().navigate({ name: 'chat-new' });
           void refreshJobs().catch(() => {});

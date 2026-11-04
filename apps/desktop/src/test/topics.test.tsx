@@ -8,6 +8,7 @@ vi.mock('@/lib/ipc', () => ({
   createProject: vi.fn(),
   createChat: vi.fn(),
   listStyles: vi.fn(),
+  syncStyles: vi.fn().mockResolvedValue({ styles: [], offline: false }),
   listJobs: vi.fn().mockResolvedValue([]),
   upsertJob: vi.fn().mockResolvedValue(undefined),
   agentStart: vi.fn().mockResolvedValue(undefined),
@@ -277,6 +278,21 @@ describe('topic ideas in a new chat', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Make this' }));
     await waitFor(() => expect(ipc.createProject).toHaveBeenCalled());
     expect(vi.mocked(ipc.createProject).mock.calls[0]![0]).not.toHaveProperty('styleId');
+  });
+
+  it('syncs once and looks again when the idea names a style this computer does not have yet', async () => {
+    const fresh: Style = { ...atlas, id: 'new-style', name: 'New style' };
+    vi.mocked(ipc.listStyles).mockResolvedValue([atlas]);
+    vi.mocked(ipc.syncStyles).mockImplementationOnce(async () => {
+      vi.mocked(ipc.listStyles).mockResolvedValue([atlas, fresh]);
+      return { styles: [atlas, fresh], offline: false };
+    });
+    await askTopics(reply('new-style'));
+    vi.mocked(ipc.syncStyles).mockClear();
+    await userEvent.click(await screen.findByRole('button', { name: 'Make this' }));
+    await waitFor(() => expect(ipc.createProject).toHaveBeenCalled());
+    expect(ipc.syncStyles).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(ipc.createProject).mock.calls[0]![0]).toMatchObject({ styleId: 'new-style' });
   });
 
   it('a synced idea style wins over the template chip; otherwise the chip style is used', async () => {

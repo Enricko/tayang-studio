@@ -1,7 +1,7 @@
 import type { Project, Settings, Style, VideoKind } from '@tayang/shared';
 import { buildProjectBrief, splitTopicJson, topicIdeaFromAction } from '@tayang/skills';
 import { extractA2ui } from '@/a2ui/parse';
-import { addMessage, createChat, createProject, installStyleTemplate, listStyles, writeBrief } from '@/lib/ipc';
+import { addMessage, createChat, createProject, installStyleTemplate, listStyles, syncStyles, writeBrief } from '@/lib/ipc';
 import { useApp } from '@/state/app';
 import { useChat } from '@/state/chat';
 
@@ -55,7 +55,12 @@ export async function startTopic(
   let styleProblem: string | null = null;
   if (idea.styleId || fallbackId) {
     try {
-      const styles = await listStyles();
+      let styles = await listStyles();
+      // A built-in style the agent named may not be synced yet: sync once, then look again.
+      if (idea.styleId && !styles.some((s) => s.id === idea.styleId)) {
+        const synced = await syncStyles().catch(() => null);
+        if (synced) styles = await listStyles();
+      }
       style =
         (idea.styleId ? styles.find((s) => s.id === idea.styleId) : undefined) ??
         (fallbackId ? styles.find((s) => s.id === fallbackId) : undefined) ??

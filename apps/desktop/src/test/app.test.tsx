@@ -2,10 +2,14 @@ import { render, screen } from '@testing-library/react';
 import { vi } from 'vitest';
 import type { Settings } from '@tayang/shared';
 
-vi.mock('@/lib/ipc', () => ({ getSettings: vi.fn(), listProjects: vi.fn().mockResolvedValue([]) }));
+vi.mock('@/lib/ipc', () => ({
+  getSettings: vi.fn(),
+  listProjects: vi.fn().mockResolvedValue([]),
+  syncStyles: vi.fn().mockResolvedValue({ styles: [], offline: false }),
+}));
 vi.mock('@/lib/events', () => ({ onAgentUpdate: vi.fn(), onPermission: vi.fn() }));
 
-import { getSettings } from '@/lib/ipc';
+import { getSettings, syncStyles } from '@/lib/ipc';
 import App from '@/App';
 import { useApp } from '@/state/app';
 
@@ -37,6 +41,18 @@ describe('App start', () => {
     render(<App />);
     expect(await screen.findByText('What are we making?', { selector: 'h1' })).toBeInTheDocument();
     expect(useApp.getState().route.name).toBe('chat-new');
+  });
+});
+
+describe('App built-in styles', () => {
+  it('syncs the styles in the background at startup, and a failed sync changes nothing', async () => {
+    useApp.setState({ route: { name: 'welcome' }, settings: null });
+    vi.mocked(syncStyles).mockClear().mockRejectedValueOnce(new Error('offline'));
+    vi.mocked(getSettings).mockResolvedValue({ ...base, onboarded: true });
+    render(<App />);
+    expect(await screen.findByText('What are we making?', { selector: 'h1' })).toBeInTheDocument();
+    expect(syncStyles).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
   });
 });
 

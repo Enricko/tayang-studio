@@ -19,6 +19,7 @@ vi.mock('@/lib/ipc', () => ({
   agentRespondPermission: vi.fn(),
   getSettings: vi.fn(),
   listStyles: vi.fn(),
+  syncStyles: vi.fn().mockResolvedValue({ styles: [], offline: false }),
   mediaLatestRender: vi.fn().mockResolvedValue(null),
   mediaProbe: vi.fn().mockResolvedValue(null),
   mediaThumbnails: vi.fn().mockResolvedValue([]),
