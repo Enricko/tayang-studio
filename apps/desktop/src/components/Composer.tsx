@@ -170,6 +170,7 @@ export function Composer({
   draftKey,
   styles,
   styleHint,
+  autoFocus,
 }: {
   chatId: string | null;
   /** Resolve to false when sending failed: the draft is then kept. */
@@ -201,6 +202,8 @@ export function Composer({
   styles?: Style[];
   /** A line under the style chip, saying what the style does here. */
   styleHint?: string;
+  /** Takes the focus, and takes it back each time the box is enabled again (after a turn). */
+  autoFocus?: boolean;
 }) {
   const { t } = useTranslation();
   const defaultAgent = useApp((s) => s.settings?.defaultAgent ?? 'claude');
@@ -283,6 +286,9 @@ export function Composer({
       off?.();
     };
   }, []);
+  useEffect(() => {
+    if (autoFocus && !disabled) ref.current?.focus();
+  }, [autoFocus, disabled]);
   const disabledRef = useRef(disabled);
   disabledRef.current = disabled;
 

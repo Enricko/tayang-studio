@@ -35,6 +35,8 @@ interface AppState {
   needsYouCount: number;
   /** The chat New chat started last in this app session: Chat goes back to it while it runs. */
   newChatId: string | null;
+  /** The chat New chat just handed its first message to: its composer takes the focus over. */
+  focusChatId: string | null;
   /** Bumped when a project is created so the sidebar's Recent list refreshes. */
   projectsVersion: number;
   bumpProjects(): void;
@@ -56,6 +58,7 @@ export const useApp = create<AppState>((set, get) => ({
   setSettings: (settings) => set({ settings }),
   needsYouCount: 0,
   newChatId: null,
+  focusChatId: null,
   projectsVersion: 0,
   bumpProjects: () => set((s) => ({ projectsVersion: s.projectsVersion + 1 })),
   notificationsBlocked: false,

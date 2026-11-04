@@ -47,6 +47,11 @@ export function ChatThread({ chatId, draft, styleId: routeStyleId }: { chatId: s
   const [setupLine, setSetupLine] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // Straight from New chat: the composer the user was typing in keeps the focus.
+  const [focus] = useState(() => useApp.getState().focusChatId === chatId);
+  useEffect(() => {
+    if (focus) useApp.setState({ focusChatId: null });
+  }, [focus]);
   const styles = useStyles();
   // A template style waiting in the composer is the chat's template; the template chip steps aside for it.
   const chipTemplate = useChipTemplate(chatId, styles);
@@ -188,6 +193,7 @@ export function ChatThread({ chatId, draft, styleId: routeStyleId }: { chatId: s
           <Composer
             chatId={chatId}
             draftKey={chatId}
+            autoFocus={focus}
             styles={styles}
             initialText={draft}
             onSend={onSend}

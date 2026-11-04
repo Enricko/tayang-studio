@@ -232,6 +232,21 @@ describe('a new chat never disappears', () => {
     expect(vi.mocked(ipc.createProject).mock.calls[0]![0]).toMatchObject({ title: 'Ide satu', styleId: 'tmpl' });
   });
 
+  it('the composer keeps focus across the first send, ready for the follow-up', async () => {
+    const user = userEvent.setup();
+    render(<Shell />);
+    await user.type(await screen.findByRole('textbox', { name: 'Message' }), 'halo{Enter}');
+    await waitFor(() => expect(useApp.getState().route).toEqual({ name: 'chat', chatId: 'c-new' }));
+    await emit('c-new', { kind: 'text', text: 'Hai' });
+    await emit('c-new', { kind: 'done', stopReason: 'end_turn' });
+    const box = within(main()).getByRole('textbox', { name: 'Message' });
+    await waitFor(() => expect(box).toHaveFocus());
+    // Opening the chat later from Recent does not grab focus.
+    act(() => useApp.getState().navigate({ name: 'videos' }));
+    act(() => useApp.getState().navigate({ name: 'chat', chatId: 'c-new' }));
+    expect(within(main()).getByRole('textbox', { name: 'Message' })).not.toHaveFocus();
+  });
+
   it('a double click on From a topic asks once', async () => {
     const user = userEvent.setup();
     let made: (c: Chat) => void = () => {};

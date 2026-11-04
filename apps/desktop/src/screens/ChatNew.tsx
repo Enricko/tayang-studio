@@ -92,6 +92,7 @@ export function ChatNew() {
     // An unsent draft goes with the chat, its style chip too.
     if (draft) store.setDraft(chatId, draft);
     store.setDraft(NEW_CHAT_DRAFT, EMPTY_DRAFT);
+    useApp.setState({ focusChatId: chatId });
     navigate({ name: 'chat', chatId, ...(draft?.text ? { draft: draft.text } : {}), ...(template ? { styleId: template } : {}) });
   };
 
