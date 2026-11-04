@@ -31,6 +31,19 @@ describe('layout persistence', () => {
     expect(JSON.parse(localStorage.getItem(KEY)!)).toEqual({ sidebar: 280, collapsed: true, preview: 500 });
   });
 
+  it('does not write while a drag is live, only its final width', () => {
+    useLayout.getState().hydrate();
+    const setItem = vi.spyOn(Storage.prototype, 'setItem');
+    useLayout.getState().setSidebar(250, true);
+    useLayout.getState().setCollapsed(true, true);
+    useLayout.getState().setPreview(450, true);
+    expect(setItem).not.toHaveBeenCalled();
+    expect(useLayout.getState()).toMatchObject({ sidebar: 250, collapsed: true, preview: 450 });
+    useLayout.getState().setPreview(460);
+    expect(setItem).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(localStorage.getItem(KEY)!)).toEqual({ sidebar: 250, collapsed: true, preview: 460 });
+  });
+
   it('works when storage throws', () => {
     vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
       throw new Error('denied');

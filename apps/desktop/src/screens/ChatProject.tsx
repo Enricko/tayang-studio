@@ -210,7 +210,7 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
             value={fitted.preview}
             min={PREVIEW.min}
             max={fitted.previewMax}
-            onResize={(w) => useLayout.getState().setPreview(Math.min(w, fitted.previewMax))}
+            onResize={(w, live) => useLayout.getState().setPreview(Math.min(w, fitted.previewMax), live)}
             onReset={() => useLayout.getState().resetPreview()}
           />
           {project ? (

@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { create } from 'zustand';
+import { useShallow } from 'zustand/react/shallow';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 
 /** The left app sidebar: dragging it below `snap` collapses it to the `rail`. */
@@ -56,11 +57,12 @@ function saveLayout(s: SavedLayout) {
 
 interface LayoutState extends SavedLayout {
   windowWidth: number;
-  setSidebar(width: number): void;
-  setCollapsed(collapsed: boolean): void;
+  /** `live`: mid-drag, shown but not saved yet (the drag's final call saves). */
+  setSidebar(width: number, live?: boolean): void;
+  setCollapsed(collapsed: boolean, live?: boolean): void;
   toggleCollapsed(): void;
   resetSidebar(): void;
-  setPreview(width: number): void;
+  setPreview(width: number, live?: boolean): void;
   resetPreview(): void;
   setWindowWidth(width: number): void;
   /** Reads the saved layout again (startup, tests). */
@@ -70,18 +72,18 @@ interface LayoutState extends SavedLayout {
 const viewport = () => (typeof window === 'undefined' ? 1280 : window.innerWidth);
 
 export const useLayout = create<LayoutState>((set, get) => {
-  const save = (patch: Partial<SavedLayout>) => {
+  const save = (patch: Partial<SavedLayout>, live = false) => {
     set(patch);
-    saveLayout(get());
+    if (!live) saveLayout(get());
   };
   return {
     ...loadLayout(),
     windowWidth: viewport(),
-    setSidebar: (w) => save({ sidebar: clamp(Math.round(w), SIDEBAR.min, SIDEBAR.max) }),
-    setCollapsed: (collapsed) => get().collapsed !== collapsed && save({ collapsed }),
+    setSidebar: (w, live) => save({ sidebar: clamp(Math.round(w), SIDEBAR.min, SIDEBAR.max) }, live),
+    setCollapsed: (collapsed, live) => (get().collapsed !== collapsed || !live) && save({ collapsed }, live),
     toggleCollapsed: () => save({ collapsed: !get().collapsed }),
     resetSidebar: () => save({ sidebar: SIDEBAR.default, collapsed: false }),
-    setPreview: (w) => save({ preview: clamp(Math.round(w), PREVIEW.min, PREVIEW.max) }),
+    setPreview: (w, live) => save({ preview: clamp(Math.round(w), PREVIEW.min, PREVIEW.max) }, live),
     resetPreview: () => save({ preview: PREVIEW.default }),
     setWindowWidth: (windowWidth) => set({ windowWidth }),
     hydrate: () => set({ ...loadLayout(), windowWidth: viewport() }),
@@ -130,7 +132,9 @@ export function fitLayout({ windowWidth: w, sidebar, collapsed, preview, preview
 
 /** The fitted widths, following the window and the saved layout, for a screen with or without the preview. */
 export function useFittedLayout(previewOpen: boolean): Fitted & { collapsed: boolean } {
-  const s = useLayout();
+  const s = useLayout(
+    useShallow(({ sidebar, collapsed, preview, windowWidth }) => ({ sidebar, collapsed, preview, windowWidth })),
+  );
   return { ...fitLayout({ ...s, previewOpen }), collapsed: s.collapsed };
 }
 

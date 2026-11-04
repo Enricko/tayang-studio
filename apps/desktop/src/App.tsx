@@ -136,11 +136,11 @@ export default function App() {
 }
 
 /** Below the snap point a drag collapses the sidebar to its rail; above it, it opens at that width. */
-function resizeSidebar(width: number, max: number) {
+function resizeSidebar(width: number, max: number, live?: boolean) {
   const layout = useLayout.getState();
-  if (width < SIDEBAR.snap) return layout.setCollapsed(true);
-  layout.setCollapsed(false);
-  layout.setSidebar(Math.min(width, max));
+  if (width < SIDEBAR.snap) return layout.setCollapsed(true, live);
+  layout.setCollapsed(false, true);
+  layout.setSidebar(Math.min(width, max), live);
 }
 
 /** The app around a screen: the resizable sidebar and the main column. */
@@ -163,7 +163,7 @@ function Shell({ route }: { route: Route }) {
           min={SIDEBAR.min}
           ariaMin={SIDEBAR.rail}
           max={fitted.sidebarMax}
-          onResize={(w) => resizeSidebar(w, fitted.sidebarMax)}
+          onResize={(w, live) => resizeSidebar(w, fitted.sidebarMax, live)}
           onReset={() => useLayout.getState().resetSidebar()}
           onToggle={() => useLayout.getState().toggleCollapsed()}
         />
