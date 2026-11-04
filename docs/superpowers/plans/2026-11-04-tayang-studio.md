@@ -6,7 +6,7 @@
 
 **Architecture:** pnpm monorepo. `apps/desktop` = Tauri 2 (Rust core: SQLite, system detection, ACP client, ffmpeg media helpers) + React UI. `apps/api` = Hono on Cloudflare Workers with D1, deployed by wrangler. `packages/shared` holds TS types/contracts and pure helpers used by UI and API; Rust mirrors the types with serde camelCase. `packages/skills` holds every prompt Tayang sends to agents.
 
-**Tech Stack:** pnpm 11 workspaces, TypeScript 5 strict, Vitest 4, React 19, Vite 8, Tailwind CSS 4, Zustand 5, @tauri-apps/api 2, Tauri 2.12 (Rust 2021, rusqlite 0.41 bundled, tokio, serde, agent-client-protocol 5 crate), Hono 4, wrangler 4, Cloudflare D1, HyperFrames CLI (`npx hyperframes`), ffmpeg/ffprobe.
+**Tech Stack:** pnpm 11 workspaces, TypeScript 5 strict, Vitest 4, React 19, Vite 8, Tailwind CSS 4, shadcn/ui (design system), Zustand 5, @tauri-apps/api 2, Tauri 2.12 (Rust 2021, rusqlite 0.41 bundled, tokio, serde, agent-client-protocol 5 crate), Hono 4, wrangler 4, Cloudflare D1, HyperFrames CLI (`npx hyperframes`), ffmpeg/ffprobe.
 
 **Spec:** `docs/superpowers/specs/2026-11-04-tayang-studio-design.md`. Visual reference (exact colors, copy, layout): https://claude.ai/artifact/YQ5VdN8VyaRqaHq8hYBD1h
 
@@ -17,6 +17,7 @@
 - Interface language English. Copy: sentence case, no exclamation marks, no trailing period on labels/buttons, say "this computer" never "this Mac".
 - Brand tokens: ink `#141414`, sidebar `#0F0F0F`, card `#1A1A1A`, raised `#262626`, hairline `#262626`/`#333333`, text `#FDFDFD` / `#B4B4B4` / `#8C8C8C`, accent `#F2470C` (text on accent `#141414`), deep orange `#5C1C08`, tint `#2A140C`, light orange text `#FFB08F`. Fonts: Plus Jakarta Sans (UI, weights 400–600, 800 only onboarding hero), IBM Plex Mono (figures/meta), Lora (script text). Radii: controls 8, cards 12, panels 16. 4px spacing grid. Icons: lucide-react, 16/18px, stroke 1.5.
 - One orange (accent) primary action per screen.
+- Design system: React + shadcn/ui (Tailwind 4, `components.json`, components in `apps/desktop/src/components/ui/`). Theme shadcn's CSS variables with the brand tokens (`--background` #141414, `--card` #1A1A1A, `--primary` #F2470C / `--primary-foreground` #141414, `--secondary` #262626, `--muted-foreground` #8C8C8C, `--border` #262626, `--radius` 0.5rem; dark only). Build screens from shadcn primitives (Button, Input, Textarea, Tabs, Dialog, DropdownMenu, Command for the @ mention menu, Switch, RadioGroup, Tooltip, ScrollArea, Slider-free custom scrubber) rather than hand-rolled equivalents.
 - Oyen expressions: wink = queued, sleepy = working, happy = done, surprised = error, default = idle/needs you. Assets copied from `/Users/macbookpro/development/web/niche-to-video/brand/` (logo/master, logo/expressions, patterns/dither-*.png).
 - No AI inside Tayang: every generation and every install goes through the user's agent over ACP.
 - Nothing executes on the user's computer from an agent without the user pressing Allow on the permission request.
@@ -181,7 +182,7 @@ Execution order and parallel waves (tasks in a wave touch disjoint files):
   - `<Button variant: 'primary' | 'secondary' | 'ghost' | 'light' ...props />`.
   - `App.tsx` renders onboarding routes full-window and app routes inside shell (sidebar + content). Unbuilt screens render a placeholder heading with the screen name (replaced by later tasks).
   - Tauri: `identifier = "app.tayang.studio"`, `productName = "Tayang Studio"`, window 1280×800, min 1024×700, `titleBarStyle` overlay on macOS. Plugins: `tauri-plugin-dialog`, `tauri-plugin-opener`. Asset protocol enabled for the working folder (scope `$HOME/**`).
-- [ ] **Step 1:** Scaffold Tauri 2 + React + Vite + Tailwind 4 + Vitest (jsdom, @testing-library/react). Copy brand assets.
+- [ ] **Step 1:** Scaffold Tauri 2 + React + Vite + Tailwind 4 + shadcn/ui (`pnpm dlx shadcn@latest init`, then add button, input, textarea, tabs, dialog, dropdown-menu, command, popover, switch, radio-group, tooltip, scroll-area, badge, separator) + Vitest (jsdom, @testing-library/react). Map the brand tokens onto shadcn's CSS variables. `<Button>` wraps shadcn's button with variants primary/secondary/ghost/light. Copy brand assets.
 - [ ] **Step 2: Failing test** `sidebar.test.tsx`: renders `<Sidebar active="videos" />` with ipc mocked (`listProjects` → 3 projects); "Videos" link has `aria-current="page"`; shows "New chat"; shows the 3 project titles under "Recent".
 - [ ] **Step 3:** Implement; run tests → PASS; `pnpm --filter @tayang/desktop typecheck` clean; `cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml` succeeds.
 - [ ] **Step 4:** Commit `feat(desktop): tauri shell, tokens and sidebar`.
