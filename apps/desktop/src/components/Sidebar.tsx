@@ -51,13 +51,15 @@ function NavItem({
   count?: number;
   rail?: boolean;
 }) {
+  // The rail shows the count as a dot: its number goes in the name and the tooltip.
+  const railLabel = count !== undefined ? `${label} (${count})` : label;
   return (
-    <RailTip rail={rail} label={label}>
+    <RailTip rail={rail} label={railLabel}>
       <a
         href="#"
         role="link"
         aria-current={active ? 'page' : undefined}
-        aria-label={rail ? label : undefined}
+        aria-label={rail ? railLabel : undefined}
         onClick={(e) => {
           e.preventDefault();
           onClick();

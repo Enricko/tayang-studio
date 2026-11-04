@@ -392,6 +392,7 @@ export const en = {
     none: 'No usage data yet',
     loading: 'Loading usage',
     aria: '{{agent}} usage',
+    ringAria: '{{agent}} usage: {{pct}} used in 5 hours',
     fiveHour: '5 hour usage',
     title: 'Usage',
     allAgents: 'all agents',

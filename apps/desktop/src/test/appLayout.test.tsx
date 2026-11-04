@@ -22,6 +22,7 @@ import { getSettings } from '@/lib/ipc';
 import App from '@/App';
 import { useApp } from '@/state/app';
 import { SIDEBAR, layoutKey, useLayout } from '@/state/layout';
+import { useUsage } from '@/state/usage';
 
 const settings: Settings = {
   workingFolder: '/tmp/Tayang',
@@ -93,12 +94,32 @@ describe('App sidebar resizing', () => {
     expect(within(nav).getByRole('link', { name: 'Videos' })).toBeInTheDocument();
     expect(within(nav).getByRole('button', { name: 'New chat' })).toBeInTheDocument();
     expect(within(nav).queryByText('Recent')).toBeNull();
-    // usage as a small ring
-    expect(within(nav).getByRole('progressbar', { name: '5 hour usage' }).closest('button')).toHaveClass('size-10');
+    // usage as a small ring; unknown usage is not drawn as 0%
+    const ring = within(nav).getByRole('button', { name: 'Claude Code usage' });
+    expect(ring).toHaveClass('size-10');
+    expect(within(ring).queryByRole('progressbar')).toBeNull();
+    expect(ring.querySelector('[data-testid="usage-ring-progress"]')).toBeNull();
+    act(() =>
+      useUsage.setState({
+        loaded: true,
+        usage: [{ agentId: 'claude', status: 'ok', session: { usedPercent: 33, resetsAt: null }, weekly: null, modelWeekly: null, updatedAt: '', message: null }],
+      }),
+    );
+    expect(within(nav).getByRole('button', { name: 'Claude Code usage: 33% used in 5 hours' })).toBeInTheDocument();
+    expect(nav.querySelector('[data-testid="usage-ring-progress"]')).not.toBeNull();
     // out again
     drag(handle, 64, 260);
     expect(panel.style.width).toBe('260px');
     expect(nav).not.toHaveAttribute('data-collapsed');
+  });
+
+  it('the rail keeps the needs-you count in the link name and tooltip', async () => {
+    useApp.setState({ needsYouCount: 2 });
+    const { panel } = await renderApp();
+    act(() => useLayout.getState().setCollapsed(true));
+    expect(panel.style.width).toBe(`${SIDEBAR.rail}px`);
+    expect(screen.getByRole('link', { name: 'Agents (2)' })).toBeInTheDocument();
+    useApp.setState({ needsYouCount: 0 });
   });
 
   it('⌘\\ on a Mac and Ctrl+\\ elsewhere toggle the collapse', async () => {

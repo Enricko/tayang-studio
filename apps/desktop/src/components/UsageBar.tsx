@@ -87,39 +87,43 @@ const RING_C = 2 * Math.PI * RING_R;
 export function UsageRing() {
   const { t } = useTranslation();
   const { agent, mine, text } = useShownUsage();
-  const p = Math.max(0, Math.min(100, mine?.session?.usedPercent ?? 0));
+  // Unknown usage (loading, unavailable) is a dashed track, not an empty one that reads as 0%.
+  const used = mine?.session?.usedPercent;
+  const p = used === undefined ? null : Math.max(0, Math.min(100, used));
+  const name = AGENT_NAMES[agent];
 
   return (
     <UsagePopover>
       <button
         type="button"
-        aria-label={t('usage.aria', { agent: AGENT_NAMES[agent] })}
+        aria-label={p === null ? t('usage.aria', { agent: name }) : t('usage.ringAria', { agent: name, pct: pct(p) })}
         title={text}
         className="relative flex size-10 cursor-pointer items-center justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <svg viewBox="0 0 40 40" className="absolute inset-0 size-10 -rotate-90" aria-hidden="true">
-          <circle cx="20" cy="20" r={RING_R} fill="none" strokeWidth="2.5" className="stroke-raised" />
           <circle
             cx="20"
             cy="20"
             r={RING_R}
             fill="none"
             strokeWidth="2.5"
-            strokeDasharray={RING_C}
-            strokeDashoffset={RING_C * (1 - p / 100)}
-            className={cn('[stroke-linecap:round]', p >= 80 ? 'stroke-primary' : 'stroke-text-2')}
+            className={cn('stroke-raised', p === null && '[stroke-dasharray:3_4]')}
           />
+          {p !== null && (
+            <circle
+              data-testid="usage-ring-progress"
+              cx="20"
+              cy="20"
+              r={RING_R}
+              fill="none"
+              strokeWidth="2.5"
+              strokeDasharray={RING_C}
+              strokeDashoffset={RING_C * (1 - p / 100)}
+              className={cn('[stroke-linecap:round]', p >= 80 ? 'stroke-primary' : 'stroke-text-2')}
+            />
+          )}
         </svg>
-        <span
-          role="progressbar"
-          aria-label={t('usage.fiveHour')}
-          aria-valuenow={Math.round(p)}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          className="flex"
-        >
-          <AgentLogo id={agent} size={18} />
-        </span>
+        <AgentLogo id={agent} size={18} />
       </button>
     </UsagePopover>
   );

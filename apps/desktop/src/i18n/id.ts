@@ -387,6 +387,7 @@ export const id: Translations = {
     none: 'Belum ada data pemakaian',
     loading: 'Memuat pemakaian',
     aria: 'Pemakaian {{agent}}',
+    ringAria: 'Pemakaian {{agent}}: {{pct}} terpakai dalam 5 jam',
     fiveHour: 'Pemakaian 5 jam',
     title: 'Pemakaian',
     allAgents: 'semua agen',
