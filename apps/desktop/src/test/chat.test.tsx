@@ -1,7 +1,7 @@
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
-import type { AgentUpdate, Chat, PermissionRequest, Project, Settings } from '@tayang/shared';
+import type { AgentUpdate, Chat, PermissionRequest, Project, Settings, Style } from '@tayang/shared';
 
 vi.mock('@/lib/ipc', () => ({
   listProjects: vi.fn(),
@@ -29,6 +29,8 @@ vi.mock('@/lib/ipc', () => ({
   attachFile: vi.fn(),
   detectAgents: vi.fn(),
   updateChatAgent: vi.fn(),
+  installStyleTemplate: vi.fn(),
+  renderCommand: vi.fn().mockResolvedValue(null),
   assetUrl: (p: string) => p,
 }));
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn() }));
@@ -189,6 +191,61 @@ describe('ChatNew topic ideas', () => {
     );
     await waitFor(() => expect(useApp.getState().route).toEqual({ name: 'chat', chatId: 'c9' }));
     expect(useApp.getState().projectsVersion).toBeGreaterThan(0);
+  });
+});
+
+describe('ChatNew template style', () => {
+  const template: Style = {
+    id: 'builtin-atlas',
+    name: 'Atlas journey',
+    source: 'builtin',
+    sourceUrl: null,
+    notes: {},
+    prompt: 'p',
+    createdAt: '',
+    engine: 'remotion',
+    template: { sha256: 'a', size: 1, version: 1 },
+  };
+
+  const pick = async () => {
+    const user = userEvent.setup();
+    vi.mocked(ipc.listStyles).mockResolvedValue([template]);
+    vi.mocked(ipc.createProject).mockResolvedValue({ ...mk('p9', 'Ide satu'), styleId: template.id });
+    vi.mocked(ipc.createChat).mockResolvedValueOnce(chat('c-new', null)).mockResolvedValueOnce(chat('c9', 'p9'));
+    useApp.setState({ route: { name: 'chat-new', styleId: template.id } });
+    render(<ChatNew />);
+    await user.click(await screen.findByRole('button', { name: /From a topic/ }));
+    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
+    await emit('c-new', {
+      kind: 'text',
+      text: '```json\n[{"title":"Ide satu","kind":"explainer","lengthSec":30}]\n```',
+    });
+    await emit('c-new', { kind: 'done', stopReason: 'end_turn' });
+    await user.click(await screen.findByRole('button', { name: /Ide satu/ }));
+  };
+
+  it('installs the template after creating the project and says so in the chat', async () => {
+    vi.mocked(ipc.installStyleTemplate).mockResolvedValue({ installed: true });
+    await pick();
+    await waitFor(() => expect(ipc.installStyleTemplate).toHaveBeenCalledWith('p9'));
+    expect(vi.mocked(ipc.createProject).mock.calls[0]![0]).toMatchObject({ styleId: 'builtin-atlas' });
+    expect(vi.mocked(ipc.createProject).mock.calls[0]![1]).toContain('This project starts from the Atlas journey template.');
+    expect(ipc.addMessage).toHaveBeenCalledWith('c9', 'system', [
+      { type: 'text', text: 'Setting up the Atlas journey template…' },
+    ]);
+    await waitFor(() => expect(useApp.getState().route).toEqual({ name: 'chat', chatId: 'c9' }));
+  });
+
+  it('shows the error as a system line and carries on without the template', async () => {
+    vi.mocked(ipc.installStyleTemplate).mockRejectedValue('Couldn\'t download the template');
+    await pick();
+    await waitFor(() =>
+      expect(ipc.addMessage).toHaveBeenCalledWith('c9', 'system', [
+        { type: 'text', text: "Couldn't set up the Atlas journey template: Couldn't download the template" },
+      ]),
+    );
+    await waitFor(() => expect(useApp.getState().route).toEqual({ name: 'chat', chatId: 'c9' }));
+    expect(ipc.agentPrompt).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -423,6 +480,20 @@ describe('ChatProject render and jobs', () => {
     expect(ipc.mediaRender).toHaveBeenCalledWith('p1');
     // the preview reloads after the render
     await waitFor(() => expect(vi.mocked(ipc.mediaLatestRender).mock.calls.length).toBeGreaterThan(1));
+  });
+
+  it('shows the exact command a tayang.json project will run', async () => {
+    vi.mocked(ipc.renderCommand).mockResolvedValueOnce(['npx', 'remotion', 'render', 'src/index.ts', 'Geo', 'renders/p1-1.mp4']);
+    render(<ChatProject chatId="c1" />);
+    expect(
+      await screen.findByText('Runs: npx remotion render src/index.ts Geo renders/p1-1.mp4'),
+    ).toBeInTheDocument();
+  });
+
+  it('shows no command line without a tayang.json', async () => {
+    render(<ChatProject chatId="c1" />);
+    await screen.findByText('Kenapa rupiah melemah?', { selector: 'span' });
+    expect(screen.queryByText(/^Runs:/)).not.toBeInTheDocument();
   });
 
   it('shows an inline error when the render fails', async () => {

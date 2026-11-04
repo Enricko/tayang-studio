@@ -17,6 +17,21 @@ describe('ipc', () => {
     expect(calls).toEqual([{ cmd: 'create_project', args: { input, brief: 'brief text' } }]);
   });
 
+  it('style sync, template install and render command call the Rust commands', async () => {
+    const calls: { cmd: string; args: unknown }[] = [];
+    mockIPC((cmd, args) => {
+      calls.push({ cmd, args });
+    });
+    await ipc.syncStyles();
+    await ipc.installStyleTemplate('p1');
+    await ipc.renderCommand('p1');
+    expect(calls).toEqual([
+      { cmd: 'sync_styles', args: undefined },
+      { cmd: 'install_style_template', args: { projectId: 'p1' } },
+      { cmd: 'render_command', args: { projectId: 'p1' } },
+    ]);
+  });
+
   it('agentRespondPermission sends requestId and optionId', async () => {
     const calls: { cmd: string; args: unknown }[] = [];
     mockIPC((cmd, args) => {
