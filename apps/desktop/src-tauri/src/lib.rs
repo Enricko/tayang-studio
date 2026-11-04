@@ -3,6 +3,7 @@ pub mod commands;
 pub mod db;
 pub mod media;
 pub mod projects;
+pub mod styles_sync;
 pub mod system;
 pub mod types;
 pub mod usage;
