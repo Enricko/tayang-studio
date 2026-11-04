@@ -26,6 +26,9 @@ interface Watch {
   timer: ReturnType<typeof setInterval>;
   /** A look is running; the next waits for it. */
   busy: boolean;
+  /** Whether the first look was taken: it only records what was already there. */
+  seeded: boolean;
+  /** The newest mp4 at the last look, whenever it was written. */
   last: FileInfo | null;
   /** When the mp4 was last seen to change (ms). */
   changedAt: number;
@@ -43,21 +46,28 @@ async function look(chatId: string, w: Watch) {
   if (w.busy) return;
   w.busy = true;
   let info: FileInfo | null = null;
+  let failed = false;
   try {
     info = await newestVideoInfo(w.projectId);
   } catch {
-    info = null;
+    failed = true;
   } finally {
     w.busy = false;
   }
-  // The commands ended while it looked.
-  if (watches.get(chatId) !== w) return;
+  // The commands ended while it looked; a look that failed tells nothing (the last one stands).
+  if (watches.get(chatId) !== w || failed) return;
   const now = Date.now();
-  const seen = info && isFresh(info, w.since) ? info : null;
   const before = w.last;
-  w.last = seen;
-  const changed = !!seen && (!before || before.path !== seen.path || before.size !== seen.size || before.modifiedAt !== seen.modifiedAt);
+  w.last = info;
+  // The first look is the baseline: a render that just finished, or was just copied to renders/, is not a
+  // new one. Only a change after it counts.
+  if (!w.seeded) {
+    w.seeded = true;
+    return;
+  }
+  const changed = !!info && (!before || before.path !== info.path || before.size !== info.size || before.modifiedAt !== info.modifiedAt);
   if (changed) w.changedAt = now;
+  const seen = info && isFresh(info, w.since) ? info : null;
   if (w.marked) {
     if (now - w.changedAt >= IDLE_MS) {
       const id = w.marked;
@@ -69,8 +79,7 @@ async function look(chatId: string, w: Watch) {
   if (!seen) return;
   const growing = !!before && before.path === seen.path && seen.size > before.size;
   const recent = now - Date.parse(seen.modifiedAt) <= FRESH_MS;
-  // Recent but unchanged since a render was over: that render, not a new one.
-  if (growing || (recent && changed)) {
+  if (changed && (growing || recent)) {
     const id = w.tools.values().next().value;
     if (!id) return;
     w.marked = id;
@@ -80,9 +89,9 @@ async function look(chatId: string, w: Watch) {
 
 /**
  * A command started in a video's chat: while it (or another command of the chat) runs, the project's
- * newest mp4 is looked at every 3 s, one look at a time. An mp4 written since the turn started that grows,
- * or was written in the last 10 s, is a render (`hooks.rendering`), until it has not changed for 15 s
- * (`hooks.idle`) or its command ends. For pipelines (`npm run make`) whose render the command line can't tell.
+ * newest mp4 is looked at every 3 s, one look at a time. The first look is the baseline; after it, an mp4
+ * written since the turn started that changes, and grows or was written in the last 10 s, is a render
+ * (`hooks.rendering`), until it has not changed for 15 s (`hooks.idle`) or its command ends. For pipelines (`npm run make`) whose render the command line can't tell.
  */
 export function watchCommand(chatId: string, projectId: string, toolCallId: string, since: number, hooks: WatchHooks) {
   const w = watches.get(chatId);
@@ -96,6 +105,7 @@ export function watchCommand(chatId: string, projectId: string, toolCallId: stri
     tools: new Set([toolCallId]),
     timer: setInterval(() => void look(chatId, next), LOOK_EVERY_MS),
     busy: false,
+    seeded: false,
     last: null,
     changedAt: 0,
     marked: null,

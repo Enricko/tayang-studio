@@ -186,6 +186,19 @@ describe('a render inside a pipeline command is seen by its file', () => {
     expect(run()).toBeUndefined();
   });
 
+  it('a render that just finished (or was just copied to renders/) is not taken for a new one by the next command', async () => {
+    // Written 2 s before an unrelated 6 s command (a frame check, a lint) starts.
+    vi.mocked(newestVideoInfo).mockResolvedValue(mp4(5000, T0 - 2000));
+    await start('npm run lint');
+    await tick(6000);
+    expect(polls()).toBe(2);
+    expect(run()).toBeUndefined();
+    // A real change after the first look still counts.
+    vi.mocked(newestVideoInfo).mockResolvedValue(mp4(9000, Date.now()));
+    await tick(3000);
+    expect(run()).toBeDefined();
+  });
+
   it('one look at a time: a slow look is never doubled', async () => {
     vi.mocked(newestVideoInfo).mockReturnValue(new Promise(() => {}));
     await start();
