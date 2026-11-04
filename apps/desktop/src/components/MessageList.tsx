@@ -4,7 +4,6 @@ import { formatTimecode, type ChatMessage, type MessagePart } from '@tayang/shar
 import { Oyen } from '@/components/Oyen';
 import { AGENT_NAMES } from '@/lib/agents';
 import { useApp } from '@/state/app';
-import { cn } from '@/lib/utils';
 
 type Tool = Extract<MessagePart, { type: 'tool' }>;
 
@@ -146,4 +145,3 @@ export function MessageList({
   );
 }
 
-export { cn };
