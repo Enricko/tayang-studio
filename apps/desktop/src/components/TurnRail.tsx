@@ -3,12 +3,21 @@ import type { ChatMessage } from '@tayang/shared';
 
 /** What a user message says, for the preview and the label: text, @mentions, attached file names. */
 export function turnText(m: ChatMessage): string {
-  return m.parts
-    .map((p) => (p.type === 'text' ? p.text : p.type === 'mention' ? `@${p.title}` : p.type === 'file' ? p.name : ''))
-    .filter(Boolean)
-    .join(' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+  const clean = (t: string) => t.replace(/\s+/g, ' ').trim();
+  const said = clean(
+    m.parts
+      .map((p) => (p.type === 'text' ? p.text : p.type === 'mention' ? `@${p.title}` : p.type === 'file' ? p.name : ''))
+      .filter(Boolean)
+      .join(' '),
+  );
+  if (said) return said;
+  // A turn that is only a frame still needs a name.
+  const frame = m.parts.find((p) => p.type === 'frame');
+  if (frame) {
+    const sec = Math.max(0, Math.floor(frame.timeSec));
+    return `Frame at ${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+  }
+  return 'Message';
 }
 
 const reduced = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -42,6 +51,8 @@ export function TurnRail({
     [messages],
   );
   const indexes = useMemo(() => turns.map((t) => t.index), [turns]);
+  // The listener and observer are made once per container; they read the turns through this ref.
+  const indexesRef = useRef(indexes);
   const [overflow, setOverflow] = useState(false);
   const [active, setActive] = useState(0);
   const [hover, setHover] = useState<{ turn: number; top: number } | null>(null);
@@ -52,11 +63,14 @@ export function TurnRail({
     const box = scrollRef.current;
     if (!box) return;
     setOverflow(box.scrollHeight > box.clientHeight + 1);
-    setActive(activeTurn(box, indexes));
-  }, [scrollRef, indexes]);
+    setActive(activeTurn(box, indexesRef.current));
+  }, [scrollRef]);
 
-  // Re-measure when the messages change, and on scroll (at most once per frame; setState bails out when unchanged).
-  useLayoutEffect(measure, [measure, messages]);
+  // Re-measure when the turns change, and on scroll (at most once per frame; setState bails out when unchanged).
+  useLayoutEffect(() => {
+    indexesRef.current = indexes;
+    measure();
+  }, [measure, indexes]);
   useEffect(() => {
     const box = scrollRef.current;
     if (!box) return;
@@ -77,7 +91,7 @@ export function TurnRail({
       ro?.disconnect();
       if (frame) cancelAnimationFrame(frame);
     };
-  }, [scrollRef, measure, overflow]);
+  }, [scrollRef, measure]);
 
   // A long rail scrolls itself and keeps the active tick in view.
   useEffect(() => {
@@ -101,14 +115,37 @@ export function TurnRail({
     setHover({ turn, top: n ? b.top - n.top + b.height / 2 : 0 });
   };
 
+  /** The strip scrolled under an open card: put the card back beside its tick. */
+  const onStripScroll = () => {
+    if (!hover) return;
+    const btn = strip.current?.children[hover.turn] as HTMLElement | undefined;
+    if (btn) show(hover.turn, btn);
+  };
+
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    const keys = ['ArrowUp', 'ArrowDown', 'Home', 'End'];
+    if (!keys.includes(e.key)) return;
+    const btns = Array.from(strip.current?.children ?? []) as HTMLElement[];
+    const at = btns.indexOf(document.activeElement as HTMLElement);
+    const next =
+      e.key === 'Home' ? 0 : e.key === 'End' ? btns.length - 1 : Math.min(btns.length - 1, Math.max(0, at + (e.key === 'ArrowDown' ? 1 : -1)));
+    e.preventDefault();
+    btns[next]?.focus();
+  };
+
   return (
     <nav
       ref={nav}
       aria-label="Jump to a message"
       className={`absolute top-1/2 z-10 flex w-6 -translate-y-1/2 justify-end ${className}`}
       style={{ maxHeight: '70%' }}
+      onKeyDown={onKeyDown}
     >
-      <div ref={strip} className="no-scrollbar flex max-h-full flex-col items-end overflow-y-auto py-1">
+      <div
+        ref={strip}
+        onScroll={onStripScroll}
+        className="no-scrollbar flex max-h-full flex-col items-end overflow-y-auto py-1"
+      >
         {turns.map((t, i) => {
           const isActive = i === active;
           const isHover = hover?.turn === i;
@@ -118,15 +155,16 @@ export function TurnRail({
               type="button"
               aria-label={`Jump to: ${t.text.slice(0, 80)}`}
               aria-current={isActive ? 'true' : undefined}
+              tabIndex={isActive ? 0 : -1}
               onClick={() => jump(t.index)}
               onMouseEnter={(e) => show(i, e.currentTarget)}
               onMouseLeave={() => setHover(null)}
               onFocus={(e) => show(i, e.currentTarget)}
               onBlur={() => setHover(null)}
-              className="group flex h-[10px] w-6 shrink-0 cursor-pointer items-center justify-end border-0 bg-transparent p-0 outline-none"
+              className="flex h-[10px] w-6 shrink-0 cursor-pointer items-center justify-end rounded-sm border-0 bg-transparent p-0 outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
             >
               <span
-                className="block h-[2px] w-5 origin-right rounded-full transition-[transform,background-color] duration-[120ms] motion-reduce:transition-none group-focus-visible:ring-2 group-focus-visible:ring-ring group-focus-visible:ring-offset-2 group-focus-visible:ring-offset-background"
+                className="block h-[2px] w-5 origin-right rounded-full transition-[transform,background-color] duration-[120ms] motion-reduce:transition-none"
                 style={{
                   background: isActive ? '#EDEDED' : isHover ? '#A3A3A3' : '#404040',
                   transform: `scaleX(${isActive ? 1 : isHover ? 0.8 : 0.6})`,

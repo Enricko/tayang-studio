@@ -97,6 +97,84 @@ describe('TurnRail', () => {
   });
 });
 
+describe('TurnRail fix round 1', () => {
+  const TOPS = { 0: 0, 2: 600, 4: 1200 };
+
+  it('subscribes once per container, not on every message change', () => {
+    const add = vi.spyOn(HTMLElement.prototype, 'addEventListener');
+    const made: number[] = [];
+    const Real = globalThis.ResizeObserver;
+    globalThis.ResizeObserver = class {
+      constructor() { made.push(1); }
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    } as unknown as typeof ResizeObserver;
+    try {
+      const view = render(<Harness messages={MSGS} tops={TOPS} />);
+      const scrollAdds = () => add.mock.calls.filter((c) => c[0] === 'scroll' && (c[1] as { toString(): string })).length;
+      const before = { s: scrollAdds(), r: made.length };
+      view.rerender(<Harness messages={[...MSGS, agent('6', 'x')]} tops={TOPS} />);
+      view.rerender(<Harness messages={[...MSGS, agent('6', 'xy')]} tops={TOPS} />);
+      expect(scrollAdds()).toBe(before.s);
+      expect(made.length).toBe(before.r);
+    } finally {
+      globalThis.ResizeObserver = Real;
+      add.mockRestore();
+    }
+  });
+
+  it('has one tab stop (the active tick) and arrow keys, Home and End move focus', async () => {
+    render(<Harness messages={MSGS} tops={{ 0: 10, 2: 600, 4: 1200 }} />);
+    const [a, b, c] = screen.getAllByRole('button').filter((x) => x.getAttribute('aria-label')?.startsWith('Jump to'));
+    await waitFor(() => expect(a).toHaveAttribute('tabindex', '0'));
+    expect(b).toHaveAttribute('tabindex', '-1');
+    expect(c).toHaveAttribute('tabindex', '-1');
+    a!.focus();
+    fireEvent.keyDown(a!, { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(b);
+    fireEvent.keyDown(b!, { key: 'End' });
+    expect(document.activeElement).toBe(c);
+    fireEvent.keyDown(c!, { key: 'ArrowUp' });
+    expect(document.activeElement).toBe(b);
+    fireEvent.keyDown(b!, { key: 'Home' });
+    expect(document.activeElement).toBe(a);
+  });
+
+  it('labels frame-only and file-only turns', () => {
+    const frame: ChatMessage = {
+      id: 'f', chatId: 'c', role: 'user', createdAt: '',
+      parts: [{ type: 'frame', projectId: 'p', frame: 0, timeSec: 75, imagePath: '', marks: [] }],
+    };
+    const file: ChatMessage = {
+      id: 'g', chatId: 'c', role: 'user', createdAt: '',
+      parts: [{ type: 'file', path: '/a/brief.pdf', name: 'brief.pdf', mime: 'x', size: 1 }],
+    };
+    render(<Harness messages={[frame, agent('2', 'ok'), file]} tops={{ 0: 0, 2: 600 }} />);
+    expect(screen.getByRole('button', { name: 'Jump to: Frame at 1:15' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Jump to: brief.pdf' })).toBeInTheDocument();
+  });
+
+  it('puts the focus ring on the unscaled button, not the scaled tick', () => {
+    render(<Harness messages={MSGS} tops={TOPS} />);
+    const btn = screen.getByRole('button', { name: 'Jump to: First prompt' });
+    expect(btn.className).toContain('focus-visible:outline-2');
+    expect(btn.firstElementChild!.className).not.toMatch(/ring|outline/);
+  });
+
+  it('moves the preview card when the strip scrolls', () => {
+    render(<Harness messages={MSGS} tops={TOPS} />);
+    const tick = screen.getByRole('button', { name: 'Jump to: Second prompt' });
+    let y = 100;
+    tick.getBoundingClientRect = () => ({ top: y, height: 10, bottom: y + 10, left: 0, right: 0, width: 0, x: 0, y, toJSON() {} });
+    fireEvent.mouseEnter(tick);
+    const top0 = screen.getByRole('tooltip').style.top;
+    y = 60;
+    fireEvent.scroll(tick.parentElement!);
+    expect(screen.getByRole('tooltip').style.top).not.toBe(top0);
+  });
+});
+
 describe('MessageList auto-scroll', () => {
   function setup() {
     const spy = vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(() => {});
