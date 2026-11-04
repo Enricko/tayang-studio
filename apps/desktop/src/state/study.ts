@@ -64,6 +64,7 @@ export const useStudy = create<StudyState>((set, get) => {
       agentId: agent,
       status,
       progress: null,
+      sourceUrl: url,
       note: note ?? (status === 'working' ? url : null),
       updatedAt: new Date().toISOString(),
     };

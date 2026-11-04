@@ -415,6 +415,13 @@ describe('ChatProject', () => {
     await waitFor(() => expect(ipc.agentStart).toHaveBeenCalledWith('c1', 'claude', true));
   });
 
+  it('prefills the composer with a route draft without sending it', async () => {
+    render(<ChatProject chatId="c1" draft="Tayang was closed while you were working on this." />);
+    const box = await screen.findByRole('textbox', { name: 'Message' });
+    expect(box).toHaveValue('Tayang was closed while you were working on this.');
+    expect(ipc.agentPrompt).not.toHaveBeenCalled();
+  });
+
   it("talks to the chat's own agent, not the default one", async () => {
     const user = userEvent.setup();
     vi.mocked(ipc.getChat).mockResolvedValue({ ...chat('c1', 'p1'), agentId: 'gemini' });

@@ -140,6 +140,8 @@ export interface Job {
   status: JobStatus;
   progress: number | null;
   note: string | null;
+  /** The link a style study was reading, so a failed study can be tried again. */
+  sourceUrl: string | null;
   updatedAt: string;
 }
 

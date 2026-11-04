@@ -26,7 +26,7 @@ const KIND: Record<VideoKind, string> = {
   event: 'Event',
 };
 
-export function ChatProject({ chatId }: { chatId: string }) {
+export function ChatProject({ chatId, draft }: { chatId: string; draft?: string }) {
   const defaultAgent = useApp((s) => s.settings?.defaultAgent ?? 'claude');
   const [chat, setChat] = useState<Chat | null>(null);
   const agent = chat?.agentId ?? defaultAgent;
@@ -176,6 +176,7 @@ export function ChatProject({ chatId }: { chatId: string }) {
           <div className="px-6 pb-6 pt-2">
             <Composer
               chatId={chatId}
+              initialText={draft}
               onSend={send}
               disabled={streaming}
               onStop={() => void useChat.getState().cancel(chatId)}

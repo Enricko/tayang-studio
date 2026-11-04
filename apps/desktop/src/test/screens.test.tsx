@@ -16,6 +16,7 @@ vi.mock('@/lib/ipc', () => ({
   studyDir: vi.fn(),
   listJobs: vi.fn(),
   upsertJob: vi.fn(),
+  deleteJob: vi.fn().mockResolvedValue(undefined),
   agentStart: vi.fn(),
   agentSetAuto: vi.fn(),
   agentPrompt: vi.fn(),
@@ -289,6 +290,7 @@ describe('Agents working indicator', () => {
     status,
     progress: null,
     note: null,
+    sourceUrl: null,
     updatedAt: new Date().toISOString(),
   });
 
@@ -307,6 +309,92 @@ describe('Agents working indicator', () => {
   });
 });
 
+describe('Failed job recovery', () => {
+  const failed = (over: Partial<Job>): Job => ({
+    id: 'study-s1',
+    kind: 'study-style',
+    title: 'Study a video for a new style',
+    projectId: null,
+    chatId: 'study-s1',
+    agentId: 'claude',
+    status: 'failed',
+    progress: null,
+    note: 'Tayang was closed while this was running',
+    sourceUrl: 'https://youtu.be/abc',
+    updatedAt: '2026-11-04T00:00:00Z',
+    ...over,
+  });
+
+  it('a failed study card offers Try again and Dismiss, and Try again opens Style with the link', async () => {
+    vi.mocked(ipc.listJobs).mockResolvedValue([failed({})]);
+    render(<Agents />);
+    const col = await screen.findByRole('region', { name: 'Needs you' });
+    expect(within(col).queryByRole('button', { name: 'Fix it' })).not.toBeInTheDocument();
+    expect(within(col).getByRole('button', { name: 'Dismiss' })).toBeInTheDocument();
+    await userEvent.click(within(col).getByRole('button', { name: 'Try again' }));
+    expect(useApp.getState().route).toEqual({
+      name: 'style',
+      retryUrl: 'https://youtu.be/abc',
+      retryJobId: 'study-s1',
+      retryNote: 'Tayang was closed while this was running',
+    });
+  });
+
+  it('Dismiss deletes the job and removes the card', async () => {
+    vi.mocked(ipc.listJobs).mockResolvedValueOnce([failed({})]).mockResolvedValue([]);
+    render(<Agents />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Dismiss' }));
+    expect(ipc.deleteJob).toHaveBeenCalledWith('study-s1');
+    await waitFor(() => expect(screen.queryByText('Study a video for a new style')).not.toBeInTheDocument());
+  });
+
+  it('Fix it on a chat job opens the chat with the closed-app draft, only for the closed note', async () => {
+    const chatJob = failed({ id: 'build-c1', kind: 'build', title: 'Build', chatId: 'c1', sourceUrl: null });
+    vi.mocked(ipc.listJobs).mockResolvedValue([chatJob]);
+    const { unmount } = render(<Agents />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Fix it' }));
+    expect(useApp.getState().route).toEqual({
+      name: 'chat',
+      chatId: 'c1',
+      draft: "Tayang was closed while you were working on this. Check what's already done and continue.",
+    });
+    unmount();
+    vi.mocked(ipc.listJobs).mockResolvedValue([{ ...chatJob, note: 'Render crashed' }]);
+    render(<Agents />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Fix it' }));
+    expect(useApp.getState().route).toEqual({ name: 'chat', chatId: 'c1' });
+  });
+
+  it('Style prefills the link and the closed line, and starting deletes the old job', async () => {
+    vi.mocked(ipc.studyDir).mockResolvedValue('/w/s');
+    useApp.setState({
+      route: { name: 'style', retryUrl: 'https://youtu.be/abc', retryJobId: 'study-s1', retryNote: 'Tayang was closed while this was running' },
+    });
+    render(<Style />);
+    const input = screen.getByLabelText('Video link');
+    expect(input).toHaveValue('https://youtu.be/abc');
+    expect(input).toHaveFocus();
+    expect(screen.getByText('Tayang was closed before this study finished. Study it again?')).toBeInTheDocument();
+    // Never starts by itself.
+    expect(ipc.agentStart).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole('button', { name: 'Study video' }));
+    expect(ipc.deleteJob).toHaveBeenCalledWith('study-s1');
+    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
+  });
+
+  it('Style shows the job note when it is not the closed message, and nothing without a link', async () => {
+    useApp.setState({ route: { name: 'style', retryUrl: 'https://youtu.be/abc', retryJobId: 'j', retryNote: 'Cancelled' } });
+    const { unmount } = render(<Style />);
+    expect(screen.getByText('Cancelled')).toBeInTheDocument();
+    unmount();
+    useApp.setState({ route: { name: 'style', retryUrl: null, retryJobId: 'j', retryNote: 'x' } });
+    render(<Style />);
+    expect(screen.getByLabelText('Video link')).toHaveValue('');
+    expect(screen.getByLabelText('Video link')).toHaveFocus();
+    expect(screen.queryByTestId('retry-note')).not.toBeInTheDocument();
+  });
+});
+
 describe('Agents', () => {
   it('puts a failed job in Needs you with Fix it', async () => {
     const failed: Job = {
@@ -319,6 +407,7 @@ describe('Agents', () => {
       status: 'failed',
       progress: null,
       note: 'A font is missing',
+      sourceUrl: null,
       updatedAt: '2026-11-04T00:00:00Z',
     };
     vi.mocked(ipc.listJobs).mockResolvedValue([failed]);

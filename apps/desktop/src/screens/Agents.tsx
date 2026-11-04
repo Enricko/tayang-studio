@@ -3,9 +3,9 @@ import type { AgentInfo, Job, JobStatus, Project } from '@tayang/shared';
 import { AgentLogo } from '@/components/AgentLogo';
 import { Button } from '@/components/Button';
 import { Oyen, type OyenMood } from '@/components/Oyen';
-import { AGENT_NAMES } from '@/lib/agents';
+import { AGENT_NAMES, CLOSED_DRAFT, CLOSED_NOTE } from '@/lib/agents';
 import { onAgentUpdate } from '@/lib/events';
-import { detectAgents, listProjects } from '@/lib/ipc';
+import { deleteJob, detectAgents, listProjects } from '@/lib/ipc';
 import { ago } from '@/lib/time';
 import { cn } from '@/lib/utils';
 import { useApp } from '@/state/app';
@@ -18,13 +18,17 @@ const COLUMNS: { name: string; mood: OyenMood; match(s: JobStatus): boolean }[] 
   { name: 'Done', mood: 'happy', match: (s) => s === 'done' },
 ];
 
-function JobCard({ job, project }: { job: Job; project: string }) {
+function JobCard({ job, project, onDismiss }: { job: Job; project: string; onDismiss(): void }) {
   const navigate = useApp((s) => s.navigate);
   const failed = job.status === 'failed';
   const working = job.status === 'working';
   const needs = failed || job.status === 'needs-you';
   const open = () => {
-    if (job.kind === 'study-style' || !job.chatId) navigate({ name: 'style' });
+    if (job.kind === 'study-style') {
+      // Opens Style with the link filled in; the study only starts when the user presses Study video.
+      navigate({ name: 'style', retryUrl: job.sourceUrl, retryJobId: job.id, retryNote: job.note });
+    } else if (!job.chatId) navigate({ name: 'style' });
+    else if (failed && job.note === CLOSED_NOTE) navigate({ name: 'chat', chatId: job.chatId, draft: CLOSED_DRAFT });
     else navigate({ name: 'chat', chatId: job.chatId });
   };
   return (
@@ -61,9 +65,16 @@ function JobCard({ job, project }: { job: Job; project: string }) {
             {failed && <Oyen mood="surprised" size={24} />}
             {job.note && <span className="text-xs leading-normal text-[#D9D9D9]">{job.note}</span>}
           </div>
-          <Button variant="secondary" className="h-8 self-start rounded-sm px-3 text-[13px]" onClick={open}>
-            {failed ? 'Fix it' : 'Review'}
-          </Button>
+          <div className="flex items-center gap-2 self-start">
+            <Button variant="secondary" className="h-8 rounded-sm px-3 text-[13px]" onClick={open}>
+              {failed ? (job.kind === 'study-style' ? 'Try again' : 'Fix it') : 'Review'}
+            </Button>
+            {failed && (
+              <Button variant="ghost" className="h-8 rounded-sm px-2 text-[13px]" onClick={onDismiss}>
+                Dismiss
+              </Button>
+            )}
+          </div>
         </div>
       )}
       {working && (
@@ -151,7 +162,12 @@ export function Agents() {
                 <span className="font-mono text-xs text-text-3">{cards.length}</span>
               </div>
               {cards.map((j) => (
-                <JobCard key={j.id} job={j} project={projectName(j)} />
+                <JobCard
+                  key={j.id}
+                  job={j}
+                  project={projectName(j)}
+                  onDismiss={() => void deleteJob(j.id).then(load, load)}
+                />
               ))}
             </section>
           );

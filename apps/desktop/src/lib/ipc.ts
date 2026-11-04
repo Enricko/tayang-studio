@@ -66,6 +66,7 @@ export const studyDir = (studyId: string) => invoke<string>('study_dir', { study
 // ---- jobs ----
 export const listJobs = () => invoke<Job[]>('list_jobs');
 export const upsertJob = (job: Job) => invoke<void>('upsert_job', { job });
+export const deleteJob = (id: string) => invoke<void>('delete_job', { id });
 
 // ---- agent ----
 /** Resolves true when Claude started without the Tayang plugin: send it the skills as text too. */

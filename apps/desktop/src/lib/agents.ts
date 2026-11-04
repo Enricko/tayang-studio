@@ -32,3 +32,8 @@ export function agentErrorText(message: string | null | undefined, agent: AgentI
   }
   return msg || AGENT_STOPPED;
 }
+
+/** The note Rust writes on a job whose agent died with the app (`fail_stale_jobs`). */
+export const CLOSED_NOTE = 'Tayang was closed while this was running';
+/** Prefilled (never sent) when a chat job failed because Tayang was closed. */
+export const CLOSED_DRAFT = "Tayang was closed while you were working on this. Check what's already done and continue.";

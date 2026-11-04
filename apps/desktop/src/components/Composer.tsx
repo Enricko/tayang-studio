@@ -138,6 +138,7 @@ export function Composer({
   agentId,
   onAgentChange,
   ensureChat,
+  initialText,
 }: {
   chatId: string | null;
   /** Resolve to false when sending failed: the draft is then kept. */
@@ -161,12 +162,14 @@ export function Composer({
   onAgentChange?(id: AgentId): void;
   /** A new chat has no id until its first send: attaching creates it. */
   ensureChat?(): Promise<string>;
+  /** Starts the box with this text (not sent). */
+  initialText?: string;
 }) {
   const defaultAgent = useApp((s) => s.settings?.defaultAgent ?? 'claude');
   const agent = agentId ?? defaultAgent;
   const auto = useChat((s) => autoOn(s, chatId));
   const attachments = useChat((s) => (chatId ? s.attachments[chatId] : undefined)) ?? NONE;
-  const [text, setText] = useState('');
+  const [text, setText] = useState(initialText ?? '');
   const [dismissed, setDismissed] = useState<string | null>(null);
   const [active, setActive] = useState('');
   const ref = useRef<HTMLTextAreaElement>(null);

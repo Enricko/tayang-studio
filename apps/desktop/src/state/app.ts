@@ -6,9 +6,9 @@ export type Route =
   | { name: 'connect' }
   | { name: 'requirements' }
   | { name: 'chat-new'; styleId?: string }
-  | { name: 'chat'; chatId: string }
+  | { name: 'chat'; chatId: string; /** Prefilled in the composer, never sent. */ draft?: string }
   | { name: 'videos' }
-  | { name: 'style' }
+  | { name: 'style'; retryUrl?: string | null; retryJobId?: string; retryNote?: string | null }
   | { name: 'agents' }
   | { name: 'calendar' }
   | { name: 'settings' };

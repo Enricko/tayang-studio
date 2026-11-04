@@ -141,6 +141,7 @@ function writeJob(chatId: string, status: JobStatus, note: string | null = null)
     agentId: chatAgent.get(chatId) ?? 'claude',
     status,
     progress: null,
+    sourceUrl: null,
     note,
     updatedAt: new Date().toISOString(),
   })

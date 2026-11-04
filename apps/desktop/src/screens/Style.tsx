@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link2, Loader2 } from 'lucide-react';
 import type { Style as StyleT, StyleAspect } from '@tayang/shared';
 import { Button } from '@/components/Button';
@@ -7,7 +7,8 @@ import { PermissionCard } from '@/components/PermissionCard';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
-import { deleteStyle, listStyles, saveStyle, syncStyles } from '@/lib/ipc';
+import { deleteJob, deleteStyle, listStyles, saveStyle, syncStyles } from '@/lib/ipc';
+import { CLOSED_NOTE } from '@/lib/agents';
 import { cn } from '@/lib/utils';
 import { useApp } from '@/state/app';
 import { useStudy } from '@/state/study';
@@ -317,7 +318,20 @@ export function Style() {
   const [version, setVersion] = useState(0);
   const [tab, setTab] = useState<Tab>('all');
   const [sel, setSel] = useState<string | null>(null);
-  const [url, setUrl] = useState('');
+  const route = useApp((s) => s.route);
+  const retry = route.name === 'style' && route.retryJobId ? route : null;
+  const [url, setUrl] = useState(retry?.retryUrl ?? '');
+  /** A failed study this screen was opened from: its job goes away when the new study starts. */
+  const [retryJob, setRetryJob] = useState<string | null>(retry?.retryJobId ?? null);
+  const [retryLine, setRetryLine] = useState<string | null>(
+    retry?.retryUrl ? (retry.retryNote === CLOSED_NOTE ? 'Tayang was closed before this study finished. Study it again?' : (retry.retryNote ?? null)) : null,
+  );
+  const input = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (retry) input.current?.focus();
+    // Only when the screen opens from a failed card.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [urlError, setUrlError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(true);
   const [offline, setOffline] = useState(false);
@@ -359,6 +373,11 @@ export function Style() {
       return;
     }
     setUrlError(null);
+    if (retryJob) {
+      void deleteJob(retryJob).catch(() => {});
+      setRetryJob(null);
+      setRetryLine(null);
+    }
     void startStudy(url.trim(), agent);
   };
 
@@ -383,6 +402,7 @@ export function Style() {
             <Link2 size={16} strokeWidth={1.5} aria-hidden="true" className="absolute top-1/2 left-3 -translate-y-1/2 text-text-3" />
             <Input
               id="style-url"
+              ref={input}
               aria-label="Video link"
               aria-invalid={!!urlError}
               placeholder="Paste a video link"
@@ -396,6 +416,11 @@ export function Style() {
             Study video
           </Button>
         </div>
+        {retryLine && !urlError && (
+          <p data-testid="retry-note" className="m-0 text-xs text-text-3">
+            {retryLine}
+          </p>
+        )}
         {urlError && (
           <p role="alert" className="m-0 text-xs text-orange-light">
             {urlError}

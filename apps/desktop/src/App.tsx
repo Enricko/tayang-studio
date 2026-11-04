@@ -94,7 +94,7 @@ export default function App() {
         {route.name === 'chat-new' ? (
           <ChatNew key="chat-new" />
         ) : route.name === 'chat' ? (
-          <ChatProject key={route.chatId} chatId={route.chatId} />
+          <ChatProject key={route.chatId} chatId={route.chatId} draft={route.draft} />
         ) : route.name === 'videos' ? (
           <Videos />
         ) : route.name === 'style' ? (
