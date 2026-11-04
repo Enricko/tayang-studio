@@ -213,6 +213,15 @@ describe('a render the agent runs', () => {
     expect(useChat.getState().turnStartedAt.c1).toBeUndefined();
   });
 
+  it('keeps saying "Rendering video" after a permission prompt during the render is answered', async () => {
+    setRenderArgv('p1', null);
+    await useChat.getState().send('c1', [{ type: 'text', text: 'go' }], { agentId: 'claude', job });
+    await emit('c1', { kind: 'tool', toolCallId: 't1', title: 'npx hyperframes render', status: 'running', toolKind: 'execute' });
+    useChat.setState({ permissions: { c1: [{ chatId: 'c1', requestId: 'r1', title: 't', commands: [], options: [] }] } });
+    await act(async () => useChat.getState().respondPermission('c1', 'allow'));
+    expect(lastJob()).toMatchObject({ status: 'working', note: 'Rendering video' });
+  });
+
   it('an error ends it too, and chats without a project never track one', async () => {
     await useChat.getState().send('c1', [{ type: 'text', text: 'go' }], { agentId: 'claude', job });
     await emit('c1', { kind: 'tool', toolCallId: 't1', title: 'pnpm render', status: 'running', toolKind: 'execute' });

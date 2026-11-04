@@ -676,7 +676,12 @@ export const useChat = create<ChatState>((set, get) => {
       const [req, ...rest] = get().permissions[chatId] ?? [];
       if (!req) return;
       set((s) => ({ permissions: { ...s.permissions, [chatId]: rest } }));
-      if (!rest.length && get().streaming[chatId]) writeJob(chatId, 'working');
+      if (!rest.length && get().streaming[chatId]) {
+        // A render the agent is still running keeps its note.
+        const projectId = chatJobs.get(chatId)?.projectId;
+        const rendering = !!projectId && useRender.getState().runs[projectId]?.chatId === chatId;
+        writeJob(chatId, 'working', rendering ? stored('agents.rendering') : null);
+      }
       await agentRespondPermission(req.requestId, optionId);
     },
 
