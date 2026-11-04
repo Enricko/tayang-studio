@@ -643,6 +643,14 @@ mod tests {
         let ids: Vec<_> = styles.iter().map(|s| s.id.as_str()).collect();
         assert_eq!(ids, ["builtin-bold-explainer", "builtin-kinetic-quote", "builtin-news-recap"]);
         assert_eq!(styles[0].name, "Bold explainer");
+        assert_eq!(
+            styles[0].prompt,
+            "Navy background, white heavy sans.\nHighlight one key word per line in yellow.\nAnimate elements up 24px with ease-out, 300ms.\nCaptions word by word, centered low."
+        );
+        assert_eq!(
+            styles[0].notes[&StyleAspect::Pacing],
+            "New scene every 4–8s, words land on the voice"
+        );
         assert_eq!(styles[1].created_at, "2026-11-04T00:00:00Z");
         assert!(db.delete_style("builtin-news-recap").is_err());
         assert_eq!(db.list_styles().unwrap().len(), 3);
