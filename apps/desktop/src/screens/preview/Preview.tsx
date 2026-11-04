@@ -77,6 +77,11 @@ export function Preview({
     };
   }, [load, reloadKey]);
 
+  // Marks belong to the frame they were placed on: a new frame (seek, step, playback) drops them.
+  useEffect(() => {
+    setMarks([]);
+  }, [frame, videoPath]);
+
   const render = async () => {
     if (onRender) return onRender();
     setRendering(true);
@@ -162,7 +167,11 @@ export function Preview({
             src={assetUrl(videoPath)}
             className="h-full w-full object-contain"
             playsInline
-            onPlay={() => setPlaying(true)}
+            onPlay={() => {
+              setPlaying(true);
+              setMarks([]);
+              setMarking(false);
+            }}
             onPause={() => setPlaying(false)}
             onTimeUpdate={(e) => setFrame(clamp(frameAt(e.currentTarget.currentTime, fps)))}
           />

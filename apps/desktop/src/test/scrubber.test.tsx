@@ -105,6 +105,30 @@ describe('Preview', () => {
     expect(container.querySelector('[data-testid="mark-1"]')).toBeNull();
   });
 
+  it('drops marks when the frame changes or playback starts', async () => {
+    const { container } = render(<Preview projectId="p1" chatId="c1" />);
+    await screen.findByRole('slider');
+    const box = screen.getByTestId('preview-frame');
+    box.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width: 200, height: 400, right: 200, bottom: 400, x: 0, y: 0, toJSON() {} }) as DOMRect;
+    const mark = async () => {
+      await userEvent.click(screen.getByRole('button', { name: 'Mark a spot' }));
+      fireEvent.click(box, { clientX: 100, clientY: 100 });
+      expect(screen.getByTestId('mark-1')).toBeInTheDocument();
+    };
+    await mark();
+    await userEvent.click(screen.getByRole('button', { name: 'Next frame' }));
+    expect(screen.queryByTestId('mark-1')).toBeNull();
+    await mark();
+    fireEvent.play(container.querySelector('video')!);
+    expect(screen.queryByTestId('mark-1')).toBeNull();
+    await mark();
+    const video = container.querySelector('video')!;
+    video.currentTime = 5;
+    fireEvent.timeUpdate(video);
+    await waitFor(() => expect(screen.queryByTestId('mark-1')).toBeNull());
+  });
+
   it('shows the empty state and renders on demand', async () => {
     vi.mocked(ipc.mediaLatestRender).mockResolvedValueOnce(null);
     vi.mocked(ipc.mediaProbe).mockResolvedValueOnce(null);
