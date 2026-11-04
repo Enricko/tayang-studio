@@ -47,6 +47,9 @@ export function ChatNew() {
   const [picked, setPicked] = useState<AgentId | null>(null);
   const agent = picked ?? settings?.defaultAgent ?? 'claude';
 
+  // An unsent Auto choice belongs to this screen only.
+  useEffect(() => () => useChat.setState({ pendingAuto: null }), []);
+
   useEffect(() => {
     useUsage.getState().setChatAgent(agent);
     return () => useUsage.getState().setChatAgent(null);
@@ -102,6 +105,7 @@ export function ChatNew() {
   const ensureChat = async (title: string) => {
     if (chatId) return chatId;
     const c = await createChat(null, agent, title);
+    useChat.getState().adoptPendingAuto(c.id);
     setChatId(c.id);
     return c.id;
   };

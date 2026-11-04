@@ -49,9 +49,13 @@ interface ChatState {
   auto: Record<string, boolean>;
   /** The toggle on a new chat that has no id yet. */
   pendingAuto: boolean | null;
+  /** Chats whose Auto switch is being applied to the running session. */
+  autoBusy: Record<string, boolean>;
 
   /** Turns auto mode on or off; a running session switches right away. */
   setAuto(chatId: string | null, on: boolean): Promise<void>;
+  /** A new chat just got its id: it takes over the draft's Auto choice. */
+  adoptPendingAuto(chatId: string): void;
   load(chatId: string): Promise<void>;
   /** Resolves to an error message when the agent could not be reached, otherwise null. */
   send(chatId: string, parts: MessagePart[], opts?: SendOpts): Promise<string | null>;
@@ -164,9 +168,12 @@ const NO_PERMISSION = null;
 export const headPermission = (s: { permissions: Record<string, PermissionRequest[]> }, chatId: string | null) =>
   (chatId ? s.permissions[chatId]?.[0] : undefined) ?? NO_PERMISSION;
 
-/** Whether the chat's Auto toggle is on: its own value, else the new-chat draft, else Settings. */
-export const autoOn = (s: { auto: Record<string, boolean>; pendingAuto: boolean | null }, chatId: string | null) =>
-  (chatId ? s.auto[chatId] : undefined) ?? s.pendingAuto ?? useApp.getState().settings?.autoMode ?? false;
+/** Whether the Auto toggle is on: the chat's own value (the unsent New chat uses its draft), else Settings. */
+export const autoOn = (
+  s: { auto: Record<string, boolean>; pendingAuto: boolean | null },
+  chatId: string | null,
+  settingsAuto: boolean,
+) => (chatId ? s.auto[chatId] : s.pendingAuto) ?? settingsAuto;
 
 export const useChat = create<ChatState>((set, get) => {
   const append = (chatId: string, m: ChatMessage) =>
@@ -256,14 +263,41 @@ export const useChat = create<ChatState>((set, get) => {
     started: {},
     auto: {},
     pendingAuto: null,
+    autoBusy: {},
 
     async setAuto(chatId, on) {
       if (!chatId) {
         set({ pendingAuto: on });
         return;
       }
-      set((s) => ({ auto: { ...s.auto, [chatId]: on } }));
-      if (get().started[chatId]) await agentSetAuto(chatId, on).catch(() => {});
+      if (!get().started[chatId]) {
+        set((s) => ({ auto: { ...s.auto, [chatId]: on } }));
+        return;
+      }
+      if (get().autoBusy[chatId]) return;
+      set((s) => ({ autoBusy: { ...s.autoBusy, [chatId]: true } }));
+      try {
+        await agentSetAuto(chatId, on);
+        set((s) => ({ auto: { ...s.auto, [chatId]: on } }));
+      } catch (e) {
+        if (on) return; // still asking, as before
+        // Fail closed: the agent may still be in auto mode, so the app stopped it. The next
+        // message starts a new session with Auto off.
+        set((s) => ({ auto: { ...s.auto, [chatId]: false }, started: { ...s.started, [chatId]: false } }));
+        const reason = e instanceof Error ? e.message : String(e);
+        await get().appendSystem(
+          chatId,
+          `Couldn't turn off Auto mode (${reason}). The agent was stopped; your next message starts a new session with Auto off`,
+        );
+      } finally {
+        set((s) => ({ autoBusy: { ...s.autoBusy, [chatId]: false } }));
+      }
+    },
+
+    adoptPendingAuto(chatId) {
+      const pending = get().pendingAuto;
+      if (pending === null) return;
+      set((s) => ({ auto: { ...s.auto, [chatId]: pending }, pendingAuto: null }));
     },
 
     async load(chatId) {
@@ -307,9 +341,9 @@ export const useChat = create<ChatState>((set, get) => {
         let fresh = false;
         let noPlugin = false;
         if (!get().started[chatId]) {
-          const auto = autoOn(get(), chatId);
+          const auto = autoOn(get(), chatId, useApp.getState().settings?.autoMode ?? false);
           // Keep the toggle's value with the chat once it has a session.
-          set((s) => ({ auto: { ...s.auto, [chatId]: auto }, pendingAuto: null }));
+          set((s) => ({ auto: { ...s.auto, [chatId]: auto } }));
           noPlugin = (auto ? await agentStart(chatId, agent, true) : await agentStart(chatId, agent)) === true;
           set((s) => ({ started: { ...s.started, [chatId]: true } }));
           fresh = true;
@@ -410,7 +444,7 @@ export const useChat = create<ChatState>((set, get) => {
       chatJobs.clear();
       pendingRecap.clear();
       clientKeys.clear();
-      set({ messages: {}, streaming: {}, permissions: {}, attachments: {}, started: {}, auto: {}, pendingAuto: null });
+      set({ messages: {}, streaming: {}, permissions: {}, attachments: {}, started: {}, auto: {}, pendingAuto: null, autoBusy: {} });
     },
   };
 });

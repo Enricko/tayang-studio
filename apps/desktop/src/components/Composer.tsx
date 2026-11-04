@@ -167,7 +167,9 @@ export function Composer({
 }) {
   const defaultAgent = useApp((s) => s.settings?.defaultAgent ?? 'claude');
   const agent = agentId ?? defaultAgent;
-  const auto = useChat((s) => autoOn(s, chatId));
+  const settingsAuto = useApp((s) => s.settings?.autoMode ?? false);
+  const auto = useChat((s) => autoOn(s, chatId, settingsAuto));
+  const autoBusy = useChat((s) => !!chatId && !!s.autoBusy[chatId]);
   const attachments = useChat((s) => (chatId ? s.attachments[chatId] : undefined)) ?? NONE;
   const [text, setText] = useState(initialText ?? '');
   const [dismissed, setDismissed] = useState<string | null>(null);
@@ -414,7 +416,7 @@ export function Composer({
                   aria-checked={auto}
                   aria-label="Auto"
                   title="Your agent runs commands without asking"
-                  disabled={disabled}
+                  disabled={disabled || autoBusy}
                   onClick={() => void useChat.getState().setAuto(chatId, !auto)}
                   className={cn(
                     'inline-flex h-7 cursor-pointer items-center gap-1 rounded-sm border-none px-2 text-xs font-medium disabled:cursor-default disabled:opacity-50',

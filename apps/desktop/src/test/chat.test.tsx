@@ -422,6 +422,76 @@ describe('ChatProject', () => {
     expect(ipc.agentPrompt).not.toHaveBeenCalled();
   });
 
+  it('a new-chat Auto choice does not leak into other chats, and moves to the chat it creates', async () => {
+    const user = userEvent.setup();
+    const { unmount } = render(<ChatNew />);
+    await user.click(await screen.findByRole('switch', { name: 'Auto' }));
+    expect(screen.getByRole('switch', { name: 'Auto' })).toBeChecked();
+    await user.type(screen.getByRole('textbox', { name: 'Message' }), 'halo');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(ipc.agentStart).toHaveBeenCalledWith('c-new', 'claude', true));
+    unmount();
+    // Another chat starts from Settings, not from the New chat toggle.
+    useChat.getState().reset();
+    render(<ChatProject chatId="c1" />);
+    expect(await screen.findByRole('switch', { name: 'Auto' })).not.toBeChecked();
+  });
+
+  it('an unsent New chat toggle is dropped when the screen closes', async () => {
+    const user = userEvent.setup();
+    const { unmount } = render(<ChatNew />);
+    await user.click(await screen.findByRole('switch', { name: 'Auto' }));
+    expect(useChat.getState().pendingAuto).toBe(true);
+    unmount();
+    expect(useChat.getState().pendingAuto).toBeNull();
+    render(<ChatProject chatId="c1" />);
+    expect(await screen.findByRole('switch', { name: 'Auto' })).not.toBeChecked();
+  });
+
+  it('the Auto toggle waits for the running session and follows its answer', async () => {
+    const user = userEvent.setup();
+    render(<ChatProject chatId="c1" />);
+    await user.type(await screen.findByRole('textbox', { name: 'Message' }), 'go');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(ipc.agentStart).toHaveBeenCalled());
+    await emit('c1', { kind: 'done', stopReason: 'end_turn' });
+    let finish!: () => void;
+    vi.mocked(ipc.agentSetAuto).mockReturnValueOnce(new Promise<void>((r) => (finish = r)));
+    await user.click(screen.getByRole('switch', { name: 'Auto' }));
+    // Pending: disabled, and the store has not moved yet.
+    expect(screen.getByRole('switch', { name: 'Auto' })).toBeDisabled();
+    expect(screen.getByRole('switch', { name: 'Auto' })).not.toBeChecked();
+    await act(async () => finish());
+    await waitFor(() => expect(screen.getByRole('switch', { name: 'Auto' })).toBeEnabled());
+    expect(screen.getByRole('switch', { name: 'Auto' })).toBeChecked();
+  });
+
+  it('when leaving auto mode fails, the session is dropped, the error is shown and the next send starts with Auto off', async () => {
+    const user = userEvent.setup();
+    useApp.setState({ settings: { ...settings, autoMode: true } });
+    render(<ChatProject chatId="c1" />);
+    await user.type(await screen.findByRole('textbox', { name: 'Message' }), 'go');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(ipc.agentStart).toHaveBeenCalledWith('c1', 'claude', true));
+    await emit('c1', { kind: 'done', stopReason: 'end_turn' });
+    vi.mocked(ipc.agentSetAuto).mockRejectedValueOnce(new Error('cannot leave auto'));
+    await user.click(screen.getByRole('switch', { name: 'Auto' }));
+    expect(await screen.findByText(/Couldn't turn off Auto mode.*cannot leave auto/)).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: 'Auto' })).not.toBeChecked();
+    expect(useChat.getState().started['c1']).toBe(false);
+    vi.mocked(ipc.agentStart).mockClear();
+    await user.type(screen.getByRole('textbox', { name: 'Message' }), 'again');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(ipc.agentStart).toHaveBeenCalledWith('c1', 'claude'));
+  });
+
+  it('the Auto toggle follows Settings changes while it is open', async () => {
+    render(<ChatProject chatId="c1" />);
+    expect(await screen.findByRole('switch', { name: 'Auto' })).not.toBeChecked();
+    act(() => useApp.setState({ settings: { ...settings, autoMode: true } }));
+    expect(screen.getByRole('switch', { name: 'Auto' })).toBeChecked();
+  });
+
   it("talks to the chat's own agent, not the default one", async () => {
     const user = userEvent.setup();
     vi.mocked(ipc.getChat).mockResolvedValue({ ...chat('c1', 'p1'), agentId: 'gemini' });
