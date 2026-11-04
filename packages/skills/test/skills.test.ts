@@ -1,0 +1,91 @@
+import { describe, expect, it } from 'vitest';
+import type { Project, Settings, SystemInfo } from '@tayang/shared';
+import {
+  BUILTIN_STYLES,
+  FRAME_CHECK_PROMPT,
+  buildInstallPrompt,
+  buildProjectBrief,
+  buildStudyStylePrompt,
+  buildTopicIdeasPrompt,
+  installCommands,
+  parseStyleResult,
+  parseTopicIdeas,
+} from '../src/index';
+
+const mac: SystemInfo = { os: 'macos', osVersion: '26', packageManager: 'brew' };
+const win: SystemInfo = { os: 'windows', osVersion: '11', packageManager: 'winget' };
+const apt: SystemInfo = { os: 'linux', osVersion: '24.04', packageManager: 'apt' };
+
+describe('install', () => {
+  it('ffmpeg on mac', () => {
+    const p = buildInstallPrompt('ffmpeg', mac, 'claude');
+    expect(p).toContain('brew install ffmpeg');
+    expect(p).toContain('ffmpeg -version');
+    expect(p).toContain('reply with only the version you see');
+  });
+  it('ffmpeg on windows and linux', () => {
+    expect(buildInstallPrompt('ffmpeg', win, 'claude')).toContain('winget install --id Gyan.FFmpeg -e');
+    expect(installCommands('ffmpeg', apt, 'claude')).toEqual(['sudo apt install -y ffmpeg']);
+  });
+  it('other tools', () => {
+    expect(installCommands('ytdlp', mac, 'claude')).toEqual(['brew install yt-dlp']);
+    expect(installCommands('node', mac, 'claude')).toEqual(['brew install node@22']);
+    expect(installCommands('chrome', win, 'claude')).toEqual(['winget install --id Google.Chrome -e']);
+    expect(installCommands('chrome', apt, 'claude')).toEqual(['sudo apt install -y chromium']);
+  });
+  it('elevenlabs', () => {
+    expect(installCommands('elevenlabs-mcp', mac, 'claude')).toEqual([
+      'brew install uv',
+      'claude mcp add elevenlabs -e ELEVENLABS_API_KEY=sk_•••• -- uvx elevenlabs-mcp',
+    ]);
+    const p = buildInstallPrompt('elevenlabs-mcp', mac, 'claude', { elevenLabsKey: 'sk_real' });
+    expect(p).toContain('ELEVENLABS_API_KEY=sk_real');
+    const o = buildInstallPrompt('elevenlabs-mcp', mac, 'codex', { elevenLabsKey: 'sk_real' });
+    expect(o).toContain('uvx elevenlabs-mcp');
+    expect(o).toContain('sk_real');
+  });
+});
+
+describe('topics', () => {
+  it('parses a json block', () => {
+    const t = 'Here:\n```json\n[{"title":"A","kind":"promo","lengthSec":30},{"title":"B","kind":"quote","lengthSec":15},{"title":"C","kind":"news","lengthSec":45}]\n```';
+    expect(parseTopicIdeas(t)).toHaveLength(3);
+    expect(parseTopicIdeas('nothing')).toEqual([]);
+    expect(parseTopicIdeas('```json\n{bad\n```')).toEqual([]);
+  });
+  it('prompt asks for 3', () => {
+    const p = buildTopicIdeasPrompt(['promo'], 'id');
+    expect(p).toContain('```json');
+    expect(p).toContain('exactly 3');
+  });
+});
+
+describe('style', () => {
+  it('parseStyleResult', () => {
+    const ok = JSON.stringify({ name: 'X', notes: { camera: 'c' }, prompt: 'p' });
+    expect(parseStyleResult(ok, 'https://x')).toMatchObject({ source: 'copied', sourceUrl: 'https://x', name: 'X' });
+    expect(parseStyleResult(JSON.stringify({ name: 'X', notes: {} }), 'u')).toBeNull();
+    expect(parseStyleResult('nope', 'u')).toBeNull();
+  });
+  it('study prompt', () => {
+    const p = buildStudyStylePrompt('https://v', '/out');
+    expect(p).toContain('yt-dlp');
+    expect(p).toContain('/out/style.json');
+  });
+  it('builtins', () => {
+    expect(BUILTIN_STYLES.length).toBe(3);
+    expect(BUILTIN_STYLES[0]!.id).toBe('builtin-bold-explainer');
+  });
+});
+
+describe('brief', () => {
+  it('contains style prompt and Frames checked', () => {
+    const project = { title: 'Promo', kind: 'promo', format: '9:16', language: 'id' } as Project;
+    const settings = { fps: 30 } as Settings;
+    const b = buildProjectBrief(project, BUILTIN_STYLES[0]!, settings);
+    expect(b).toContain(BUILTIN_STYLES[0]!.prompt);
+    expect(b).toContain('Frames checked');
+    expect(b).toContain('npx hyperframes');
+    expect(FRAME_CHECK_PROMPT).toContain('Frames checked');
+  });
+});

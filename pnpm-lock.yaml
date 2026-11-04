@@ -21,7 +21,11 @@ importers:
 
   packages/shared: {}
 
-  packages/skills: {}
+  packages/skills:
+    dependencies:
+      '@tayang/shared':
+        specifier: workspace:*
+        version: link:../shared
 
 packages:
 
