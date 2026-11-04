@@ -27,6 +27,10 @@ export const id: Translations = {
     settings: 'Pengaturan',
     recent: 'Terbaru',
   },
+  layout: {
+    resizeSidebar: 'Ubah lebar sidebar',
+    resizePreview: 'Ubah lebar pratinjau',
+  },
   onboarding: {
     step: 'Langkah {{step}} dari 3',
     welcome: {

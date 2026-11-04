@@ -39,7 +39,8 @@ export function UsageMeter({ percent, label, className }: { percent: number; lab
   );
 }
 
-export function UsageBar() {
+/** The usage of the agent the sidebar shows: the open chat's, or the default one. */
+function useShownUsage() {
   const { t } = useTranslation();
   const usage = useUsage((s) => s.usage);
   const loaded = useUsage((s) => s.loaded);
@@ -54,6 +55,12 @@ export function UsageBar() {
 
   const mine = usage.find((u) => u.agentId === agent);
   const text = mine ? usageLine(mine) : loaded ? t('usage.unavailable') : t('usage.loading');
+  return { agent, mine, text };
+}
+
+export function UsageBar() {
+  const { t } = useTranslation();
+  const { agent, mine, text } = useShownUsage();
 
   return (
     <UsagePopover>
@@ -68,6 +75,51 @@ export function UsageBar() {
         </span>
         <UsageMeter percent={mine?.session?.usedPercent ?? 0} label={t('usage.fiveHour')} />
         <span className="font-mono text-[11px] leading-4 text-text-2">{text}</span>
+      </button>
+    </UsagePopover>
+  );
+}
+
+const RING_R = 17;
+const RING_C = 2 * Math.PI * RING_R;
+
+/** The collapsed sidebar's usage: the agent's logo inside a ring of its 5 hour usage. */
+export function UsageRing() {
+  const { t } = useTranslation();
+  const { agent, mine, text } = useShownUsage();
+  const p = Math.max(0, Math.min(100, mine?.session?.usedPercent ?? 0));
+
+  return (
+    <UsagePopover>
+      <button
+        type="button"
+        aria-label={t('usage.aria', { agent: AGENT_NAMES[agent] })}
+        title={text}
+        className="relative flex size-10 cursor-pointer items-center justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <svg viewBox="0 0 40 40" className="absolute inset-0 size-10 -rotate-90" aria-hidden="true">
+          <circle cx="20" cy="20" r={RING_R} fill="none" strokeWidth="2.5" className="stroke-raised" />
+          <circle
+            cx="20"
+            cy="20"
+            r={RING_R}
+            fill="none"
+            strokeWidth="2.5"
+            strokeDasharray={RING_C}
+            strokeDashoffset={RING_C * (1 - p / 100)}
+            className={cn('[stroke-linecap:round]', p >= 80 ? 'stroke-primary' : 'stroke-text-2')}
+          />
+        </svg>
+        <span
+          role="progressbar"
+          aria-label={t('usage.fiveHour')}
+          aria-valuenow={Math.round(p)}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          className="flex"
+        >
+          <AgentLogo id={agent} size={18} />
+        </span>
       </button>
     </UsagePopover>
   );

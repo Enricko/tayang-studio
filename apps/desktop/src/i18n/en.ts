@@ -25,6 +25,10 @@ export const en = {
     settings: 'Settings',
     recent: 'Recent',
   },
+  layout: {
+    resizeSidebar: 'Resize sidebar',
+    resizePreview: 'Resize preview',
+  },
   onboarding: {
     step: 'Step {{step}} of 3',
     welcome: {
