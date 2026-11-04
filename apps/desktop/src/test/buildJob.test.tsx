@@ -28,6 +28,7 @@ vi.mock('@/lib/events', () => ({
 
 import { latestRenderInfo, mediaProbe, upsertJob } from '@/lib/ipc';
 import { renderTiming } from '@/lib/renderCheck';
+import { resetLateRenders, settleLateRenders } from '@/lib/buildJobs';
 import { isRenderTool } from '@/lib/renderTool';
 import { setUiLanguage } from '@/i18n';
 import { localized } from '@/lib/stored';
@@ -170,6 +171,48 @@ describe('a project chat build job at the end of a turn', () => {
     useChat.getState().notice('c1', 'The agent is still working. Wait for it to finish, then send again.');
     await emit('c1', { kind: 'done', stopReason: 'end_turn' });
     await waitFor(() => expect(lastJob()).toMatchObject({ status: 'needs-you', note: 'The agent is waiting for your answer' }));
+  });
+
+  it('a render that finished between two turns counts, even when the second turn rendered nothing', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      await useChat.getState().send('c1', [{ type: 'text', text: 'render it' }], { agentId: 'claude', job });
+      const first = Date.now();
+      await emit('c1', { kind: 'done', stopReason: 'end_turn' });
+      await waitFor(() => expect(lastJob()).toMatchObject({ status: 'needs-you' }));
+      expect(Date.parse(lastJob().renderBaselineAt!)).toBe(first);
+      // The background render finishes; a minute later the user asks about it.
+      await act(async () => vi.advanceTimersByTimeAsync(10_000));
+      const finished = render(new Date());
+      await act(async () => vi.advanceTimersByTimeAsync(50_000));
+      await useChat.getState().send('c1', [{ type: 'text', text: 'is it done?' }], { agentId: 'claude' });
+      // Still the first turn's start while the job waits.
+      expect(Date.parse(lastJob().renderBaselineAt!)).toBe(first);
+      vi.mocked(latestRenderInfo).mockResolvedValue(finished);
+      await emit('c1', { kind: 'done', stopReason: 'end_turn' });
+      await waitFor(() => expect(lastJob()).toMatchObject({ status: 'done', note: 'v.mp4', renderBaselineAt: null }));
+      // The next turn starts a new baseline.
+      vi.mocked(latestRenderInfo).mockResolvedValue(null);
+      await act(async () => vi.advanceTimersByTimeAsync(1000));
+      await useChat.getState().send('c1', [{ type: 'text', text: 'make another' }], { agentId: 'claude' });
+      expect(Date.parse(lastJob().renderBaselineAt!)).toBe(Date.now());
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a file that probes fine but changes within 3 s waits for the late check, which settles it from the turn start', async () => {
+    await useChat.getState().send('c1', [{ type: 'text', text: 'go' }], { agentId: 'claude', job });
+    const at = new Date(Date.now() + 200);
+    const rewritten = { ...render(new Date(at.getTime() + 300)), size: 12 };
+    vi.mocked(latestRenderInfo).mockResolvedValueOnce(render(at)).mockResolvedValue(rewritten);
+    await emit('c1', { kind: 'done', stopReason: 'end_turn' });
+    await waitFor(() => expect(lastJob()).toMatchObject({ status: 'needs-you' }));
+    resetLateRenders();
+    // Written well after the file's last change: only the baseline lets the late check accept it.
+    const waiting = { ...lastJob(), updatedAt: new Date(at.getTime() + 60_000).toISOString() };
+    await settleLateRenders(Date.now() + 120_000, [waiting]);
+    expect(lastJob()).toMatchObject({ status: 'done', note: 'v.mp4' });
   });
 
   it("leaves the autopilot's job to the autopilot: done at the turn's end, no lookup", async () => {

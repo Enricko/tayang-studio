@@ -1,7 +1,7 @@
 import type { Job } from '@tayang/shared';
 import { upsertJob } from '@/lib/ipc';
 import { finishedRender } from '@/lib/renderCheck';
-import { useChat } from '@/state/chat';
+import { dropRenderBaseline, turnCount, useChat } from '@/state/chat';
 import { refreshJobs, useJobs } from '@/state/jobs';
 
 /** Each job's render is looked up at most once a minute. */
@@ -29,12 +29,16 @@ export async function settleLateRenders(now: number = Date.now(), jobs?: Job[]):
     if (!waitsOnVideo(job) || turnRunning(job)) continue;
     if (now - (lastLook.get(job.id) ?? -Infinity) < EVERY_MS) continue;
     lastLook.set(job.id, now);
-    // The job turned needs-you when its turn ended without a finished video, so any since then is a late one.
-    const info = await finishedRender(job.projectId!, Date.parse(job.updatedAt));
-    // A turn that started while it looked owns the job now.
-    if (!info || turnRunning(job)) continue;
+    const turns = job.chatId ? turnCount(job.chatId) : 0;
+    // Any finished video since the job's baseline (the first turn since it was last done) is its video.
+    // Jobs saved before the baseline existed use when they were last written.
+    const since = Date.parse(job.renderBaselineAt ?? job.updatedAt);
+    const info = await finishedRender(job.projectId!, since);
+    // A turn that started while it looked (even one that already ended) owns the job now.
+    if (!info || turnRunning(job) || (job.chatId && turnCount(job.chatId) !== turns)) continue;
     try {
-      await upsertJob({ ...job, status: 'done', note: info.name, updatedAt: new Date(now).toISOString() });
+      await upsertJob({ ...job, status: 'done', note: info.name, renderBaselineAt: null, updatedAt: new Date(now).toISOString() });
+      if (job.chatId) dropRenderBaseline(job.chatId);
       changed = true;
     } catch {
       /* the job board is best effort */

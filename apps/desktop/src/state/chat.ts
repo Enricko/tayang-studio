@@ -24,7 +24,7 @@ import { finishedRender } from '@/lib/renderCheck';
 import { isRenderTool } from '@/lib/renderTool';
 import { localClock } from '@/lib/time';
 import { useApp } from '@/state/app';
-import { refreshJobs } from '@/state/jobs';
+import { refreshJobs, useJobs } from '@/state/jobs';
 import { renderArgvOf, useRender } from '@/state/render';
 
 
@@ -195,10 +195,33 @@ export async function failChatJob(chatId: string, note: string): Promise<void> {
   }
 }
 
+/**
+ * Each chat's render baseline (RFC 3339): when the first turn since its build job was last done started.
+ * Any finished render after it is the job's video. A turn that ends without one leaves it where it is.
+ */
+const baselines = new Map<string, string>();
+
+/** A turn starts in a chat with a build job: it keeps the job's baseline, or sets it now. */
+function holdBaseline(chatId: string, startedAt: number) {
+  if (baselines.has(chatId)) return;
+  // After a restart the stored job still has it, until it is done.
+  const stored = useJobs.getState().jobs.find((j) => j.id === buildJobId(chatId) && j.status !== 'done');
+  baselines.set(chatId, stored?.renderBaselineAt ?? new Date(startedAt).toISOString());
+}
+
+/** The job is done: the next turn starts a new baseline. The late check calls this too. */
+export const dropRenderBaseline = (chatId: string) => baselines.delete(chatId);
+
+/** Turns started per chat, so a slow check from an earlier turn can't overwrite a newer one. */
+const turnSeq = new Map<string, number>();
+/** How many turns the chat has started in this app session; a change means a newer turn. */
+export const turnCount = (chatId: string) => turnSeq.get(chatId) ?? 0;
+
 /** Best effort: the job board must never break a chat. */
 function writeJob(chatId: string, status: JobStatus, note: string | null = null) {
   const job = chatJobs.get(chatId);
   if (!job) return;
+  if (status === 'done') dropRenderBaseline(chatId);
   void upsertJob({
     id: buildJobId(chatId),
     kind: 'build',
@@ -210,14 +233,12 @@ function writeJob(chatId: string, status: JobStatus, note: string | null = null)
     progress: null,
     sourceUrl: null,
     note,
+    renderBaselineAt: baselines.get(chatId) ?? null,
     updatedAt: new Date().toISOString(),
   })
     .then(() => refreshJobs())
     .catch(() => {});
 }
-/** Turns started per chat, so a slow check from an earlier turn can't overwrite a newer one. */
-const turnSeq = new Map<string, number>();
-
 /** Whether the agent's last message waits on the user: an open A2UI surface, or a question at the end. */
 export function waitsForAnswer(m: ChatMessage | undefined): boolean {
   if (!m || m.role !== 'agent') return false;
@@ -459,8 +480,10 @@ export const useChat = create<ChatState>((set, get) => {
    * needs the user, saying whether the agent asked them something or stopped before rendering.
    */
   const settleBuildJob = async (chatId: string, job: ChatJob, startedAt: number, seq: number) => {
-    // A render still being written (left running in the background) is no video yet; the late check settles it.
-    const info = await finishedRender(job.projectId, startedAt);
+    // A render still being written (left running in the background) is no video yet; the late check settles
+    // it. Any finished render since the job's baseline counts, also one that finished between turns.
+    const baseline = baselines.get(chatId);
+    const info = await finishedRender(job.projectId, baseline ? Date.parse(baseline) : startedAt);
     // A newer turn has started since: its own end decides.
     if ((turnSeq.get(chatId) ?? 0) !== seq || get().streaming[chatId]) return;
     if (info) {
@@ -623,6 +646,7 @@ export const useChat = create<ChatState>((set, get) => {
         const agent = opts?.agentId ?? chatAgent.get(chatId) ?? useApp.getState().settings?.defaultAgent ?? 'claude';
         chatAgent.set(chatId, agent);
         if (opts?.job) chatJobs.set(chatId, opts.background ? { ...opts.job, auto: true } : opts.job);
+        if (chatJobs.has(chatId)) holdBaseline(chatId, get().turnStartedAt[chatId] ?? Date.now());
         writeJob(chatId, 'working');
         let fresh = false;
         let noPlugin = false;
@@ -763,6 +787,7 @@ export const useChat = create<ChatState>((set, get) => {
       imageTimers.clear();
       imageRuns.clear();
       pendingSaves.clear();
+      baselines.clear();
       useRender.setState({ runs: {} });
       set({ messages: {}, streaming: {}, turnStartedAt: {}, permissions: {}, attachments: {}, started: {}, auto: {}, pendingAuto: null, autoBusy: {} });
     },

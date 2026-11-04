@@ -97,6 +97,34 @@ describe('late renders', () => {
     expect(upsertJob).not.toHaveBeenCalled();
   });
 
+  it("compares against the job's fixed baseline, not when its note was last written, and clears it once done", async () => {
+    // The render finished between two turns that both ended without a video.
+    vi.mocked(latestRenderInfo).mockResolvedValue(file(T + 50_000));
+    await settleLateRenders(T + 180_000, [job({ renderBaselineAt: new Date(T).toISOString(), updatedAt: new Date(T + 70_000).toISOString() })]);
+    expect(upsertJob).toHaveBeenCalledWith(expect.objectContaining({ status: 'done', note: 'v-2.mp4', renderBaselineAt: null }));
+  });
+
+  it('a +faststart file whose first probe passes but which changes within 3 s is settled by a later look', async () => {
+    const at = T + 30_000;
+    const moved = { ...file(at + 300), size: 7 };
+    vi.mocked(latestRenderInfo).mockResolvedValueOnce(file(at)).mockResolvedValueOnce(moved).mockResolvedValue(moved);
+    const waiting = job({ renderBaselineAt: new Date(T).toISOString(), updatedAt: new Date(at + 3100).toISOString() });
+    await settleLateRenders(T + 60_000, [waiting]);
+    expect(upsertJob).not.toHaveBeenCalled();
+    await settleLateRenders(T + 120_000, [waiting]);
+    expect(upsertJob).toHaveBeenCalledWith(expect.objectContaining({ status: 'done', note: 'v-2.mp4' }));
+  });
+
+  it('never writes over a whole turn that started and ended while it looked', async () => {
+    vi.mocked(latestRenderInfo).mockImplementation(async () => {
+      await useChat.getState().send('c1', [{ type: 'text', text: 'is it done?' }], { agentId: 'claude' });
+      useChat.setState({ streaming: { c1: false } });
+      return file(T + 120_000);
+    });
+    await settleLateRenders(T + 180_000, [job()]);
+    expect(upsertJob).not.toHaveBeenCalledWith(expect.objectContaining({ status: 'done' }));
+  });
+
   it('never writes over a turn that started while it looked', async () => {
     vi.mocked(latestRenderInfo).mockImplementation(async () => {
       useChat.setState({ streaming: { c1: true } });
