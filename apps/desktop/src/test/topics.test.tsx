@@ -35,6 +35,7 @@ import { buildTopicIdeasPrompt } from '@tayang/skills';
 import { extractA2ui } from '@/a2ui/parse';
 import { applyMessages, emptySurfaces } from '@/a2ui/surface';
 import { ideasFromReply } from '@/lib/topics';
+import { MessageList } from '@/components/MessageList';
 import { Calendar } from '@/screens/Calendar';
 import { ChatNew } from '@/screens/ChatNew';
 import { useApp } from '@/state/app';
@@ -175,6 +176,32 @@ describe('ideasFromReply (Calendar ideas)', () => {
     ]);
     expect(ideasFromReply('```json\n[{"title":"A","kind":"promo","lengthSec":20}]\n```')).toHaveLength(1);
     expect(ideasFromReply('nothing')).toEqual([]);
+  });
+});
+
+describe('ideasFromReply limits and the json block in MessageList', () => {
+  const idea = (t: string) => ({ title: t, kind: 'promo', lengthSec: 20 });
+  const msg = (text: string) => [
+    { id: 'm1', chatId: 'c1', role: 'agent' as const, parts: [{ type: 'text' as const, text }], createdAt: '' },
+  ];
+
+  it('caps at 3 and dedupes by title', () => {
+    const json = JSON.stringify([idea('A'), idea('a'), idea('B'), idea('C'), idea('D')]);
+    expect(ideasFromReply('```json\n' + json + '\n```').map((i) => i.title)).toEqual(['A', 'B', 'C']);
+  });
+
+  it('hides an unterminated topic json block while streaming when a screen handles topics', () => {
+    const text = 'Halo\n```json\n[{"title":"Ide';
+    render(<MessageList streaming messages={msg(text)} onA2uiAction={() => false} />);
+    expect(screen.getByText('Halo')).toBeInTheDocument();
+    expect(screen.getByText('Loading options…')).toBeInTheDocument();
+    expect(screen.queryByText(/"title"/)).toBeNull();
+  });
+
+  it('keeps json blocks as written in chats without the topic handler', () => {
+    const text = 'Halo\n```json\n[{"title":"Ide","kind":"promo","lengthSec":20}]\n```';
+    render(<MessageList streaming={false} messages={msg(text)} />);
+    expect(screen.getByText(/"title":"Ide"/)).toBeInTheDocument();
   });
 });
 

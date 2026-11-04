@@ -126,10 +126,20 @@ function sendAction(chatId: string, a: A2uiAction) {
 
 /** An agent text part: prose, the surfaces it owns, and a placeholder for a block still streaming. */
 function AgentText({ text, messageId, a2ui }: { text: string; messageId: string; a2ui: A2uiState }) {
-  const { text: rawProse, blocks, pending } = useMemo(() => extractA2ui(text), [text]);
-  // Older agents answer topics with a ```json block: the screen shows cards for it, not the raw block.
-  const prose = useMemo(() => splitTopicJson(rawProse).text, [rawProse]);
+  const { text: rawProse, blocks, pending: a2uiPending } = useMemo(() => extractA2ui(text), [text]);
   const handle = useContext(ActionHandler);
+  // Older agents answer topics with a ```json block. Where a screen shows topic cards (it provides the
+  // handler), hide that block, also while it is still streaming; other chats keep it as written.
+  const { prose, pending: jsonPending } = useMemo(() => {
+    if (!handle) return { prose: rawProse, pending: false };
+    const done = splitTopicJson(rawProse).text;
+    const open = done.lastIndexOf('```json');
+    if (open >= 0 && !done.includes('```', open + 7) && /^\s*\n\s*\[\s*(\{|$)/.test(done.slice(open + 7))) {
+      return { prose: done.slice(0, open).trim(), pending: true };
+    }
+    return { prose: done, pending: false };
+  }, [rawProse, handle]);
+  const pending = a2uiPending || jsonPending;
   const ids: string[] = [];
   for (const b of blocks) {
     const sid = blockSurfaceId(b);

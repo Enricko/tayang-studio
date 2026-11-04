@@ -27,7 +27,14 @@ export function ideasFromReply(text: string): TopicIdea[] {
       }
     }
   }
-  return out.length ? out : splitTopicJson(text).ideas;
+  const found = out.length ? out : splitTopicJson(text).ideas;
+  const seen = new Set<string>();
+  return found
+    .filter((i) => {
+      const k = i.title.trim().toLowerCase();
+      return seen.has(k) ? false : (seen.add(k), true);
+    })
+    .slice(0, 3);
 }
 
 /** Creates the project and its chat for a picked idea, opens the chat and asks for the script. */

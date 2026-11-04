@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link2, Lightbulb, Disc3 } from 'lucide-react';
 import type { AgentId, MessagePart, Project, Style, VideoKind } from '@tayang/shared';
-import { BUILTIN_STYLES, buildProjectBrief, buildTopicIdeasPrompt, splitTopicJson, topicIdeaFromAction } from '@tayang/skills';
+import { BUILTIN_STYLES, buildProjectBrief, buildTopicIdeasPrompt, topicIdeaFromAction } from '@tayang/skills';
 import oyen from '@/assets/brand/oyen-expr-default.svg';
 import { Composer, type MentionRef } from '@/components/Composer';
 import { MessageList } from '@/components/MessageList';
@@ -10,7 +10,7 @@ import { createChat, listProjects, listStyles } from '@/lib/ipc';
 import { useApp } from '@/state/app';
 import { headPermission, useChat } from '@/state/chat';
 import { useUsage } from '@/state/usage';
-import { startTopic, type TopicIdea } from '@/lib/topics';
+import { ideasFromReply, startTopic, type TopicIdea } from '@/lib/topics';
 import { extractA2ui } from '@/a2ui/parse';
 
 const KINDS: VideoKind[] = ['explainer', 'promo', 'quote', 'news', 'tutorial', 'data', 'event'];
@@ -79,7 +79,7 @@ export function ChatNew() {
     topicPending.current = false;
     // A2UI replies draw their own cards; only a ```json answer needs the fallback cards.
     const text = agentText(last.parts);
-    setIdeas(extractA2ui(text).blocks.length ? [] : splitTopicJson(text).ideas);
+    setIdeas(extractA2ui(text).blocks.length ? [] : ideasFromReply(text));
   }, [chatId, streaming, messages]);
 
   const ensureChat = async (title: string) => {
