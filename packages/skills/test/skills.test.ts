@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import type { Project, Settings, Style, SystemInfo } from '@tayang/shared';
 import {
   FRAME_CHECK_PROMPT,
+  FRAMES_CHECKED_TOKEN,
+  hasFramesChecked,
+  stripFramesToken,
   buildInstallPrompt,
   buildProjectBrief,
   buildStudyStylePrompt,
@@ -206,13 +209,13 @@ describe('brief', () => {
     const settings = { fps: 30, frameCheck: true } as Settings;
     const b = buildProjectBrief(project, STYLE, settings);
     expect(b).toContain(STYLE.prompt);
-    expect(b).toContain('Frames checked');
+    expect(b).toContain('[tayang:frames-checked]');
     expect(b).toContain(FRAME_CHECK_PROMPT);
     expect(b).toContain('npx hyperframes');
     expect(b).toContain(
       'When a version is ready, render it with `npx -y hyperframes@0.9.10 render --output renders/promo-<n>.mp4` so Tayang can show it.',
     );
-    expect(FRAME_CHECK_PROMPT).toContain('Frames checked');
+    expect(FRAME_CHECK_PROMPT).toContain(FRAMES_CHECKED_TOKEN);
   });
   it('lists the style notes after the prompt, in order, skipping empty ones', () => {
     const project = { title: 'Promo', kind: 'promo', format: '9:16', language: 'id' } as Project;
@@ -235,5 +238,18 @@ describe('brief', () => {
     expect(b).not.toContain(FRAME_CHECK_PROMPT);
     expect(b).not.toContain('Quality loop');
     expect(b).toContain('npx hyperframes');
+  });
+});
+
+describe('frames-checked marker', () => {
+  it('is found as the token or as the old English phrase, in any language around it', () => {
+    expect(hasFramesChecked('Semua frame beres. [tayang:frames-checked]')).toBe(true);
+    expect(hasFramesChecked('Frames checked, all good')).toBe(true);
+    expect(hasFramesChecked('Semua frame sudah dicek')).toBe(false);
+  });
+  it('is stripped from what the reader sees', () => {
+    expect(stripFramesToken(`${FRAMES_CHECKED_TOKEN}\nDua teks diperbaiki.`)).toBe('Dua teks diperbaiki.');
+    expect(stripFramesToken('Frames checked, all good')).toBe('Frames checked, all good');
+    expect(stripFramesToken('Selesai.\n\n[tayang:frames-checked]')).toBe('Selesai.');
   });
 });

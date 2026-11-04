@@ -36,7 +36,7 @@ describe('agent plugin', () => {
   it('tayang-studio description names the env flag', () => {
     const fm = frontmatter(read('skills/tayang-studio/SKILL.md'));
     expect(fm.description).toContain('TAYANG_STUDIO=1');
-    expect(read('skills/tayang-studio/SKILL.md')).toContain('Frames checked');
+    expect(read('skills/tayang-studio/SKILL.md')).toContain('[tayang:frames-checked]');
     // Settings can turn the check off: the skill must give way to the brief or the message.
     expect(read('skills/tayang-studio/SKILL.md')).toContain(
       'unless the project brief or the message says to skip the frame check',

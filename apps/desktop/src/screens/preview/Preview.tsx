@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronLeft, ChevronRight, MapPin, Pause, Play, SquarePlus } from 'lucide-react';
+import { hasFramesChecked } from '@tayang/skills';
 import { formatTimecode, frameAt, secAt } from '@tayang/shared';
 import type { MediaInfo, Mark } from '@tayang/shared';
 import { Button } from '@/components/Button';
@@ -60,7 +61,7 @@ export function Preview({
 
   const messages = useChat((s) => s.messages[chatId]) ?? NO_MESSAGES;
   const lastAgent = [...messages].reverse().find((m) => m.role === 'agent');
-  const checked = !!lastAgent?.parts.some((p) => p.type === 'text' && p.text.includes('Frames checked'));
+  const checked = !!lastAgent?.parts.some((p) => p.type === 'text' && hasFramesChecked(p.text));
 
   const load = useCallback(async () => {
     const [path, probe] = await Promise.all([mediaLatestRender(projectId), mediaProbe(projectId)]);

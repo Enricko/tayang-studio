@@ -8,7 +8,7 @@ import { STICK_EVENT } from '@/components/ScrollToBottom';
 import { ActivityGroup, isHiddenTool, WorkingLine, type ActivityItem } from '@/components/Activity';
 import { localized } from '@/lib/stored';
 import { messageKey, useChat, type SendOpts } from '@/state/chat';
-import { splitTopicJson } from '@tayang/skills';
+import { splitTopicJson, stripFramesToken } from '@tayang/skills';
 import { extractA2ui } from '@/a2ui/parse';
 import { A2uiSurface, type A2uiAction } from '@/a2ui/render';
 import { applyMessages, blockSurfaceId, emptySurfaces, type SurfaceSet } from '@/a2ui/surface';
@@ -109,7 +109,7 @@ function sendAction(chatId: string, a: A2uiAction, sendOptions?: SendOptions) {
 
 /** An agent text part: prose, the surfaces it owns, and a placeholder for a block still streaming. */
 function AgentText({ text, messageId, a2ui }: { text: string; messageId: string; a2ui: A2uiState }) {
-  const { text: rawProse, blocks, pending: a2uiPending, invalid } = useMemo(() => extractA2ui(text), [text]);
+  const { text: rawProse, blocks, pending: a2uiPending, invalid } = useMemo(() => extractA2ui(stripFramesToken(text)), [text]);
   const { t } = useTranslation();
   const { handle, locked, sendOptions } = useContext(ActionsContext);
   // Older agents answer topics with a ```json block. Where a screen shows topic cards (it provides the

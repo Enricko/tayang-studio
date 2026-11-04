@@ -41,7 +41,7 @@ Before you say a video is done, unless the project brief or the message says to 
 1. Render a still of every scene.
 2. Look for overlapping elements, text that is cut off or outside the safe area, and timing that does not match the voice or captions.
 3. Fix every problem, then look at the affected stills again.
-4. Reply with "Frames checked" and a one-line summary of what you fixed.
+4. Reply with `[tayang:frames-checked]` exactly as written, whatever language you reply in, then a one-line summary of what you fixed.
 
 ## Permission
 

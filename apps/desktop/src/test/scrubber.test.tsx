@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 
@@ -14,6 +14,8 @@ vi.mock('@/lib/ipc', () => ({
 import * as ipc from '@/lib/ipc';
 import { Preview } from '@/screens/preview/Preview';
 import { Scrubber } from '@/screens/preview/Scrubber';
+import { MessageList } from '@/components/MessageList';
+import { setUiLanguage } from '@/i18n';
 import { useChat } from '@/state/chat';
 
 const thumbs = Array.from({ length: 12 }, (_, i) => `/t/${i}.png`);
@@ -147,6 +149,20 @@ describe('Preview', () => {
     render(<Preview projectId="p1" chatId="c1" />);
     await userEvent.click(await screen.findByRole('button', { name: 'Render preview' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('ffmpeg missing');
+  });
+
+  it('shows the badge for the language-neutral token, with the token hidden in the chat', async () => {
+    useChat.setState({
+      messages: { c1: [{ id: 'm1', chatId: 'c1', role: 'agent', parts: [{ type: 'text', text: '[tayang:frames-checked]\nDua teks sudah diperbaiki.' }], createdAt: '' }] },
+    });
+    setUiLanguage('id');
+    render(<Preview projectId="p1" chatId="c1" />);
+    await screen.findByRole('slider');
+    expect(screen.getByText('Frame sudah dicek')).toBeInTheDocument();
+    cleanup();
+    render(<MessageList messages={useChat.getState().messages.c1!} streaming={false} />);
+    expect(screen.getByText('Dua teks sudah diperbaiki.')).toBeInTheDocument();
+    expect(screen.queryByText(/tayang:frames-checked/)).toBeNull();
   });
 
   it('shows Frames checked when the last agent message says so', async () => {
