@@ -690,6 +690,53 @@ pub async fn auth_logout(state: State<'_, AppState>, auth: State<'_, Arc<Auth>>)
     auth.logout(&base).await.map_err(auth_err)
 }
 
+// ---- paid plans ----
+
+/// `billing:<code>`, the code being the kebab-case `BillingError` the UI knows.
+fn billing_err(e: BillingError) -> String {
+    let code = serde_json::to_value(e).ok().and_then(|v| v.as_str().map(String::from)).unwrap_or_default();
+    format!("billing:{code}")
+}
+
+/// The stored token for the current API, or `billing:signed-out`.
+async fn billing_token(state: &AppState, auth: &Arc<Auth>) -> Result<(String, String), String> {
+    let base = api_base(state);
+    let token = auth.token(&base).await.ok_or_else(|| billing_err(BillingError::SignedOut))?;
+    Ok((base, token))
+}
+
+/// A 401 means the token is gone at the API: let the sign-in state find out (it clears it).
+fn after_billing<T>(auth: &Arc<Auth>, base: &str, r: Result<T, BillingError>) -> CmdResult<T> {
+    if r.as_ref().err() == Some(&BillingError::SignedOut) {
+        let (auth, base) = (auth.clone(), base.to_string());
+        tauri::async_runtime::spawn(async move { auth.refresh(&base).await });
+    }
+    r.map_err(billing_err)
+}
+
+/// Starts (or reuses) a QRIS payment for `plan` and opens its page in the browser. The token
+/// stays here; the webview gets the payment link for "Open again". Errors are `billing:<code>`.
+#[tauri::command]
+pub async fn billing_checkout(app: AppHandle, state: State<'_, AppState>, auth: State<'_, Arc<Auth>>, plan: String) -> CmdResult<Checkout> {
+    let auth = auth.inner().clone();
+    let (base, token) = billing_token(&state, &auth).await?;
+    let checkout = after_billing(&auth, &base, crate::billing::checkout(auth.client(), &base, &token, &plan).await)?;
+    use tauri_plugin_opener::OpenerExt;
+    // The dialog has "Open again" for when this doesn't work.
+    if let Err(e) = app.opener().open_url(&checkout.payment_link_url, None::<&str>) {
+        eprintln!("[billing] couldn't open the browser: {e}");
+    }
+    Ok(checkout)
+}
+
+/// The signed-in account's plan and any payment in progress. Errors are `billing:<code>`.
+#[tauri::command]
+pub async fn billing_status(state: State<'_, AppState>, auth: State<'_, Arc<Auth>>) -> CmdResult<BillingStatus> {
+    let auth = auth.inner().clone();
+    let (base, token) = billing_token(&state, &auth).await?;
+    after_billing(&auth, &base, crate::billing::status(auth.client(), &base, &token).await)
+}
+
 // ---- agent ----
 
 struct TauriSink(AppHandle);

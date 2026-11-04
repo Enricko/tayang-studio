@@ -587,6 +587,18 @@ impl Auth {
         })
     }
 
+    /// The stored token for `base`, for the other API calls Rust makes for the signed-in user
+    /// (billing). It never goes to the webview. None when signed out or the address isn't safe.
+    pub async fn token(&self, base: &str) -> Option<String> {
+        let key = account_key(base.trim()).ok()?;
+        self.load_token(&key).await
+    }
+
+    /// The no-redirect client every call with the token goes through.
+    pub fn client(&self) -> &reqwest::Client {
+        &self.client
+    }
+
     /// The current state; never the token.
     pub fn status(&self) -> AuthStatus {
         self.lock().status.clone()
@@ -791,7 +803,7 @@ impl Auth {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     #[test]
@@ -1238,6 +1250,15 @@ mod tests {
             _ => (404, "{}".into()),
         })
         .await
+    }
+
+    #[tokio::test]
+    async fn token_is_the_stored_one_for_that_base_only() {
+        let r = rig();
+        r.store.set(&key("http://localhost:8787/api"), "tyg_abc").unwrap();
+        assert_eq!(r.auth.token(" http://localhost:8787/api/ ").await.as_deref(), Some("tyg_abc"));
+        assert_eq!(r.auth.token("https://studio.tayang.app/api").await, None);
+        assert_eq!(r.auth.token("http://example.com/api").await, None, "never over plain http to another computer");
     }
 
     #[tokio::test]

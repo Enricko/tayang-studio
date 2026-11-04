@@ -1,5 +1,6 @@
 pub mod acp;
 pub mod auth;
+pub mod billing;
 pub mod commands;
 pub mod db;
 pub mod media;
@@ -144,6 +145,8 @@ pub fn run() {
             commands::auth_cancel,
             commands::auth_status,
             commands::auth_logout,
+            commands::billing_checkout,
+            commands::billing_status,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Tayang Studio");

@@ -807,3 +807,51 @@ pub struct AuthStart {
     pub verification_uri_complete: String,
     pub expires_in: u64,
 }
+
+// ---- paid plans (shared `CheckoutResponse`, `BillingStatus`) ----
+
+/// `billing_checkout()`: the QRIS payment to finish in the browser.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Checkout {
+    pub order_id: String,
+    pub payment_link_url: String,
+    pub expires_at: String,
+    pub amount: u64,
+}
+
+/// A started payment that hasn't been paid or run out yet.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingPayment {
+    pub order_id: String,
+    pub plan: String,
+    pub payment_link_url: String,
+    pub expires_at: String,
+}
+
+/// `billing_status()`: the last paid plan, until when, whether it still runs, and a payment in progress.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BillingStatus {
+    pub plan: String,
+    pub current_period_end: Option<String>,
+    pub active: bool,
+    pub pending: Option<PendingPayment>,
+}
+
+/// Why a billing command failed; the command rejects with `billing:<code>`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum BillingError {
+    /// No sign-in on this computer, or the API no longer accepts it.
+    SignedOut,
+    /// Not a plan that is for sale.
+    InvalidPlan,
+    /// The API couldn't be reached.
+    Network,
+    /// The API answered something unexpected.
+    Server,
+    /// The payment provider (SumoPod) failed.
+    PaymentProvider,
+}
