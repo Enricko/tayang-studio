@@ -534,10 +534,11 @@ fn plugin_dir(resource_dir: Option<&Path>) -> Option<PathBuf> {
     found
 }
 
-/// Internal sessions (the setup installs and style studies) never show A2UI in a chat, so
-/// they get neither the plugin nor the A2UI system prompt. Topic ideas (`ideas-*`) do.
+/// Internal sessions (the setup installs, style studies and the autopilots' topic chats) never
+/// show A2UI in a chat, so they get neither the plugin nor the A2UI system prompt. Topic ideas
+/// (`ideas-*`) do.
 pub fn wants_skills(chat_id: &str) -> bool {
-    !(chat_id == "setup" || chat_id.starts_with("study-"))
+    !(chat_id == "setup" || chat_id.starts_with("study-") || chat_id.starts_with("autopilot-"))
 }
 
 /// Claude gets the plugin and the system prompt through `_meta` (so nothing is
@@ -595,13 +596,13 @@ pub async fn agent_start(
     Ok(skills_as_text)
 }
 
-/// Style studies always run in auto mode; the install chat never does (installs need
-/// the user's approval); other chats follow the chat's Auto toggle.
+/// Style studies and the autopilots' topic chats always run in auto mode; the install chat
+/// never does (installs need the user's approval); other chats follow the chat's Auto toggle.
 fn wants_auto(chat_id: &str, requested: bool) -> bool {
     if chat_id == "setup" {
         return false;
     }
-    chat_id.starts_with("study-") || requested
+    chat_id.starts_with("study-") || chat_id.starts_with("autopilot-") || requested
 }
 
 /// Claude without the plugin has no skills unless the first prompt carries them.
@@ -1195,6 +1196,7 @@ mod tests {
     fn internal_sessions_get_no_meta() {
         assert!(!wants_skills("setup"));
         assert!(!wants_skills("study-abc"));
+        assert!(!wants_skills("autopilot-a1"));
         assert!(wants_skills("ideas-2026-11-04"));
         assert!(wants_skills("c1"));
     }
@@ -1202,6 +1204,7 @@ mod tests {
     #[test]
     fn auto_mode_rules() {
         assert!(wants_auto("study-abc", false));
+        assert!(wants_auto("autopilot-a1", false));
         assert!(!wants_auto("setup", true));
         assert!(wants_auto("c1", true));
         assert!(!wants_auto("c1", false));
@@ -1236,6 +1239,8 @@ mod tests {
         let setup = resolve_cwd(w, "setup", None).unwrap();
         assert!(setup.ends_with(".tayang/setup") || setup.ends_with(r".tayang\setup"));
         assert!(setup.is_dir());
+        let topics = resolve_cwd(w, "autopilot-a1", None).unwrap();
+        assert_eq!(topics, w.join(".tayang").join("chats").join("autopilot-a1"));
         let study = resolve_cwd(w, "study-abc", None).unwrap();
         assert_eq!(study, w.join(".tayang").join("style-study").join("abc"));
         let chat = resolve_cwd(w, "c1", None).unwrap();
