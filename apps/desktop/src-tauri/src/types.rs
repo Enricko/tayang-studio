@@ -393,6 +393,18 @@ mod tests {
     }
 
     #[test]
+    fn message_part_a2ui_round_trips() {
+        let v = json!({"type":"a2ui","surfaceId":"s","messages":[]});
+        let part: MessagePart = serde_json::from_value(v.clone()).unwrap();
+        assert!(matches!(&part, MessagePart::A2ui { surface_id, .. } if surface_id == "s"));
+        assert_eq!(serde_json::to_value(&part).unwrap(), v);
+        let v = json!({"type":"a2ui-action","summary":"Picked: A","action":{"version":"v0.9"}});
+        let part: MessagePart = serde_json::from_value(v.clone()).unwrap();
+        assert!(matches!(&part, MessagePart::A2uiAction { summary, .. } if summary == "Picked: A"));
+        assert_eq!(serde_json::to_value(&part).unwrap(), v);
+    }
+
+    #[test]
     fn message_part_file_round_trips() {
         let v = json!({"type":"file","path":"/w/attachments/a.pdf","name":"a.pdf",
             "mime":"application/pdf","size":2048});
