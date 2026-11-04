@@ -21,7 +21,7 @@ pub fn run() {
             let db = db::Db::open(&data.join("tayang.db"))?;
             // Also records the real home so later settings updates resolve defaults against it.
             let working = db.get_settings(&home).working_folder;
-            commands::allow_working_folder(app.handle(), &working);
+            commands::allow_asset_folders(app.handle(), &db, &working);
             app.manage(AppState {
                 db,
                 acp: acp::AcpManager::new(),

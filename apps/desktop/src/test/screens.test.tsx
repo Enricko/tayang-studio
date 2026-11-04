@@ -198,4 +198,9 @@ describe('Settings', () => {
     await userEvent.click(sw);
     await waitFor(() => expect(ipc.updateSettings).toHaveBeenCalledWith({ frameCheck: false }));
   });
+
+  it('says existing projects stay put when the working folder changes', async () => {
+    render(<SettingsScreen />);
+    expect(await screen.findByText('Existing projects stay where they are')).toBeInTheDocument();
+  });
 });

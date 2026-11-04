@@ -68,14 +68,28 @@ pub fn update_settings(
     patch: serde_json::Value,
 ) -> CmdResult<Settings> {
     let settings = state.db.update_settings(patch).map_err(err)?;
-    allow_working_folder(&app, &settings.working_folder);
+    allow_asset_folders(&app, &state.db, &settings.working_folder);
     Ok(settings)
 }
 
-/// Lets the webview load files (frames, thumbnails, renders) from the working folder,
-/// even when it is outside the home folder.
-pub fn allow_working_folder(app: &AppHandle, working: &str) {
-    let _ = app.asset_protocol_scope().allow_directory(working, true);
+/// Folders the webview may load files (frames, thumbnails, renders) from: the working
+/// folder plus every known project's own folder, which stays put when the working
+/// folder changes. Nothing else is in the asset scope.
+pub fn asset_folders(db: &Db, working: &str) -> Vec<PathBuf> {
+    let mut out = vec![PathBuf::from(working)];
+    for p in db.list_projects().unwrap_or_default() {
+        let folder = PathBuf::from(&p.folder);
+        if folder.is_dir() && !out.contains(&folder) {
+            out.push(folder);
+        }
+    }
+    out
+}
+
+pub fn allow_asset_folders(app: &AppHandle, db: &Db, working: &str) {
+    for folder in asset_folders(db, working) {
+        let _ = app.asset_protocol_scope().allow_directory(&folder, true);
+    }
 }
 
 #[tauri::command]
@@ -269,16 +283,22 @@ fn safe_segment(s: &str) -> bool {
     !s.is_empty() && s != "." && s != ".." && !s.contains(['/', '\\'])
 }
 
-/// Where this chat's agent runs. Always inside `working`.
-/// `project_folder` is the folder of the chat's project, when it has one.
+/// Where this chat's agent runs. `project_folder` is the recorded folder of the chat's
+/// (known) project, when it has one: that folder is used as is, even if the working
+/// folder has changed since, as long as it still exists. Every other chat runs inside
+/// `working`.
 pub fn resolve_cwd(
     working: &Path,
     chat_id: &str,
     project_folder: Option<&Path>,
 ) -> CmdResult<PathBuf> {
-    let cwd = if let Some(folder) = project_folder {
-        folder.to_path_buf()
-    } else if chat_id == "setup" {
+    if let Some(folder) = project_folder {
+        if !folder.is_dir() {
+            return Err(format!("This project's folder is missing: {}", folder.display()));
+        }
+        return Ok(folder.to_path_buf());
+    }
+    let cwd = if chat_id == "setup" {
         working.join(".tayang").join("setup")
     } else if let Some(rest) = chat_id.strip_prefix("study-") {
         if !safe_segment(rest) {
@@ -389,11 +409,20 @@ pub fn build_prompt(
     out
 }
 
-/// Frame images must live inside the working folder.
-pub fn check_frame_images(working: &Path, parts: &[MessagePart]) -> CmdResult<()> {
+/// Frame images must live inside the working folder or inside the recorded folder of
+/// the frame's own (known, existing) project.
+pub fn check_frame_images(
+    working: &Path,
+    parts: &[MessagePart],
+    project_folder: impl Fn(&str) -> Option<PathBuf>,
+) -> CmdResult<()> {
     for part in parts {
-        if let MessagePart::Frame { image_path, .. } = part {
-            if !projects::ensure_inside(working, Path::new(image_path)) {
+        if let MessagePart::Frame { image_path, project_id, .. } = part {
+            let image = Path::new(image_path);
+            let in_project = project_folder(project_id)
+                .filter(|f| f.is_dir())
+                .is_some_and(|f| projects::ensure_inside(&f, image));
+            if !in_project && !projects::ensure_inside(working, image) {
                 return Err("That frame image is outside your working folder".into());
             }
         }
@@ -410,7 +439,9 @@ pub async fn agent_prompt(
     let settings = state.db.get_settings(&state.home);
     let fps = settings.fps;
     let working = PathBuf::from(&settings.working_folder);
-    check_frame_images(&working, &parts)?;
+    check_frame_images(&working, &parts, |id| {
+        state.db.get_project(id).ok().flatten().map(|p| PathBuf::from(p.folder))
+    })?;
     let prompt = build_prompt(&parts, fps, |id| state.db.get_project(id).ok().flatten());
     state.acp.prompt(&chat_id, prompt).await.map_err(err)
 }
@@ -541,6 +572,19 @@ mod tests {
     }
 
     #[test]
+    fn project_chats_keep_their_folder_after_the_working_folder_changes() {
+        let tmp = tempfile::tempdir().unwrap();
+        let old_project = tmp.path().join("old-work").join("promo");
+        std::fs::create_dir_all(&old_project).unwrap();
+        let new_working = tmp.path().join("new-work");
+        assert_eq!(resolve_cwd(&new_working, "c", Some(&old_project)).unwrap(), old_project);
+        // A project folder that is gone is an error, not silently recreated.
+        let gone = tmp.path().join("gone");
+        assert!(resolve_cwd(&new_working, "c", Some(&gone)).is_err());
+        assert!(!gone.exists());
+    }
+
+    #[test]
     fn cwd_rejects_escapes() {
         let tmp = tempfile::tempdir().unwrap();
         let w = tmp.path().join("work");
@@ -548,7 +592,8 @@ mod tests {
         std::fs::create_dir(&outside).unwrap();
         assert!(resolve_cwd(&w, "../x", None).is_err());
         assert!(resolve_cwd(&w, "study-../x", None).is_err());
-        assert!(resolve_cwd(&w, "c", Some(&outside)).is_err());
+        assert!(resolve_cwd(&w, "ideas-../x", None).is_err());
+        let _ = outside;
     }
 
     #[test]
@@ -563,9 +608,49 @@ mod tests {
             image_path: p.to_string_lossy().into_owned(),
             marks: vec![],
         };
-        assert!(check_frame_images(&w, &[frame(w.join("a/f.png"))]).is_ok());
-        assert!(check_frame_images(&w, &[frame(tmp.path().join("secret.png"))]).is_err());
-        assert!(check_frame_images(&w, &[frame(w.join("../secret.png"))]).is_err());
+        let none = |_: &str| None;
+        assert!(check_frame_images(&w, &[frame(w.join("a/f.png"))], none).is_ok());
+        assert!(check_frame_images(&w, &[frame(tmp.path().join("secret.png"))], none).is_err());
+        assert!(check_frame_images(&w, &[frame(w.join("../secret.png"))], none).is_err());
+
+        // A project left in an old working folder: its own frames are fine, others aren't.
+        let old = tmp.path().join("old").join("p");
+        std::fs::create_dir_all(&old).unwrap();
+        let known = |id: &str| (id == "p").then(|| old.clone());
+        let in_old = frame(old.join(".tayang/frames/f.png"));
+        assert!(check_frame_images(&w, &[in_old.clone()], known).is_ok());
+        assert!(check_frame_images(&w, &[in_old], none).is_err());
+        assert!(check_frame_images(&w, &[frame(old.join("../secret.png"))], known).is_err());
+    }
+
+    #[test]
+    fn asset_folders_are_working_plus_existing_projects() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open_in_memory().unwrap();
+        let kept = tmp.path().join("old").join("kept");
+        std::fs::create_dir_all(&kept).unwrap();
+        let mk = |id: &str, folder: &Path| Project {
+            id: id.into(),
+            title: id.into(),
+            slug: id.into(),
+            folder: folder.to_string_lossy().into_owned(),
+            kind: VideoKind::Promo,
+            format: VideoFormat::Portrait,
+            language: VideoLanguage::En,
+            status: ProjectStatus::Draft,
+            style_id: None,
+            scheduled_at: None,
+            duration_sec: None,
+            created_at: String::new(),
+            updated_at: String::new(),
+        };
+        db.insert_project(&mk("a", &kept)).unwrap();
+        db.insert_project(&mk("b", &tmp.path().join("missing"))).unwrap();
+        let working = tmp.path().join("work");
+        assert_eq!(
+            asset_folders(&db, &working.to_string_lossy()),
+            vec![working.clone(), kept]
+        );
     }
 
     #[test]

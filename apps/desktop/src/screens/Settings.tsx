@@ -26,12 +26,13 @@ function Card({ children }: { children: ReactNode }) {
   return <div className="rounded-xl border border-border bg-card">{children}</div>;
 }
 
-function Row({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
+function Row({ label, hint, note, children }: { label: string; hint?: string; note?: string; children: ReactNode }) {
   return (
     <div className="flex items-center gap-3 border-b border-[#222] px-4 py-3 last:border-b-0">
       <div className="mr-auto flex min-w-0 flex-col gap-1">
         <span className="text-sm">{label}</span>
         {hint && <span className="text-xs text-text-3">{hint}</span>}
+        {note && <span className="text-xs text-text-3">{note}</span>}
       </div>
       {children}
     </div>
@@ -239,7 +240,11 @@ export function Settings() {
         <section id="render" className="flex flex-col gap-3">
           <h2 className="m-0 text-base font-medium">Rendering</h2>
           <Card>
-            <Row label="Working folder" hint="Your projects live here, and your agent only works inside it">
+            <Row
+              label="Working folder"
+              hint="Your projects live here, and your agent only works inside it"
+              note="Existing projects stay where they are"
+            >
               <span className="max-w-[220px] truncate font-mono text-xs text-[#D9D9D9]" title={settings.workingFolder}>
                 {settings.workingFolder}
               </span>
