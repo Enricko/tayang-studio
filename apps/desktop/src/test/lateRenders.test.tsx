@@ -23,7 +23,7 @@ vi.mock('@/lib/ipc', () => ({
 }));
 vi.mock('@/lib/events', () => ({ onAgentUpdate: vi.fn(async () => () => {}), onPermission: vi.fn(async () => () => {}) }));
 
-import { agentPrompt, latestRenderInfo, listJobs, mediaProbe, upsertJob } from '@/lib/ipc';
+import { agentPrompt, agentStart, getChat, latestRenderInfo, listJobs, mediaProbe, upsertJob } from '@/lib/ipc';
 import { renderTiming } from '@/lib/renderCheck';
 import { useJobs } from '@/state/jobs';
 import { resetLateRenders, settleLateRenders } from '@/lib/buildJobs';
@@ -143,6 +143,16 @@ describe('a build job that stopped without a video, on the Agents board', () => 
     await waitFor(() => expect(upsertJob).toHaveBeenCalledWith(expect.objectContaining({ id: 'build-c1', status: 'working' })));
     await userEvent.click(screen.getByRole('button', { name: 'Open chat' }));
     expect(useApp.getState().route).toEqual({ name: 'chat', chatId: 'c1' });
+  });
+
+  it("Continue uses the chat's current agent, not the one the job was written with", async () => {
+    vi.mocked(getChat).mockResolvedValue({ id: 'c1', projectId: 'p1', agentId: 'codex', title: 'Jalur Rempah', createdAt: '', updatedAt: '' } as never);
+    vi.mocked(listJobs).mockResolvedValue([job({ agentId: 'claude' })]);
+    render(<Agents />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Continue' }));
+    await waitFor(() => expect(agentPrompt).toHaveBeenCalled());
+    expect(vi.mocked(agentStart).mock.calls[0]!.slice(0, 2)).toEqual(['c1', 'codex']);
+    vi.mocked(getChat).mockResolvedValue(null);
   });
 
   it('in Indonesian, also for a job waiting on an answer', async () => {

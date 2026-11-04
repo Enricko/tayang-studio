@@ -6,7 +6,7 @@ import { Button } from '@/components/Button';
 import { Oyen, type OyenMood } from '@/components/Oyen';
 import { AGENT_NAMES, CLOSED_NOTE } from '@/lib/agents';
 import { onAgentUpdate } from '@/lib/events';
-import { deleteJob, detectAgents, listProjects } from '@/lib/ipc';
+import { deleteJob, detectAgents, getChat, listProjects } from '@/lib/ipc';
 import { settleLateRenders } from '@/lib/buildJobs';
 import { sendInProjectChat } from '@/lib/openProject';
 import { localized, stored } from '@/lib/stored';
@@ -42,7 +42,14 @@ function JobCard({ job, project, onDismiss }: { job: Job; project: string; onDis
     if (!job.chatId || !job.projectId || continuing) return;
     setContinuing(true);
     try {
-      await sendInProjectChat(job.chatId, { id: job.projectId, title: job.title }, job.agentId, t('agents.continuePrompt'));
+      // The chat may have moved to another agent since the job was written: its row says which.
+      let agent = job.agentId;
+      try {
+        agent = (await getChat(job.chatId))?.agentId ?? agent;
+      } catch {
+        /* the job's agent, then */
+      }
+      await sendInProjectChat(job.chatId, { id: job.projectId, title: job.title }, agent, t('agents.continuePrompt'));
     } finally {
       setContinuing(false);
     }
