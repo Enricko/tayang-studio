@@ -467,7 +467,8 @@ export const useChat = create<ChatState>((set, get) => {
       writeJob(chatId, 'done', info.name);
       return;
     }
-    const asked = waitsForAnswer((get().messages[chatId] ?? []).at(-1));
+    // The agent's last word, past any system line that landed after it (a busy note, a schedule line).
+    const asked = waitsForAnswer([...(get().messages[chatId] ?? [])].reverse().find((m) => m.role === 'agent'));
     writeJob(chatId, 'needs-you', stored(asked ? 'agents.waitingAnswer' : 'agents.noVideo'));
   };
 

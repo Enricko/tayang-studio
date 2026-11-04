@@ -42,6 +42,7 @@ const job = { projectId: 'p1', title: 'Jalur Rempah' };
 beforeEach(() => {
   vi.clearAllMocks();
   renderTiming.stableMs = 0;
+  vi.mocked(latestRenderInfo).mockResolvedValue(null);
   updates.length = 0;
   useChat.getState().reset();
   useChat.getState().listen();
@@ -149,6 +150,14 @@ describe('a project chat build job at the end of a turn', () => {
     await waitFor(() => expect(lastJob()).toMatchObject({ status: 'needs-you', note: 'The agent is waiting for your answer' }));
     setUiLanguage('id');
     expect(localized(lastJob().note!)).toBe('Agent menunggu jawabanmu');
+  });
+
+  it('still needs your answer when a system line landed after the question', async () => {
+    await useChat.getState().send('c1', [{ type: 'text', text: 'go' }], { agentId: 'claude', job });
+    await emit('c1', { kind: 'text', text: 'Mau pakai suara yang mana?' });
+    useChat.getState().notice('c1', 'The agent is still working. Wait for it to finish, then send again.');
+    await emit('c1', { kind: 'done', stopReason: 'end_turn' });
+    await waitFor(() => expect(lastJob()).toMatchObject({ status: 'needs-you', note: 'The agent is waiting for your answer' }));
   });
 
   it("leaves the autopilot's job to the autopilot: done at the turn's end, no lookup", async () => {

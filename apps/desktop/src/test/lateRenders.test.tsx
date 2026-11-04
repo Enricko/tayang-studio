@@ -42,6 +42,7 @@ const file = (at: number): FileInfo => ({ path: '/w/p1/renders/v-2.mp4', name: '
 beforeEach(() => {
   vi.clearAllMocks();
   renderTiming.stableMs = 0;
+  vi.mocked(latestRenderInfo).mockReset().mockResolvedValue(null);
   resetLateRenders();
   useJobs.setState({ jobs: [] });
   useChat.getState().reset();
