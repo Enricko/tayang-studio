@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { FOREGROUND_RULE, buildSessionPreamble, languageHint, sessionFacts, stripFramesToken } from '@tayang/skills';
+import { FOREGROUND_RULE, RENDERS_RULE, buildSessionPreamble, languageHint, sessionFacts, stripFramesToken } from '@tayang/skills';
 import type { AgentId, AgentUpdate, ChatMessage, FileInfo, JobStatus, MessagePart, PermissionRequest } from '@tayang/shared';
 import {
   addMessage,
@@ -22,6 +22,8 @@ import { uiLanguage } from '@/i18n';
 import { stored } from '@/lib/stored';
 import { finishedRender } from '@/lib/renderCheck';
 import { isRenderTool } from '@/lib/renderTool';
+import { advanceProject, isWorkTool, resetProjectStatus } from '@/lib/projectStatus';
+import { endCommand, stopAllWatches, stopWatching, watchCommand } from '@/lib/renderWatch';
 import { localClock } from '@/lib/time';
 import { useApp } from '@/state/app';
 import { refreshJobs, useJobs } from '@/state/jobs';
@@ -379,6 +381,7 @@ export const useChat = create<ChatState>((set, get) => {
       turnStartedAt: turns,
     }));
     // Whatever the turn was rendering is over with it.
+    stopWatching(chatId);
     useRender.getState().endChat(chatId);
     for (const req of open) void agentRespondPermission(req.requestId, null).catch(() => {});
   };
@@ -408,6 +411,32 @@ export const useChat = create<ChatState>((set, get) => {
       render.end(projectId, toolCallId);
       writeJob(chatId, 'working');
     }
+  };
+
+  /**
+   * A command in a video's chat may render without saying so (a template's `npm run make` renders at the
+   * end of its pipeline): while it runs, the project's newest mp4 tells (lib/renderWatch).
+   */
+  const watchRenderFile = (chatId: string, toolCallId: string, status: string, toolKind: string | undefined) => {
+    const projectId = chatJobs.get(chatId)?.projectId;
+    if (!projectId || toolKind !== 'execute') return;
+    if (status !== 'pending' && status !== 'running') return endCommand(chatId, toolCallId);
+    if (!get().streaming[chatId]) return;
+    // A command the render check already knows shows as a render by itself.
+    if (useRender.getState().runs[projectId]?.toolCallId === toolCallId) return;
+    watchCommand(chatId, projectId, toolCallId, get().turnStartedAt[chatId] ?? Date.now(), {
+      rendering(id) {
+        const render = useRender.getState();
+        if (render.runs[projectId] || !get().streaming[chatId]) return;
+        render.start(projectId, { source: 'agent', chatId, toolCallId: id });
+        writeJob(chatId, 'working', stored('agents.rendering'));
+      },
+      idle(id) {
+        if (useRender.getState().runs[projectId]?.toolCallId !== id) return;
+        useRender.getState().end(projectId, id);
+        writeJob(chatId, 'working');
+      },
+    });
   };
 
   /** Adds the images made since `since` to the agent message `targetId`, wherever it is by then. */
@@ -487,6 +516,8 @@ export const useChat = create<ChatState>((set, get) => {
     // it. Any finished render since the job's baseline counts, also one that finished between turns.
     const baseline = baselines.get(chatId);
     const info = await finishedRender(job.projectId, baseline ? Date.parse(baseline) : startedAt);
+    // The video exists whatever happens to the job: the project is rendered.
+    if (info) void advanceProject(job.projectId, 'rendered');
     // A newer turn has started since: its own end decides.
     if ((turnSeq.get(chatId) ?? 0) !== seq || get().streaming[chatId]) return;
     if (info) {
@@ -529,7 +560,13 @@ export const useChat = create<ChatState>((set, get) => {
       });
       if (u.kind === 'tool') {
         trackRender(chatId, u.toolCallId, u.title, u.status);
+        watchRenderFile(chatId, u.toolCallId, u.status, u.toolKind);
         if (u.status === 'done') queueImages(chatId);
+        // The first edit or command that finishes in a video's chat: it is being built.
+        const projectId = chatJobs.get(chatId)?.projectId;
+        if (projectId && isWorkTool({ type: 'tool', toolCallId: u.toolCallId, title: u.title, status: u.status, toolKind: u.toolKind })) {
+          void advanceProject(projectId, 'building');
+        }
       }
       return;
     }
@@ -671,8 +708,8 @@ export const useChat = create<ChatState>((set, get) => {
           const projectId = opts?.job?.projectId ?? chatJobs.get(chatId)?.projectId;
           const facts = { ...localClock(), ...(projectId ? { projectId } : {}) };
           if (agent !== 'claude' || noPlugin) lead.push({ type: 'text', text: buildSessionPreamble(uiLang, facts) });
-          // The foreground rule too: a project made before it has no copy in its AGENTS.md or CLAUDE.md.
-          else lead.push({ type: 'text', text: [languageHint(uiLang), sessionFacts(facts), FOREGROUND_RULE].filter(Boolean).join('\n\n') });
+          // The foreground and renders/ rules too: a project made before them has no copy in its AGENTS.md or CLAUDE.md.
+          else lead.push({ type: 'text', text: [languageHint(uiLang), sessionFacts(facts), FOREGROUND_RULE, RENDERS_RULE].filter(Boolean).join('\n\n') });
         }
         const recap = pendingRecap.get(chatId);
         if (recap?.text) {
@@ -791,6 +828,8 @@ export const useChat = create<ChatState>((set, get) => {
       imageRuns.clear();
       pendingSaves.clear();
       baselines.clear();
+      resetProjectStatus();
+      stopAllWatches();
       useRender.setState({ runs: {} });
       set({ messages: {}, streaming: {}, turnStartedAt: {}, permissions: {}, attachments: {}, started: {}, auto: {}, pendingAuto: null, autoBusy: {} });
     },

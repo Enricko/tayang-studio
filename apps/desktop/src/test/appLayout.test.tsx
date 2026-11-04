@@ -41,6 +41,7 @@ const settings: Settings = {
   backgroundMode: false,
   openAtLogin: false,
   buildJobsChecked: true,
+  projectStatusChecked: true,
 };
 
 async function renderApp() {

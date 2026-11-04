@@ -19,6 +19,7 @@ import { headPermission, useChat, type SendOpts } from '@/state/chat';
 import { useUsage } from '@/state/usage';
 import { PREVIEW, useFittedLayout, useLayout } from '@/state/layout';
 import { setRenderArgv, useRender } from '@/state/render';
+import { advanceProject } from '@/lib/projectStatus';
 
 const NO_MESSAGES: never[] = [];
 /** One argv as a shell-looking line: arguments with spaces or quotes are double-quoted. */
@@ -40,6 +41,9 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
   const streaming = useChat((s) => !!s.streaming[chatId]);
   const permission = useChat((s) => headPermission(s, chatId));
   const fitted = useFittedLayout(true);
+  const renderRunning = useRender((s) => (project ? !!s.runs[project.id] : false));
+  const projectsVersion = useApp((s) => s.projectsVersion);
+  const seenVersion = useRef(projectsVersion);
 
   useEffect(() => {
     useChat.getState().listen();
@@ -56,6 +60,22 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
       alive = false;
     };
   }, [chatId]);
+
+  // The project moved on (its status, a schedule): the header follows.
+  useEffect(() => {
+    if (!project || projectsVersion === seenVersion.current) return;
+    seenVersion.current = projectsVersion;
+    let alive = true;
+    listProjects()
+      .then((all) => {
+        const found = all.find((p) => p.id === project.id);
+        if (alive && found) setProject(found);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [projectsVersion, project?.id]);
 
   // A project with a tayang.json renders with its own command: show it before the user presses Render.
   useEffect(() => {
@@ -112,7 +132,8 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
     try {
       await mediaRender(project.id);
       const info = await mediaProbe(project.id).catch(() => null);
-      setProject(await updateProject(project.id, { status: 'rendered', durationSec: info?.durationSec ?? null }));
+      await advanceProject(project.id, 'rendered');
+      setProject(await updateProject(project.id, { durationSec: info?.durationSec ?? null }));
       useApp.getState().bumpProjects();
       setReloadKey((k) => k + 1);
     } catch (e) {
@@ -136,7 +157,7 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
         </div>
         {project && (
           <div className="ml-auto">
-            <StepBar status={project.status} />
+            <StepBar status={project.status} rendering={renderRunning} />
           </div>
         )}
         {project && (

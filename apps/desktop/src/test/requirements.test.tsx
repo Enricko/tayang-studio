@@ -54,6 +54,7 @@ const settings: Settings = {
   backgroundMode: false,
   openAtLogin: false,
   buildJobsChecked: true,
+  projectStatusChecked: true,
 };
 
 const tool = (id: ToolStatus['id'], name: string, required: boolean, ok: boolean): ToolStatus => ({

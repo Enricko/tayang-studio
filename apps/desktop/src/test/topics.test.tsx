@@ -25,6 +25,7 @@ vi.mock('@/lib/ipc', () => ({
   listMessages: vi.fn().mockResolvedValue([]),
   addMessage: vi.fn().mockResolvedValue(null),
   installStyleTemplate: vi.fn(),
+  setProjectStatus: vi.fn().mockResolvedValue({ id: 'p1', status: 'building' }),
   writeBrief: vi.fn().mockResolvedValue(undefined),
   detectAgents: vi.fn().mockResolvedValue([]),
   assetUrl: (p: string) => p,
@@ -67,6 +68,7 @@ const settings: Settings = {
   backgroundMode: false,
   openAtLogin: false,
   buildJobsChecked: true,
+  projectStatusChecked: true,
 };
 
 const atlas: Style = {
@@ -174,6 +176,8 @@ describe('Calendar make it with a template style', () => {
     expect(vi.mocked(ipc.createProject).mock.calls[0]![1]).toContain('This project starts from the Paper cut template.');
     expect(ipc.addMessage).toHaveBeenCalledWith('chat-1', 'system', [{ type: 'text', text: 'Setting up the Paper cut template…' }]);
     expect(ipc.writeBrief).not.toHaveBeenCalled();
+    // The style is in place: the project is being built.
+    expect(ipc.setProjectStatus).toHaveBeenCalledWith('p1', 'building');
     await waitFor(() => expect(useApp.getState().route).toEqual({ name: 'chat', chatId: 'chat-1' }));
     localStorage.clear();
   });
@@ -187,6 +191,7 @@ describe('Calendar make it with a template style', () => {
       ]),
     );
     expect(ipc.writeBrief).toHaveBeenCalledWith('p1', expect.not.stringContaining('This project starts from'));
+    expect(ipc.setProjectStatus).not.toHaveBeenCalled();
     localStorage.clear();
   });
 });

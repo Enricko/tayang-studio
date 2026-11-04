@@ -33,7 +33,7 @@ import { BUSY_NOTE, failChatJob, useChat } from '@/state/chat';
 import { needsYou } from '@/state/jobs';
 import { setUiLanguage } from '@/i18n';
 import { renderTiming } from '@/lib/renderCheck';
-import { FOREGROUND_RULE } from '@tayang/skills';
+import { FOREGROUND_RULE, RENDERS_RULE } from '@tayang/skills';
 
 /** What the agent got, without the session facts line a new session starts with. */
 const noFacts = <T,>(parts: T[]): T[] =>
@@ -352,6 +352,8 @@ describe('skills preamble', () => {
     await useChat.getState().send('c9', [{ type: 'text', text: 'go' }], { agentId: 'claude', job: { projectId: 'p7', title: 'Jalur Rempah' } });
     const lead = vi.mocked(agentPrompt).mock.calls[0]![1][0]!;
     expect(lead.type === 'text' && lead.text).toContain(FOREGROUND_RULE);
+    // And to leave the final mp4 in renders/, where Tayang reads it.
+    expect(lead.type === 'text' && lead.text).toContain(RENDERS_RULE);
   });
 });
 

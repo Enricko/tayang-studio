@@ -36,6 +36,8 @@ Tayang Studio is a desktop app that turns a topic into a short motion video. You
 
 Run installs, renders and pipelines in the foreground and wait for them to finish before you reply. Never start a long job in the background and end your turn: you can't message the user after your turn ends, and Tayang shows the user that you're still working while your turn runs. If a command needs more than a few minutes, say so first, then run it and wait.
 
+When the video is finished, make sure the final mp4 is in the project's renders/ folder (copy it there if your pipeline writes it elsewhere). Tayang's preview and status read it from there.
+
 ## Check the frames
 
 Before you say a video is done, unless the project brief or the message says to skip the frame check:

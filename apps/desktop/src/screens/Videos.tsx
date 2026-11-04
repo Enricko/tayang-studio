@@ -5,15 +5,15 @@ import type { Project, ProjectStatus } from '@tayang/shared';
 import { Button } from '@/components/Button';
 import { Oyen } from '@/components/Oyen';
 import { ScheduleDialog } from '@/components/ScheduleDialog';
+import { VideoPoster } from '@/components/VideoPoster';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { locale } from '@/i18n';
 import { listProjects } from '@/lib/ipc';
 import { openProjectChat } from '@/lib/openProject';
-import { ago, mmss } from '@/lib/time';
+import { ago } from '@/lib/time';
 import { cn } from '@/lib/utils';
 import { useApp } from '@/state/app';
-import { useRender } from '@/state/render';
 
 type Tab = 'all' | 'progress' | 'rendered' | 'scheduled';
 
@@ -32,23 +32,6 @@ const DOT: Record<ProjectStatus, string> = {
   scheduled: 'bg-foreground',
 };
 
-const THUMBS: [string, string][] = [
-  ['#0B1E3F', '#FFFFFF'],
-  ['#FFD23F', '#141414'],
-  ['#3B1F14', '#FFE7D6'],
-  ['#1F1F1F', '#FDFDFD'],
-  ['#E8ECF4', '#0B1E3F'],
-  ['#1F2A1A', '#F5E6A8'],
-  ['#2B1B3F', '#F2E9FF'],
-  ['#F2470C', '#141414'],
-];
-
-function thumbFor(id: string) {
-  let h = 0;
-  for (const c of id) h = (h * 31 + c.charCodeAt(0)) >>> 0;
-  return THUMBS[h % THUMBS.length]!;
-}
-
 export function Videos() {
   const { t } = useTranslation();
   const navigate = useApp((s) => s.navigate);
@@ -56,17 +39,18 @@ export function Videos() {
   const [tab, setTab] = useState<Tab>('all');
   const [q, setQ] = useState('');
   const [scheduleFor, setScheduleFor] = useState<Project | null>(null);
-  const rendering = useRender((s) => s.runs);
+  // Statuses move on by themselves (a chat builds, a render finishes): follow them.
+  const version = useApp((s) => s.projectsVersion);
 
   useEffect(() => {
     let alive = true;
     listProjects()
       .then((p) => alive && setProjects(p))
-      .catch(() => alive && setProjects([]));
+      .catch(() => alive && setProjects((l) => l ?? []));
     return () => {
       alive = false;
     };
-  }, []);
+  }, [version]);
 
   const list = projects ?? [];
   const shown = useMemo(() => {
@@ -115,7 +99,6 @@ export function Videos() {
       ) : (
         <div className="grid gap-x-5 gap-y-6" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(176px, 1fr))' }}>
           {shown.map((p) => {
-            const [bg, fg] = thumbFor(p.id);
             return (
               <div key={p.id} className="relative">
               <button
@@ -123,24 +106,7 @@ export function Videos() {
                 onClick={() => void openProjectChat(p).catch(() => {})}
                 className="flex w-full flex-col gap-3 bg-transparent p-0 text-left text-foreground"
               >
-                <div
-                  className="relative flex aspect-[9/16] w-full flex-col justify-between overflow-hidden rounded-xl border border-[#333] p-4"
-                  style={{ background: bg, color: fg }}
-                >
-                  <span className="font-mono text-[9px] uppercase opacity-80">{t(`kinds.${p.kind}`)}</span>
-                  {rendering[p.id] && (
-                    <span className="absolute bottom-2 left-2 inline-flex items-center gap-1.5 rounded-sm bg-black/70 px-1.5 py-0.5 text-[11px] font-medium text-white">
-                      <span aria-hidden="true" className="tayang-pulse inline-block size-1.5 shrink-0 rounded-full bg-primary" />
-                      {t('videos.rendering')}
-                    </span>
-                  )}
-                  <span className="text-[22px] leading-[1.02] font-extrabold tracking-[-0.03em]">{p.title}</span>
-                  {p.durationSec != null && (
-                    <span className="absolute right-2 bottom-2 rounded-sm bg-black/60 px-1 font-mono text-[11px] text-white">
-                      {mmss(p.durationSec)}
-                    </span>
-                  )}
-                </div>
+                <VideoPoster project={p} />
                 <div className="flex flex-col gap-1">
                   <span className="text-sm leading-[1.3] font-medium">{p.title}</span>
                   <div className="flex items-center gap-2 text-xs">

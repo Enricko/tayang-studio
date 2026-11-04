@@ -95,6 +95,7 @@ const settings: Settings = {
   backgroundMode: false,
   openAtLogin: false,
   buildJobsChecked: true,
+  projectStatusChecked: true,
 };
 
 describe('Indonesian interface', () => {

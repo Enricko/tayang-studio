@@ -14,6 +14,7 @@ import type {
   MessagePart,
   NewProject,
   Project,
+  ProjectStatus,
   Settings,
   SlotPatch,
   Style,
@@ -41,6 +42,9 @@ export const createProject = (input: NewProject, brief: string) =>
   invoke<Project>('create_project', { input, brief });
 export const updateProject = (id: string, patch: Partial<Project>) =>
   invoke<Project>('update_project', { id, patch });
+/** Moves a project to `status` (draft → building → rendered); it never goes back unless `reset`. */
+export const setProjectStatus = (projectId: string, status: ProjectStatus, reset = false) =>
+  invoke<Project>('set_project_status', { projectId, status, reset });
 export const setSchedule = (projectId: string, at: string | null) =>
   invoke<Project>('set_schedule', { projectId, at });
 /** One video of a confirmed schedule card: an existing one by id, or a new draft with its brief. */
@@ -128,6 +132,16 @@ export const recentImages = (chatId: string, since: string, limit: number) =>
   invoke<FileInfo[]>('recent_images', { chatId, since, limit });
 /** The newest render with its size and time; null when the project has none. */
 export const latestRenderInfo = (projectId: string) => invoke<FileInfo | null>('latest_render_info', { projectId });
+/** The newest mp4 where renders land (renders/, the root, out/, runs/<run>/out/), still-empty ones too (a render being written); null when there is none. */
+export const newestVideoInfo = (projectId: string) => invoke<FileInfo | null>('newest_video_info', { projectId });
+/** One frame of a project's newest render, cached by the render's time; `modifiedAt` busts the image cache. */
+export interface VideoThumb {
+  path: string;
+  modifiedAt: string;
+  durationSec: number | null;
+}
+/** The Videos card's frame of the newest render; null without a render or ffmpeg. */
+export const videoThumbnail = (projectId: string) => invoke<VideoThumb | null>('video_thumbnail', { projectId });
 export const mediaProbe = (projectId: string) =>
   invoke<MediaInfo | null>('media_probe', { projectId });
 export const mediaExtractFrame = (projectId: string, timeSec: number) =>

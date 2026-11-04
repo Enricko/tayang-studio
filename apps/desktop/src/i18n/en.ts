@@ -409,7 +409,8 @@ export const en = {
     rowAria: '{{label}} usage',
   },
   videos: {
-    rendering: 'Rendering',
+    noPreview: 'No preview yet',
+    renderingNow: 'Rendering…',
     title: 'Videos',
     subtitle: "Everything you've made, saved on this computer",
     searchAria: 'Search videos',
@@ -710,6 +711,7 @@ export const en = {
     style: 'Style',
     build: 'Build',
     render: 'Render',
+    renderingNow: 'Rendering now',
   },
 } as const;
 

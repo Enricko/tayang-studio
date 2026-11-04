@@ -224,6 +224,17 @@ pub fn update_project(
     state.db.update_project(&id, patch).map_err(err)
 }
 
+/// Moves a project to `status` (draft → building → rendered); never back unless `reset`. See `Db::set_project_status`.
+#[tauri::command]
+pub fn set_project_status(
+    state: State<'_, AppState>,
+    project_id: String,
+    status: crate::types::ProjectStatus,
+    reset: Option<bool>,
+) -> CmdResult<Project> {
+    state.db.set_project_status(&project_id, status, reset.unwrap_or(false)).map_err(err)
+}
+
 /// Sets or clears when a video is due to be posted. `at` must be RFC 3339; a new time is
 /// reminded afresh, so `remindedAt` is cleared with it.
 pub fn schedule_project(db: &Db, project_id: &str, at: Option<String>) -> CmdResult<Project> {
@@ -511,12 +522,14 @@ pub fn delete_style(app: AppHandle, state: State<'_, AppState>, id: String) -> C
     Ok(())
 }
 
-/// Where copied styles keep their preview clip and poster; the webview may read it.
+/// Where copied styles keep their preview clip and poster, and where the video cards' thumbnails are
+/// cached; the webview may read both.
 pub fn allow_style_media(app: &AppHandle) {
     if let Ok(data) = app.path().app_data_dir() {
-        let dir = data.join("style-media");
-        let _ = std::fs::create_dir_all(&dir);
-        let _ = app.asset_protocol_scope().allow_directory(&dir, true);
+        for dir in [data.join("style-media"), data.join("thumbs")] {
+            let _ = std::fs::create_dir_all(&dir);
+            let _ = app.asset_protocol_scope().allow_directory(&dir, true);
+        }
     }
 }
 
@@ -1217,6 +1230,46 @@ pub fn latest_render_info(state: State<'_, AppState>, project_id: String) -> Cmd
     Ok(media::latest_render_info(&folder))
 }
 
+/// The newest `*.mp4` where renders land (empty too), for spotting a render that is being written.
+#[tauri::command]
+pub async fn newest_video_info(state: State<'_, AppState>, project_id: String) -> CmdResult<Option<crate::types::FileInfo>> {
+    let folder = project_folder(&state, &project_id)?;
+    tauri::async_runtime::spawn_blocking(move || media::newest_video_info(&folder)).await.map_err(err)
+}
+
+/// One frame of the project's newest render for its Videos card, cached in `<app data>/thumbs`; None without
+/// a render or ffmpeg. Runs off the main thread, each ffmpeg run within the usual time limit.
+#[tauri::command]
+pub async fn video_thumbnail(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    project_id: String,
+) -> CmdResult<Option<media::VideoThumb>> {
+    let folder = project_folder(&state, &project_id)?;
+    let thumbs = app.path().app_data_dir().map_err(err)?.join("thumbs");
+    let tools = state.media.clone();
+    // The newest render's thumbnail is already there: no slot needed.
+    let (f, t, id) = (folder.clone(), thumbs.clone(), project_id.clone());
+    if let Some(hit) = tauri::async_runtime::spawn_blocking(move || media::cached_video_thumbnail(&f, &t, &id)).await.map_err(err)? {
+        return Ok(Some(hit));
+    }
+    // It looks in the cache again: another lookup may have made it while this one waited.
+    in_thumb_slot(&THUMB_SLOTS, move || media::video_thumbnail(&tools, &folder, &thumbs, &project_id, media::THUMB_TIMEOUT)).await
+}
+
+/// At most two thumbnails are made at once: a Videos screen full of new renders must not start an ffprobe
+/// and an ffmpeg per card at the same time (an agent's render may be running).
+static THUMB_SLOTS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(2);
+
+/// Runs a blocking thumbnail job off the async runtime once one of `slots` is free.
+async fn in_thumb_slot<T: Send + 'static>(
+    slots: &'static tokio::sync::Semaphore,
+    job: impl FnOnce() -> T + Send + 'static,
+) -> CmdResult<T> {
+    let _slot = slots.acquire().await.map_err(err)?;
+    tokio::task::spawn_blocking(job).await.map_err(err)
+}
+
 #[tauri::command]
 pub async fn media_probe(
     state: State<'_, AppState>,
@@ -1331,6 +1384,32 @@ pub fn write_brief(state: State<'_, AppState>, project_id: String, brief: String
 
 #[cfg(test)]
 mod tests {
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn at_most_two_thumbnails_are_made_at_once() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+        assert_eq!(super::THUMB_SLOTS.available_permits(), 2);
+        let slots: &'static tokio::sync::Semaphore = Box::leak(Box::new(tokio::sync::Semaphore::new(2)));
+        let now = Arc::new(AtomicUsize::new(0));
+        let most = Arc::new(AtomicUsize::new(0));
+        let jobs = (0..6).map(|i| {
+            let (now, most) = (now.clone(), most.clone());
+            tokio::spawn(super::in_thumb_slot(slots, move || {
+                let n = now.fetch_add(1, Ordering::SeqCst) + 1;
+                most.fetch_max(n, Ordering::SeqCst);
+                std::thread::sleep(std::time::Duration::from_millis(80));
+                now.fetch_sub(1, Ordering::SeqCst);
+                i
+            }))
+        });
+        let mut done = Vec::new();
+        for j in jobs.collect::<Vec<_>>() {
+            done.push(j.await.unwrap().unwrap());
+        }
+        assert_eq!(done, [0, 1, 2, 3, 4, 5]);
+        assert_eq!(most.load(Ordering::SeqCst), 2);
+    }
+
     #[test]
     fn locale_is_trimmed_and_blank_is_none() {
         assert_eq!(super::clean_locale(Some(" id-ID ".into())), Some("id-ID".into()));

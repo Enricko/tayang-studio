@@ -10,13 +10,14 @@ vi.mock('@/lib/ipc', () => ({
   mediaThumbnails: vi.fn().mockResolvedValue([]),
   mediaExtractFrame: vi.fn(),
   mediaRender: vi.fn(),
+  setProjectStatus: vi.fn().mockResolvedValue({ id: 'p1', status: 'rendered' }),
   listProjects: vi.fn(),
   listChats: vi.fn().mockResolvedValue([]),
   createChat: vi.fn(),
 }));
 vi.mock('@/lib/events', () => ({ onAgentUpdate: vi.fn(async () => () => {}), onPermission: vi.fn(async () => () => {}) }));
 
-import { listProjects, mediaLatestRender, mediaRender } from '@/lib/ipc';
+import { listProjects, mediaLatestRender, mediaRender, setProjectStatus } from '@/lib/ipc';
 import { Preview } from '@/screens/preview/Preview';
 import { Videos } from '@/screens/Videos';
 import { setUiLanguage } from '@/i18n';
@@ -68,17 +69,18 @@ describe('Preview while a render runs', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Rendering video…');
     await act(async () => done());
     expect(useRender.getState().runs.p1).toBeUndefined();
+    expect(setProjectStatus).toHaveBeenCalledWith('p1', 'rendered');
   });
 });
 
 describe('Videos while a render runs', () => {
-  it('marks the rendering video with a Rendering chip', async () => {
+  it('shows the rendering video as rendering on its card', async () => {
     vi.mocked(listProjects).mockResolvedValue([proj('p1', 'Jalur Rempah'), proj('p2', 'Kopi')]);
     useRender.getState().start('p1', { source: 'agent' });
     render(<Videos />);
     await screen.findAllByText('Kopi');
-    expect(screen.getAllByText('Rendering')).toHaveLength(1);
+    expect(screen.getAllByText('Rendering…')).toHaveLength(1);
     act(() => useRender.getState().end('p1'));
-    expect(screen.queryByText('Rendering')).toBeNull();
+    expect(screen.queryByText('Rendering…')).toBeNull();
   });
 });

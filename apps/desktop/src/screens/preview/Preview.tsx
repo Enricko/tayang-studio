@@ -18,6 +18,7 @@ import {
 import { useElapsed } from '@/components/Activity';
 import { useChat } from '@/state/chat';
 import { useRender } from '@/state/render';
+import { advanceProject } from '@/lib/projectStatus';
 import { Scrubber, type Scene } from './Scrubber';
 
 const THUMBS = 12;
@@ -138,6 +139,7 @@ export function Preview({
     useRender.getState().start(projectId, { source: 'tayang' });
     try {
       await mediaRender(projectId);
+      void advanceProject(projectId, 'rendered');
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {

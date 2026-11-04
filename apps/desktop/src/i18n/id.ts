@@ -404,7 +404,8 @@ export const id: Translations = {
     rowAria: 'Pemakaian {{label}}',
   },
   videos: {
-    rendering: 'Merender',
+    noPreview: 'Belum ada pratinjau',
+    renderingNow: 'Sedang merender…',
     title: 'Video',
     subtitle: 'Semua yang sudah kamu buat, tersimpan di komputer ini',
     searchAria: 'Cari video',
@@ -705,5 +706,6 @@ export const id: Translations = {
     style: 'Gaya',
     build: 'Buat',
     render: 'Render',
+    renderingNow: 'Sedang merender',
   },
 };

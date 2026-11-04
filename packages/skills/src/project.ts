@@ -1,5 +1,5 @@
 import { slugify, type Project, type Settings, type Style, type VideoLanguage } from '@tayang/shared';
-import { FOREGROUND_RULE, FRAME_CHECK_PROMPT } from './frameCheck';
+import { FOREGROUND_RULE, FRAME_CHECK_PROMPT, RENDERS_RULE } from './frameCheck';
 
 const LANGUAGE: Record<VideoLanguage, string> = { id: 'Indonesian', en: 'English' };
 
@@ -45,6 +45,7 @@ export function buildProjectBrief(
       : '- Use HyperFrames (`npx hyperframes`) to build and render the video.',
     '- Keep all files in this folder. Do not write outside it.',
     `- ${FOREGROUND_RULE}`,
+    `- ${RENDERS_RULE}`,
     ...(template
       ? ['- When a version is ready, render it with the command in tayang.json so Tayang can show it.']
       : [
