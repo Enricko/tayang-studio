@@ -1071,6 +1071,26 @@ pub fn media_latest_render(
     Ok(media::latest_render(&folder).map(|p| path_string(&p)))
 }
 
+/// Images the agent made in a project chat's folder since `since` (RFC 3339), newest first.
+/// A chat without a project folder has none.
+#[tauri::command]
+pub async fn recent_images(
+    state: State<'_, AppState>,
+    chat_id: String,
+    since: String,
+    limit: u32,
+) -> CmdResult<Vec<crate::types::FileInfo>> {
+    let since = chrono::DateTime::parse_from_rfc3339(&since)
+        .map_err(|_| format!("Not an RFC 3339 time: {since}"))?
+        .with_timezone(&chrono::Utc);
+    let Ok(Some(folder)) = project_folder_for_chat(&state, &chat_id) else {
+        return Ok(Vec::new());
+    };
+    tauri::async_runtime::spawn_blocking(move || media::recent_images(&folder, since, limit as usize))
+        .await
+        .map_err(err)
+}
+
 /// The newest render with its size and time, so the UI can tell whether a turn made a video.
 #[tauri::command]
 pub fn latest_render_info(state: State<'_, AppState>, project_id: String) -> CmdResult<Option<crate::types::FileInfo>> {

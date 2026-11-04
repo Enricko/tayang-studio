@@ -144,6 +144,60 @@ pub fn latest_render_info(folder: &Path) -> Option<FileInfo> {
     file_info(&latest_render(folder)?)
 }
 
+const IMAGE_EXTS: [&str; 5] = ["png", "jpg", "jpeg", "webp", "gif"];
+/// Folders never searched for images: dependencies, git, Tayang's own scratch, and every dot folder.
+const SKIP_DIRS: [&str; 3] = ["node_modules", ".git", ".tayang"];
+const IMAGES_MAX_DEPTH: usize = 6;
+const IMAGES_MAX_ENTRIES: usize = 5_000;
+const IMAGE_MAX_BYTES: u64 = 20 * 1024 * 1024;
+pub const IMAGES_MAX_LIMIT: usize = 50;
+
+/// Images (png, jpg, jpeg, webp, gif) in `folder` modified after `since`, newest first, at most
+/// `limit` (≤ 50). Symlinks are never followed; dependency, git and dot folders are skipped; the walk
+/// stops 6 levels down and after 5 000 entries. Only non-empty files up to 20 MB inside `folder`.
+pub fn recent_images(folder: &Path, since: chrono::DateTime<chrono::Utc>, limit: usize) -> Vec<FileInfo> {
+    let mut found: Vec<(std::time::SystemTime, PathBuf)> = Vec::new();
+    let mut stack = vec![(folder.to_path_buf(), 0usize)];
+    let mut seen = 0usize;
+    let since: std::time::SystemTime = since.into();
+    'walk: while let Some((dir, depth)) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+        for entry in entries.flatten() {
+            seen += 1;
+            if seen > IMAGES_MAX_ENTRIES {
+                break 'walk;
+            }
+            let path = entry.path();
+            // `symlink_metadata` describes the link itself: a link is never followed.
+            let Ok(meta) = std::fs::symlink_metadata(&path) else { continue };
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if meta.file_type().is_symlink() {
+                continue;
+            }
+            if meta.is_dir() {
+                if depth + 1 < IMAGES_MAX_DEPTH && !name.starts_with('.') && !SKIP_DIRS.contains(&name.as_str()) {
+                    stack.push((path, depth + 1));
+                }
+                continue;
+            }
+            let ext = path.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+            if !meta.is_file() || !IMAGE_EXTS.contains(&ext.as_str()) || meta.len() == 0 || meta.len() > IMAGE_MAX_BYTES {
+                continue;
+            }
+            match meta.modified() {
+                Ok(m) if m > since && crate::projects::ensure_inside(folder, &path) => found.push((m, path)),
+                _ => {}
+            }
+        }
+    }
+    found.sort_by(|a, b| b.0.cmp(&a.0));
+    found
+        .into_iter()
+        .take(limit.min(IMAGES_MAX_LIMIT))
+        .filter_map(|(_, p)| file_info(&p))
+        .collect()
+}
+
 fn parse_fps(s: &str) -> Option<f64> {
     let (n, d) = match s.split_once('/') {
         Some((n, d)) => (n.trim().parse::<f64>().ok()?, d.trim().parse::<f64>().ok()?),
@@ -1048,6 +1102,95 @@ mod tests {
         std::fs::write(&new, b"x").unwrap();
         std::fs::write(renders.join("c.txt"), b"x").unwrap();
         assert_eq!(latest_render(tmp.path()), Some(new));
+    }
+
+    fn since_epoch() -> chrono::DateTime<chrono::Utc> {
+        chrono::DateTime::from_timestamp(0, 0).unwrap()
+    }
+
+    #[test]
+    fn recent_images_finds_new_images_and_skips_the_rest() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let w = |rel: &str, bytes: &[u8]| {
+            let p = root.join(rel);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, bytes).unwrap();
+        };
+        w("a.png", b"x");
+        w("art/b.JPG", b"x");
+        w("art/c.jpeg", b"x");
+        w("art/d.webp", b"x");
+        w("art/e.gif", b"x");
+        w("art/notes.txt", b"x");
+        w("art/empty.png", b"");
+        w("node_modules/pkg/f.png", b"x");
+        w(".git/g.png", b"x");
+        w(".tayang/frames/h.png", b"x");
+        w(".cache/i.png", b"x");
+        w("1/2/3/4/5/deep.png", b"x");
+        w("1/2/3/4/5/6/too-deep.png", b"x");
+        let mut names: Vec<String> = recent_images(root, since_epoch(), 50).into_iter().map(|f| f.name).collect();
+        names.sort();
+        assert_eq!(names, ["a.png", "b.JPG", "c.jpeg", "d.webp", "deep.png", "e.gif"]);
+    }
+
+    #[test]
+    fn recent_images_only_after_since_newest_first_and_capped() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::write(root.join("old.png"), b"x").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        let since = chrono::Utc::now();
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        for i in 0..3 {
+            std::fs::write(root.join(format!("n{i}.png")), b"x").unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        let got: Vec<String> = recent_images(root, since, 50).into_iter().map(|f| f.name).collect();
+        assert_eq!(got, ["n2.png", "n1.png", "n0.png"]);
+        assert_eq!(recent_images(root, since, 2).len(), 2);
+        // 51 asked, 50 at most.
+        for i in 0..60 {
+            std::fs::write(root.join(format!("m{i}.png")), b"x").unwrap();
+        }
+        assert_eq!(recent_images(root, since, 51).len(), 50);
+        let big = root.join("big.png");
+        let f = std::fs::File::create(&big).unwrap();
+        f.set_len(IMAGE_MAX_BYTES + 1).unwrap();
+        assert!(recent_images(root, since, 50).iter().all(|i| i.name != "big.png"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn recent_images_never_follows_symlinks() {
+        let tmp = tempfile::tempdir().unwrap();
+        let outside = tmp.path().join("outside");
+        let root = tmp.path().join("project");
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(outside.join("secret.png"), b"x").unwrap();
+        std::os::unix::fs::symlink(&outside, root.join("linked-dir")).unwrap();
+        std::os::unix::fs::symlink(outside.join("secret.png"), root.join("linked.png")).unwrap();
+        assert!(recent_images(&root, since_epoch(), 50).is_empty());
+    }
+
+    #[test]
+    fn recent_images_stops_after_5000_entries() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        for i in 0..IMAGES_MAX_ENTRIES + 10 {
+            std::fs::write(root.join(format!("f{i:05}.txt")), b"x").unwrap();
+        }
+        std::fs::create_dir(root.join("zz")).unwrap();
+        std::fs::write(root.join("zz/late.png"), b"x").unwrap();
+        // The root alone has more entries than the cap: the walk stops before it reaches `zz`.
+        assert!(recent_images(root, since_epoch(), 50).is_empty());
+        // With room under the cap for `zz` and its image, it is found.
+        for i in 0..20 {
+            std::fs::remove_file(root.join(format!("f{i:05}.txt"))).unwrap();
+        }
+        assert_eq!(recent_images(root, since_epoch(), 50).len(), 1);
     }
 
     #[test]
