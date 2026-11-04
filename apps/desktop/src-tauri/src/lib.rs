@@ -114,6 +114,7 @@ pub fn run() {
             commands::agent_stop,
             commands::agent_respond_permission,
             commands::media_latest_render,
+            commands::latest_render_info,
             commands::media_probe,
             commands::media_extract_frame,
             commands::media_thumbnails,

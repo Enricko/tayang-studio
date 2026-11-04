@@ -178,6 +178,15 @@ export interface Job {
   updatedAt: string;
 }
 
+/** A file on disk as the UI needs it: a render, or an image the agent made. */
+export interface FileInfo {
+  path: string;
+  name: string;
+  size: number;
+  /** RFC 3339 UTC with milliseconds. */
+  modifiedAt: string;
+}
+
 export interface Settings {
   workingFolder: string;
   defaultAgent: AgentId;

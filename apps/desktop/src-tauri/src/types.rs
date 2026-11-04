@@ -472,6 +472,17 @@ pub struct MediaInfo {
     pub height: u32,
 }
 
+/// A file on disk as the UI needs it: a render, or an image the agent made.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileInfo {
+    pub path: String,
+    pub name: String,
+    pub size: u64,
+    /// RFC 3339 UTC with milliseconds.
+    pub modified_at: String,
+}
+
 // ---- autopilot ----
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

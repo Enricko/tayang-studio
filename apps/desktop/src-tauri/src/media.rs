@@ -2,7 +2,7 @@
 //! Every process is spawned with an args array (never a shell string), so paths
 //! containing spaces or quotes are safe.
 
-use crate::types::MediaInfo;
+use crate::types::{FileInfo, MediaInfo};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -125,6 +125,23 @@ fn newest_mp4(dir: &Path) -> Option<PathBuf> {
 /// Newest non-empty `*.mp4` in `<folder>/renders/`, else in `<folder>/`.
 pub fn latest_render(folder: &Path) -> Option<PathBuf> {
     newest_mp4(&folder.join("renders")).or_else(|| newest_mp4(folder))
+}
+
+/// What the UI knows about a file: its path, name, size and modification time.
+pub fn file_info(path: &Path) -> Option<FileInfo> {
+    let meta = path.metadata().ok()?;
+    let modified: chrono::DateTime<chrono::Utc> = meta.modified().ok()?.into();
+    Some(FileInfo {
+        path: path.to_string_lossy().into_owned(),
+        name: path.file_name()?.to_string_lossy().into_owned(),
+        size: meta.len(),
+        modified_at: modified.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+    })
+}
+
+/// `latest_render` with its size and modification time.
+pub fn latest_render_info(folder: &Path) -> Option<FileInfo> {
+    file_info(&latest_render(folder)?)
 }
 
 fn parse_fps(s: &str) -> Option<f64> {
@@ -1031,6 +1048,23 @@ mod tests {
         std::fs::write(&new, b"x").unwrap();
         std::fs::write(renders.join("c.txt"), b"x").unwrap();
         assert_eq!(latest_render(tmp.path()), Some(new));
+    }
+
+    #[test]
+    fn latest_render_info_has_name_size_and_time() {
+        let tmp = tempfile::tempdir().unwrap();
+        assert_eq!(latest_render_info(tmp.path()), None);
+        let renders = tmp.path().join("renders");
+        std::fs::create_dir_all(&renders).unwrap();
+        let before = chrono::Utc::now() - chrono::Duration::seconds(2);
+        std::fs::write(renders.join("a.mp4"), b"abc").unwrap();
+        let info = latest_render_info(tmp.path()).unwrap();
+        assert_eq!(info.name, "a.mp4");
+        assert_eq!(info.size, 3);
+        assert!(info.path.ends_with("a.mp4"));
+        let at = chrono::DateTime::parse_from_rfc3339(&info.modified_at).unwrap();
+        assert!(at > before);
+        assert!(info.modified_at.ends_with('Z'));
     }
 
     #[test]

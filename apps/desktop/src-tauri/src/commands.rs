@@ -935,6 +935,13 @@ pub fn media_latest_render(
     Ok(media::latest_render(&folder).map(|p| path_string(&p)))
 }
 
+/// The newest render with its size and time, so the UI can tell whether a turn made a video.
+#[tauri::command]
+pub fn latest_render_info(state: State<'_, AppState>, project_id: String) -> CmdResult<Option<crate::types::FileInfo>> {
+    let folder = project_folder(&state, &project_id)?;
+    Ok(media::latest_render_info(&folder))
+}
+
 #[tauri::command]
 pub async fn media_probe(
     state: State<'_, AppState>,

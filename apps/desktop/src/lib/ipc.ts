@@ -8,6 +8,7 @@ import type {
   AutopilotSlot,
   Chat,
   ChatMessage,
+  FileInfo,
   Job,
   MediaInfo,
   MessagePart,
@@ -115,6 +116,8 @@ export const agentRespondPermission = (requestId: string, optionId: string | nul
 // ---- media ----
 export const mediaLatestRender = (projectId: string) =>
   invoke<string | null>('media_latest_render', { projectId });
+/** The newest render with its size and time; null when the project has none. */
+export const latestRenderInfo = (projectId: string) => invoke<FileInfo | null>('latest_render_info', { projectId });
 export const mediaProbe = (projectId: string) =>
   invoke<MediaInfo | null>('media_probe', { projectId });
 export const mediaExtractFrame = (projectId: string, timeSec: number) =>
