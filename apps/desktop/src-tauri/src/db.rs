@@ -364,6 +364,12 @@ impl Db {
         Ok(())
     }
 
+    /// Removes a project row. Only for drafts a failed schedule batch created a moment ago.
+    pub fn delete_project(&self, id: &str) -> Result<()> {
+        self.conn().execute("DELETE FROM projects WHERE id = ?1", [id])?;
+        Ok(())
+    }
+
     pub fn get_project(&self, id: &str) -> Result<Option<Project>> {
         let sql = format!("{PROJECT_SELECT} WHERE id = ?1");
         Ok(query_as::<Project>(&self.conn(), &sql, &[&id])?.into_iter().next())

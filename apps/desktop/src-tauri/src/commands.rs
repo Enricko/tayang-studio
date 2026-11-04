@@ -146,17 +146,20 @@ pub fn create_project(
     input: NewProject,
     brief: String,
 ) -> CmdResult<Project> {
-    let working = state.working();
-    let slugs: Vec<String> = state
-        .db
+    new_project(&state.db, Path::new(&state.working()), input, &brief)
+}
+
+/// A new draft project: its own folder in `working` with the brief, and its row.
+pub fn new_project(db: &Db, working: &Path, input: NewProject, brief: &str) -> CmdResult<Project> {
+    let slugs: Vec<String> = db
         .list_projects()
         .map_err(err)?
         .into_iter()
         .map(|p| p.slug)
         .collect();
-    let (slug, dir) = projects::create_project_folder(&working, &input.title, &slugs)
+    let (slug, dir) = projects::create_project_folder(working, &input.title, &slugs)
         .map_err(|e| format!("Can't create the project folder: {e}"))?;
-    projects::write_project_brief(&dir, &brief)
+    projects::write_project_brief(&dir, brief)
         .map_err(|e| format!("Can't write the project brief: {e}"))?;
     let now = crate::db::now();
     let project = Project {
@@ -178,7 +181,10 @@ pub fn create_project(
         created_at: now.clone(),
         updated_at: now,
     };
-    state.db.insert_project(&project).map_err(err)?;
+    if let Err(e) = db.insert_project(&project) {
+        let _ = std::fs::remove_dir_all(&dir);
+        return Err(err(e));
+    }
     Ok(project)
 }
 
@@ -213,6 +219,136 @@ pub fn mark_posted(db: &Db, project_id: &str, posted: bool) -> CmdResult<Project
 
 pub fn approve(db: &Db, project_id: &str) -> CmdResult<Project> {
     db.update_project(project_id, serde_json::json!({ "reviewState": "approved" })).map_err(err)
+}
+
+/// One video of a confirmed schedule card: an existing project, or a new draft (its input and brief).
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BatchItem {
+    pub project_id: Option<String>,
+    pub at: String,
+    pub draft: Option<BatchDraft>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct BatchDraft {
+    pub input: NewProject,
+    pub brief: String,
+}
+
+const BATCH_MAX: usize = 20;
+
+/// Checks every item first, exactly as `set_schedule` will, then writes: drafts first, then the
+/// schedules. Any failure undoes the batch: its drafts are removed (row and folder) and videos already
+/// moved get their old schedule and reminders back. Errors are codes the UI says in the user's
+/// language: `schedule:count`, `schedule:<badTime|past|tooFar|unknown|badItem>:<n>` (1-based) and
+/// `schedule:write`.
+pub fn schedule_batch(
+    db: &Db,
+    working: &Path,
+    items: Vec<BatchItem>,
+    now: chrono::DateTime<chrono::Utc>,
+) -> CmdResult<Vec<Project>> {
+    schedule_batch_with(db, working, items, now, |db, id, at| schedule_project(db, id, Some(at)))
+}
+
+/// `schedule_batch` with the per-video write passed in, so a test can make it fail part-way.
+fn schedule_batch_with(
+    db: &Db,
+    working: &Path,
+    items: Vec<BatchItem>,
+    now: chrono::DateTime<chrono::Utc>,
+    schedule: impl Fn(&Db, &str, String) -> CmdResult<Project>,
+) -> CmdResult<Vec<Project>> {
+    if items.is_empty() || items.len() > BATCH_MAX {
+        return Err("schedule:count".into());
+    }
+    let mut checked = Vec::with_capacity(items.len());
+    for (i, item) in items.iter().enumerate() {
+        let n = i + 1;
+        let at = chrono::DateTime::parse_from_rfc3339(&item.at)
+            .map_err(|_| format!("schedule:badTime:{n}"))?
+            .with_timezone(&chrono::Utc);
+        if at <= now {
+            return Err(format!("schedule:past:{n}"));
+        }
+        if at - now > chrono::Duration::days(365) {
+            return Err(format!("schedule:tooFar:{n}"));
+        }
+        match (&item.project_id, &item.draft) {
+            (Some(id), None) => {
+                if db.get_project(id).map_err(err)?.is_none() {
+                    return Err(format!("schedule:unknown:{n}"));
+                }
+            }
+            (None, Some(d)) if !d.input.title.trim().is_empty() => {}
+            _ => return Err(format!("schedule:badItem:{n}")),
+        }
+        checked.push(at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true));
+    }
+
+    let mut created: Vec<Project> = Vec::new();
+    let mut moved: Vec<Project> = Vec::new();
+    let undo = |created: &[Project], moved: &[Project]| {
+        for p in created {
+            let _ = db.delete_project(&p.id);
+            let dir = Path::new(&p.folder);
+            // Only a folder this batch made, inside the working folder.
+            if dir.starts_with(working) && dir != working {
+                let _ = std::fs::remove_dir_all(dir);
+            }
+        }
+        for old in moved {
+            let _ = db.update_project(
+                &old.id,
+                serde_json::json!({
+                    "scheduledAt": old.scheduled_at,
+                    "remindedAt": old.reminded_at,
+                    "reviewRemindedAt": old.review_reminded_at,
+                    "updatedAt": old.updated_at,
+                }),
+            );
+        }
+    };
+    let mut ids = Vec::with_capacity(items.len());
+    for item in items {
+        match (item.project_id, item.draft) {
+            (Some(id), _) => ids.push(id),
+            (None, Some(d)) => match new_project(db, working, d.input, &d.brief) {
+                Ok(p) => {
+                    ids.push(p.id.clone());
+                    created.push(p);
+                }
+                Err(_) => {
+                    undo(&created, &moved);
+                    return Err("schedule:write".into());
+                }
+            },
+            (None, None) => unreachable!("checked above"),
+        }
+    }
+    let mut out = Vec::with_capacity(ids.len());
+    for (id, at) in ids.iter().zip(checked) {
+        let before = db.get_project(id).ok().flatten();
+        match schedule(db, id, at) {
+            Ok(p) => {
+                if let Some(b) = before.filter(|b| !created.iter().any(|c| c.id == b.id)) {
+                    moved.push(b);
+                }
+                out.push(p);
+            }
+            Err(_) => {
+                undo(&created, &moved);
+                return Err("schedule:write".into());
+            }
+        }
+    }
+    Ok(out)
+}
+
+#[tauri::command]
+pub fn schedule_videos(state: State<'_, AppState>, items: Vec<BatchItem>) -> CmdResult<Vec<Project>> {
+    schedule_batch(&state.db, &state.working(), items, chrono::Utc::now())
 }
 
 #[tauri::command]
@@ -1091,6 +1227,102 @@ mod tests {
         })
         .unwrap();
         db
+    }
+
+    fn batch_now() -> chrono::DateTime<chrono::Utc> {
+        chrono::DateTime::parse_from_rfc3339("2026-11-04T10:00:00Z").unwrap().with_timezone(&chrono::Utc)
+    }
+    fn existing(id: &str, at: &str) -> BatchItem {
+        BatchItem { project_id: Some(id.into()), at: at.into(), draft: None }
+    }
+    fn draft(title: &str, at: &str) -> BatchItem {
+        BatchItem {
+            project_id: None,
+            at: at.into(),
+            draft: Some(BatchDraft {
+                input: NewProject { title: title.into(), kind: VideoKind::Explainer, format: VideoFormat::Portrait, language: VideoLanguage::Id, style_id: None },
+                brief: format!("# {title}\n"),
+            }),
+        }
+    }
+
+    #[test]
+    fn schedule_batch_schedules_existing_videos_and_new_drafts() {
+        let db = seeded();
+        let tmp = tempfile::tempdir().unwrap();
+        let out = schedule_batch(
+            &db,
+            tmp.path(),
+            vec![existing("p", "2026-11-05T19:00:00+07:00"), draft("Jalur Rempah", "2026-11-06T12:00:00+07:00")],
+            batch_now(),
+        )
+        .unwrap();
+        assert_eq!(out[0].scheduled_at.as_deref(), Some("2026-11-05T12:00:00Z"));
+        assert_eq!(out[0].reminded_at, None);
+        assert_eq!(out[1].title, "Jalur Rempah");
+        assert_eq!(out[1].scheduled_at.as_deref(), Some("2026-11-06T05:00:00Z"));
+        assert!(Path::new(&out[1].folder).join("AGENTS.md").exists());
+        assert_eq!(db.list_projects().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn schedule_batch_checks_everything_before_writing_anything() {
+        let db = seeded();
+        let tmp = tempfile::tempdir().unwrap();
+        let ok = "2026-11-05T19:00:00+07:00";
+        for (items, code) in [
+            (vec![], "schedule:count"),
+            (vec![existing("p", ok), draft("A", ok), draft("B", "2026-11-31T19:00:00+07:00")], "schedule:badTime:3"),
+            (vec![draft("A", "2026-02-30T10:00:00+07:00")], "schedule:badTime:1"),
+            (vec![draft("A", "2026-11-05T24:00:00+07:00")], "schedule:badTime:1"),
+            (vec![draft("A", ok), draft("B", "2026-11-03T19:00:00+07:00")], "schedule:past:2"),
+            (vec![draft("A", "2027-11-06T19:00:00+07:00")], "schedule:tooFar:1"),
+            (vec![existing("nope", ok)], "schedule:unknown:1"),
+            (vec![draft("  ", ok)], "schedule:badItem:1"),
+            (vec![BatchItem { project_id: None, at: ok.into(), draft: None }], "schedule:badItem:1"),
+        ] {
+            assert_eq!(schedule_batch(&db, tmp.path(), items, batch_now()).unwrap_err(), code);
+        }
+        let too_many = (0..21).map(|i| draft(&format!("T{i}"), ok)).collect();
+        assert_eq!(schedule_batch(&db, tmp.path(), too_many, batch_now()).unwrap_err(), "schedule:count");
+        // Nothing was written: no drafts, no folders, the video keeps its reminder.
+        assert_eq!(db.list_projects().unwrap().len(), 1);
+        assert_eq!(std::fs::read_dir(tmp.path()).unwrap().count(), 0);
+        assert!(db.get_project("p").unwrap().unwrap().reminded_at.is_some());
+    }
+
+    #[test]
+    fn schedule_batch_undoes_everything_when_a_write_fails_part_way() {
+        let db = seeded();
+        db.update_project("p", serde_json::json!({ "scheduledAt": "2026-11-20T02:00:00Z" })).unwrap();
+        let before = db.get_project("p").unwrap().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let calls = std::cell::Cell::new(0);
+        let err = schedule_batch_with(
+            &db,
+            tmp.path(),
+            vec![
+                existing("p", "2026-11-05T19:00:00+07:00"),
+                draft("A", "2026-11-06T19:00:00+07:00"),
+                draft("B", "2026-11-07T19:00:00+07:00"),
+            ],
+            batch_now(),
+            |db, id, at| {
+                calls.set(calls.get() + 1);
+                if calls.get() == 3 {
+                    return Err("disk full".into());
+                }
+                schedule_project(db, id, Some(at))
+            },
+        )
+        .unwrap_err();
+        assert_eq!(err, "schedule:write");
+        // The drafts are gone, row and folder; the moved video has its old schedule and reminder back.
+        assert_eq!(db.list_projects().unwrap().len(), 1);
+        assert_eq!(std::fs::read_dir(tmp.path()).unwrap().count(), 0);
+        let after = db.get_project("p").unwrap().unwrap();
+        assert_eq!(after.scheduled_at, before.scheduled_at);
+        assert_eq!(after.reminded_at, before.reminded_at);
     }
 
     #[test]
