@@ -34,6 +34,8 @@ Tayang Studio is a desktop app that turns a topic into a short motion video. You
 2. Run the `install` command from `tayang.json` once if needed, then build the scenes.
 3. Render with the `render` command. The finished video goes in `renders/`. Tell the user the file name.
 
+Run installs, renders and pipelines in the foreground and wait for them to finish before you reply. Never start a long job in the background and end your turn: you can't message the user after your turn ends, and Tayang shows the user that you're still working while your turn runs. If a command needs more than a few minutes, say so first, then run it and wait.
+
 ## Check the frames
 
 Before you say a video is done, unless the project brief or the message says to skip the frame check:

@@ -27,6 +27,10 @@ export const stripFramesToken = (text: string): string => {
   return cut.replace(/(\S) {2,}/g, '$1 ').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
 };
 
+/** Agents can't speak after their turn ends: long work must run inside the turn, where Tayang shows it. */
+export const FOREGROUND_RULE =
+  "Run installs, renders and pipelines in the foreground and wait for them to finish before you reply. Never start a long job in the background and end your turn: you can't message the user after your turn ends, and Tayang shows the user that you're still working while your turn runs. If a command needs more than a few minutes, say so first, then run it and wait.";
+
 export const FRAME_CHECK_PROMPT = [
   'Check the frames before you report this video as done.',
   '1. Render a still of every scene with `npx hyperframes`.',

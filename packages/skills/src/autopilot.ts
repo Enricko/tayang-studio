@@ -1,5 +1,6 @@
 import type { Style, VideoKind, VideoLanguage } from '@tayang/shared';
 import { clampTopicLength, FACTS_RULE, MOTION_RULES, VIDEO_KINDS } from './style';
+import { FOREGROUND_RULE } from './frameCheck';
 
 // Everything here goes to the agent, never to the user, so it stays in English (i18n-ignore).
 
@@ -90,9 +91,9 @@ export function buildAutopilotBuildPrompt(
   return [
     'This video is made by an autopilot: work through every step on your own, without asking questions or waiting for a reply.',
     ...steps.map((s, i) => `${i + 1}. ${s}`),
+    FOREGROUND_RULE,
   ].join('\n');
 }
 
 /** Sent once when the build turn ended without a rendered file. */
-export const AUTOPILOT_RENDER_NOW =
-  "Render it now: no rendered video file was found in this project. Use the render command in tayang.json (or the project's own render setup), then finish by saying the path of the rendered file.";
+export const AUTOPILOT_RENDER_NOW = `Render it now: no rendered video file was found in this project. Use the render command in tayang.json (or the project's own render setup), then finish by saying the path of the rendered file. ${FOREGROUND_RULE}`;

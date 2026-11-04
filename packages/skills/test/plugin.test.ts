@@ -3,6 +3,9 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { buildSessionPreamble, languageHint, sessionFacts } from '../src/preamble';
+import { AUTOPILOT_RENDER_NOW, buildAutopilotBuildPrompt } from '../src/autopilot';
+import { FOREGROUND_RULE } from '../src/frameCheck';
+import { buildProjectBrief } from '../src/project';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', 'agent-plugin');
 const read = (p: string) => readFileSync(join(root, p), 'utf8');
@@ -119,5 +122,17 @@ describe('agent plugin', () => {
     expect(sessionFacts(null)).toBe('');
     expect(buildSessionPreamble('en', { ...facts, projectId: 'p1' })).toContain("This video's Tayang id is p1.");
     expect(buildSessionPreamble('en')).not.toContain('time zone is');
+  });
+
+  it('tells every agent to run long work in the foreground, wherever it gets its instructions', () => {
+    expect(FOREGROUND_RULE).toContain('Never start a long job in the background and end your turn');
+    expect(read('skills/tayang-studio/SKILL.md')).toContain(FOREGROUND_RULE);
+    expect(buildSessionPreamble()).toContain(FOREGROUND_RULE);
+    expect(buildAutopilotBuildPrompt('Jalur Rempah', 30)).toContain(FOREGROUND_RULE);
+    expect(AUTOPILOT_RENDER_NOW).toContain(FOREGROUND_RULE);
+    const p = { id: 'p', title: 'T', slug: 't', folder: '/w/t', kind: 'explainer', format: '9:16', language: 'id', status: 'draft',
+      styleId: null, scheduledAt: null, reviewState: 'none', postedAt: null, remindedAt: null, reviewRemindedAt: null,
+      durationSec: null, createdAt: '', updatedAt: '' } as const;
+    expect(buildProjectBrief(p, null, { fps: 30, frameCheck: false })).toContain(FOREGROUND_RULE);
   });
 });
