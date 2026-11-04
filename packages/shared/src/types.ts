@@ -123,6 +123,8 @@ export interface Style {
   createdAt: string;
   engine?: StyleEngine;
   previewUrl?: string | null;
+  /** A short silent clip of the style, played in the style popup; null when there is none. */
+  previewVideoUrl?: string | null;
   template?: StyleTemplate | null;
   version?: number;
 }
