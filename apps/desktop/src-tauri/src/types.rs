@@ -845,6 +845,9 @@ pub struct BillingStatus {
     pub current_period_end: Option<String>,
     pub active: bool,
     pub pending: Option<PendingPayment>,
+    /// The order of the last completed payment (how the app knows its own payment arrived).
+    #[serde(default)]
+    pub last_paid_order_id: Option<String>,
 }
 
 /// Why a billing command failed; the command rejects with `billing:<code>` (kebab-case, `bad_link` as named).

@@ -701,12 +701,19 @@ fn billing_err(e: BillingError) -> String {
 /// The stored token for the current API, or `billing:signed-out`.
 async fn billing_token(state: &AppState, auth: &Arc<Auth>) -> Result<(String, String), String> {
     let base = api_base(state);
-    let token = auth.token(&base).await.ok_or_else(|| billing_err(BillingError::SignedOut))?;
+    let token = auth.token(&base).await.ok_or_else(|| {
+        // The keychain error (if that was it) is logged by Auth; this says which call it broke.
+        eprintln!("[billing] no sign-in token for {base}");
+        billing_err(BillingError::SignedOut)
+    })?;
     Ok((base, token))
 }
 
 /// A 401 means the token is gone at the API: let the sign-in state find out (it clears it).
 fn after_billing<T>(auth: &Arc<Auth>, base: &str, r: Result<T, BillingError>) -> CmdResult<T> {
+    if let Err(e) = &r {
+        eprintln!("[billing] {}", billing_err(*e));
+    }
     if r.as_ref().err() == Some(&BillingError::SignedOut) {
         let (auth, base) = (auth.clone(), base.to_string());
         tauri::async_runtime::spawn(async move { auth.refresh(&base).await });
