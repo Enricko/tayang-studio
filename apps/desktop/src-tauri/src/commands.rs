@@ -290,12 +290,7 @@ pub fn resolve_cwd(
 }
 
 fn project_folder_for_chat(state: &AppState, chat_id: &str) -> CmdResult<Option<PathBuf>> {
-    let chat = state
-        .db
-        .list_chats(None)
-        .map_err(err)?
-        .into_iter()
-        .find(|c| c.id == chat_id);
+    let chat = state.db.get_chat(chat_id).map_err(err)?;
     let Some(project_id) = chat.and_then(|c| c.project_id) else {
         return Ok(None);
     };

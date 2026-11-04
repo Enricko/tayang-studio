@@ -317,6 +317,11 @@ impl Db {
         }
     }
 
+    pub fn get_chat(&self, id: &str) -> Result<Option<Chat>> {
+        let sql = format!("{CHAT_SELECT} WHERE id = ?1");
+        Ok(query_as::<Chat>(&self.conn(), &sql, &[&id])?.into_iter().next())
+    }
+
     pub fn add_message(
         &self,
         chat_id: &str,
@@ -617,6 +622,8 @@ mod tests {
         let global = db.create_chat(None, AgentId::Codex, "General").unwrap();
         assert_eq!(db.list_chats(Some("a")).unwrap(), vec![chat.clone()]);
         assert_eq!(db.list_chats(None).unwrap(), vec![global]);
+        assert_eq!(db.get_chat(&chat.id).unwrap(), Some(chat.clone()));
+        assert_eq!(db.get_chat("nope").unwrap(), None);
 
         let frame = MessagePart::Frame {
             project_id: "a".into(),
