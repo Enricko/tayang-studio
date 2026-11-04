@@ -142,6 +142,30 @@ describe('ChatNew', () => {
   });
 });
 
+describe('ChatNew topic ideas', () => {
+  it('turns the agent ideas into cards and creates a project on pick', async () => {
+    const user = userEvent.setup();
+    vi.mocked(ipc.createProject).mockResolvedValue(mk('p9', 'Ide satu'));
+    vi.mocked(ipc.createChat).mockResolvedValueOnce(chat('c-new', null)).mockResolvedValueOnce(chat('c9', 'p9'));
+    render(<ChatNew />);
+    await user.click(await screen.findByRole('button', { name: /From a topic/ }));
+    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
+    await emit('c-new', {
+      kind: 'text',
+      text: '```json\n[{"title":"Ide satu","kind":"explainer","lengthSec":30}]\n```',
+    });
+    await emit('c-new', { kind: 'done', stopReason: 'end_turn' });
+    await user.click(await screen.findByRole('button', { name: /Ide satu/ }));
+    await waitFor(() => expect(ipc.createProject).toHaveBeenCalled());
+    expect(ipc.createProject).toHaveBeenCalledWith(
+      { title: 'Ide satu', kind: 'explainer', format: '9:16', language: 'id' },
+      expect.stringContaining('Ide satu'),
+    );
+    await waitFor(() => expect(useApp.getState().route).toEqual({ name: 'chat', chatId: 'c9' }));
+    expect(useApp.getState().projectsVersion).toBeGreaterThan(0);
+  });
+});
+
 describe('ChatProject', () => {
   it('renders the step bar and the preview slot', async () => {
     render(<ChatProject chatId="c1" />);
