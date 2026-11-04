@@ -1,3 +1,4 @@
+import type { PlanId } from './billing';
 import type { OsKind, Style } from './types';
 
 export type Feature = 'voiceover' | 'cloud-render' | 'premium-styles' | 'autopilot';
@@ -8,7 +9,7 @@ export interface HealthResponse {
 }
 
 export interface Entitlements {
-  plan: 'free' | 'pro';
+  plan: PlanId;
   features: Feature[];
 }
 
