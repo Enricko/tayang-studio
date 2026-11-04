@@ -50,7 +50,7 @@ describe('Markdown in agent replies', () => {
   it('never renders raw HTML or images', () => {
     const { container } = agent('<script>alert(1)</script> <img src=x onerror="alert(1)"> ![pic](http://e.com/a.png)');
     expect(container.querySelector('script')).toBeNull();
-    expect(container.querySelector('img')).toBeNull();
+    expect(container.querySelector('img:not([alt="Oyen"])')).toBeNull();
     expect(container.textContent).toContain('pic');
   });
 

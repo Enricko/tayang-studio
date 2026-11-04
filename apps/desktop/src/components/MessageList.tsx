@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { File as FileIcon } from 'lucide-react';
 import { formatTimecode, type ChatMessage, type MessagePart } from '@tayang/shared';
+import { Markdown } from '@/components/Markdown';
 import { Oyen } from '@/components/Oyen';
 import { STICK_EVENT } from '@/components/ScrollToBottom';
 import { ActivityGroup, isHiddenTool, WorkingLine, type ActivityItem } from '@/components/Activity';
@@ -130,7 +131,7 @@ function AgentText({ text, messageId, a2ui }: { text: string; messageId: string;
   }
   return (
     <>
-      {prose && <p className="m-0 whitespace-pre-wrap text-[14px] leading-[1.6] text-[#D9D9D9]">{prose}</p>}
+      {prose && <Markdown text={prose} />}
       {ids.map((sid) => (
         <A2uiSurface
           key={`${sid}:${a2ui.version[sid]}`}
