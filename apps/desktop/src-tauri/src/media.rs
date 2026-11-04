@@ -196,8 +196,80 @@ pub fn render_args(folder: &Path) -> Vec<String> {
     ]
 }
 
+/// What `tayang.json` asks for (`engine` and `readme` are for the agent, not for rendering).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+struct RenderManifest {
+    render: Vec<String>,
+    #[serde(default)]
+    install: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RenderPlan {
+    /// Argv to run first when `node_modules` is missing.
+    pub install: Option<Vec<String>>,
+    /// Argv with `{output}` already replaced.
+    pub render: Vec<String>,
+    /// Output path relative to the project folder.
+    pub output: PathBuf,
+}
+
+/// `Ok(None)` when the folder has no `tayang.json` (use the HyperFrames default).
+pub fn render_plan(folder: &Path, unix_secs: u64) -> Result<Option<RenderPlan>> {
+    let path = folder.join("tayang.json");
+    let raw = match std::fs::read_to_string(&path) {
+        Ok(r) => r,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(format!("could not read tayang.json: {e}")),
+    };
+    let m: RenderManifest =
+        serde_json::from_str(&raw).map_err(|e| format!("tayang.json is not valid: {e}"))?;
+    if m.render.first().is_none_or(|p| p.trim().is_empty()) {
+        return Err("tayang.json has an empty render command".into());
+    }
+    let slug = folder.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let slug = if slug.is_empty() { "render".to_string() } else { slug };
+    let output = Path::new("renders").join(format!("{slug}-{unix_secs}.mp4"));
+    let out_s = output.to_string_lossy().into_owned();
+    let render = m.render.iter().map(|a| a.replace("{output}", &out_s)).collect();
+    let install = m
+        .install
+        .filter(|i| !i.is_empty() && !folder.join("node_modules").exists());
+    Ok(Some(RenderPlan { install, render, output }))
+}
+
+/// Resolves argv[0] the way detection does (GUI apps can start with a minimal PATH).
+fn argv_command(argv: &[String], folder: &Path) -> Command {
+    let exec = crate::system::RealExec;
+    let program = crate::system::Exec::which(&exec, &argv[0])
+        .or_else(|| {
+            cfg!(windows)
+                .then(|| crate::system::Exec::which(&exec, &format!("{}.cmd", argv[0])))
+                .flatten()
+        })
+        .unwrap_or_else(|| PathBuf::from(&argv[0]));
+    let mut cmd = command(program);
+    cmd.args(&argv[1..]).current_dir(folder);
+    cmd
+}
+
 pub fn render(folder: &Path) -> Result<PathBuf> {
     std::fs::create_dir_all(folder.join("renders")).map_err(|e| e.to_string())?;
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    if let Some(plan) = render_plan(folder, secs)? {
+        if let Some(install) = &plan.install {
+            run(argv_command(install, folder), "template install")?;
+        }
+        run(argv_command(&plan.render, folder), "template render")?;
+        let out = folder.join(&plan.output);
+        if out.exists() {
+            return Ok(out);
+        }
+        return latest_render(folder).ok_or_else(|| "render finished but no mp4 was found".to_string());
+    }
     // GUI apps can start with a minimal PATH, so resolve npx the way detection does.
     let npx = crate::system::Exec::which(&crate::system::RealExec, "npx")
         .unwrap_or_else(|| PathBuf::from(if cfg!(windows) { "npx.cmd" } else { "npx" }));
@@ -333,5 +405,54 @@ mod tests {
         let i = args.iter().position(|a| a == "--output").unwrap();
         assert!(Path::new(&args[i + 1]).starts_with(folder.join("renders")));
         assert!(args[i + 1].ends_with(".mp4"));
+    }
+
+    #[test]
+    fn render_plan_reads_tayang_json() {
+        let tmp = tempfile::tempdir().unwrap();
+        let folder = tmp.path().join("my-video");
+        std::fs::create_dir_all(&folder).unwrap();
+        assert!(render_plan(&folder, 1700).unwrap().is_none(), "no tayang.json means HyperFrames");
+        std::fs::write(
+            folder.join("tayang.json"),
+            r#"{"engine":"remotion","render":["npx","remotion","render","src/index.ts","Geo","{output}","--gl=angle"],"install":["npm","install"],"readme":"STYLE.md"}"#,
+        )
+        .unwrap();
+        let plan = render_plan(&folder, 1700).unwrap().unwrap();
+        let out = Path::new("renders").join("my-video-1700.mp4");
+        assert_eq!(plan.output, out);
+        assert_eq!(
+            plan.render,
+            ["npx", "remotion", "render", "src/index.ts", "Geo", out.to_str().unwrap(), "--gl=angle"]
+        );
+        assert_eq!(plan.install.as_deref(), Some(&["npm".to_string(), "install".to_string()][..]));
+        // Installed already: no install step.
+        std::fs::create_dir_all(folder.join("node_modules")).unwrap();
+        assert!(render_plan(&folder, 1700).unwrap().unwrap().install.is_none());
+    }
+
+    #[test]
+    fn render_plan_rejects_bad_manifest() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("tayang.json"), r#"{"render":[]}"#).unwrap();
+        assert!(render_plan(tmp.path(), 1).is_err());
+        std::fs::write(tmp.path().join("tayang.json"), "nope").unwrap();
+        assert!(render_plan(tmp.path(), 1).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn render_runs_tayang_json_without_a_shell() {
+        let tmp = tempfile::tempdir().unwrap();
+        let folder = tmp.path().join("p q");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(
+            folder.join("tayang.json"),
+            r#"{"render":["sh","-c","printf x > \"$0\"","{output}"]}"#,
+        )
+        .unwrap();
+        let out = render(&folder).unwrap();
+        assert!(out.exists());
+        assert!(out.starts_with(folder.join("renders")));
     }
 }
