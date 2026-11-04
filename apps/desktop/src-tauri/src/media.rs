@@ -178,6 +178,124 @@ pub fn thumbnails(
         .collect()
 }
 
+// ---- style previews (styles copied from a video) ----
+
+/// What `make_style_preview` produced. `preview_path` is None when the clip came out over 3 MB.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StylePreview {
+    pub preview_path: Option<PathBuf>,
+    pub poster_path: PathBuf,
+}
+
+const MAX_PREVIEW_BYTES: u64 = 3 * 1024 * 1024;
+
+/// A style id that is safe as a single folder name.
+pub fn valid_style_id(id: &str) -> bool {
+    !id.is_empty() && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+}
+
+/// `<data_dir>/style-media/<style_id>`, None for an id that is not a plain folder name.
+pub fn style_media_dir(data_dir: &Path, style_id: &str) -> Option<PathBuf> {
+    valid_style_id(style_id).then(|| data_dir.join("style-media").join(style_id))
+}
+
+/// Removes a style's preview files; a missing folder or an invalid id is fine.
+pub fn remove_style_media(data_dir: &Path, style_id: &str) {
+    if let Some(dir) = style_media_dir(data_dir, style_id) {
+        let _ = std::fs::remove_dir_all(dir);
+    }
+}
+
+/// The study's downloaded `source.*` files: real files only (a symlink could point anywhere).
+fn source_files(study_dir: &Path) -> Vec<PathBuf> {
+    let Ok(rd) = std::fs::read_dir(study_dir) else { return Vec::new() };
+    rd.filter_map(|e| e.ok())
+        .filter(|e| e.file_name().to_string_lossy().starts_with("source."))
+        .filter(|e| e.file_type().map(|t| t.is_file()).unwrap_or(false))
+        .map(|e| e.path())
+        .collect()
+}
+
+fn ffmpeg_ok(tools: &MediaTools, args: &[std::ffi::OsString]) -> bool {
+    let mut cmd = command(&tools.ffmpeg);
+    cmd.args(["-v", "error", "-y"]).args(args);
+    run(cmd, "ffmpeg").is_ok()
+}
+
+/// Cuts a short silent preview and a poster from the study's `source.*` into `out_dir`
+/// (`preview.mp4`, `poster.jpg`), then deletes the source and any frames folder, whatever happened.
+/// `Ok(None)` when there is no source or no poster could be made.
+pub fn make_style_preview(tools: &MediaTools, study_dir: &Path, out_dir: &Path) -> Result<Option<StylePreview>> {
+    let sources = source_files(study_dir);
+    let Some(source) = sources
+        .iter()
+        .max_by_key(|p| p.metadata().map(|m| m.len()).unwrap_or(0))
+        .cloned()
+    else {
+        return Ok(None);
+    };
+    let made = build_style_preview(tools, &source, out_dir);
+    for f in &sources {
+        let _ = std::fs::remove_file(f);
+    }
+    let _ = std::fs::remove_dir_all(study_dir.join("frames"));
+    if made.is_none() {
+        let _ = std::fs::remove_dir_all(out_dir);
+    }
+    Ok(made)
+}
+
+fn build_style_preview(tools: &MediaTools, source: &Path, out_dir: &Path) -> Option<StylePreview> {
+    let duration = probe(tools, source).ok()?.duration_sec;
+    std::fs::create_dir_all(out_dir).ok()?;
+    // Skip a cold open: 3 s in, or 10% of a short video.
+    let start = (duration * 0.1).min(3.0);
+    let os = |s: &str| std::ffi::OsString::from(s);
+    let preview = out_dir.join("preview.mp4");
+    let _ = std::fs::remove_file(&preview);
+    let mut args: Vec<std::ffi::OsString> = ["-ss"].iter().map(|s| os(s)).collect();
+    args.push(os(&format!("{start:.3}")));
+    args.extend(["-t", "10", "-i"].iter().map(|s| os(s)));
+    args.push(source.as_os_str().to_owned());
+    args.extend(
+        [
+            "-map", "0:v:0", "-an", "-sn", "-dn", "-map_metadata", "-1", "-map_chapters", "-1", "-vf",
+            "scale=540:-2:out_range=tv,fps=30", "-c:v", "libx264", "-crf", "30", "-preset", "slow", "-pix_fmt",
+            "yuv420p", "-color_range", "tv", "-movflags", "+faststart",
+        ]
+        .iter()
+        .map(|s| os(s)),
+    );
+    args.push(preview.as_os_str().to_owned());
+    let clip_ok = ffmpeg_ok(tools, &args)
+        && preview.metadata().map(|m| m.len() > 0 && m.len() <= MAX_PREVIEW_BYTES).unwrap_or(false);
+    if !clip_ok {
+        let _ = std::fs::remove_file(&preview);
+    }
+
+    // A frame 1 s into the clip.
+    let poster = out_dir.join("poster.jpg");
+    let at = (start + 1.0).min((duration - 0.05).max(0.0));
+    let poster_args: Vec<std::ffi::OsString> = vec![
+        os("-ss"),
+        os(&format!("{at:.3}")),
+        os("-i"),
+        source.as_os_str().to_owned(),
+        os("-frames:v"),
+        os("1"),
+        os("-vf"),
+        os("scale=540:-2"),
+        os("-q:v"),
+        os("4"),
+        poster.as_os_str().to_owned(),
+    ];
+    if !ffmpeg_ok(tools, &poster_args) || !poster.exists() {
+        return None;
+    }
+    Some(StylePreview { preview_path: clip_ok.then_some(preview), poster_path: poster })
+}
+
 /// Arguments for `npx` (pinned, non-interactive), run with `folder` as the working directory.
 /// `--output` pins the file into `<folder>/renders/`.
 pub fn render_args(folder: &Path) -> Vec<String> {
@@ -404,6 +522,119 @@ mod tests {
         assert_eq!(v.len(), 6);
         assert!(v.iter().all(|p| p.exists()));
         assert!(thumbnails(&t, &clip, 0, &out_dir).unwrap().is_empty());
+    }
+
+    fn stream_info(tools: &MediaTools, file: &Path) -> serde_json::Value {
+        let mut cmd = Command::new(&tools.ffprobe);
+        cmd.args(["-v", "error", "-show_entries", "stream=codec_type,pix_fmt,width,height:format=duration", "-of", "json"]).arg(file);
+        serde_json::from_slice(&cmd.output().unwrap().stdout).unwrap()
+    }
+
+    /// A 5 s 360x640 clip with audio at `<dir>/<name>`.
+    fn make_source(tools: &MediaTools, dir: &Path, name: &str) -> PathBuf {
+        std::fs::create_dir_all(dir).unwrap();
+        let p = dir.join(name);
+        let out = Command::new(&tools.ffmpeg)
+            .args(["-y", "-f", "lavfi", "-i", "testsrc2=size=360x640:rate=30:duration=5", "-f", "lavfi", "-i", "sine=duration=5", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest"])
+            .arg(&p)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        p
+    }
+
+    #[test]
+    fn style_preview_makes_a_silent_clip_and_poster_and_deletes_the_source() {
+        let Some(t) = test_tools() else { return };
+        let tmp = tempfile::tempdir().unwrap();
+        let study = tmp.path().join("study dir");
+        let source = make_source(&t, &study, "source.mp4");
+        std::fs::write(study.join("style.json"), "{}").unwrap();
+        std::fs::create_dir_all(study.join("frames")).unwrap();
+        std::fs::write(study.join("frames").join("f1.png"), "x").unwrap();
+        let out = tmp.path().join("style-media").join("copied-1");
+        let r = make_style_preview(&t, &study, &out).unwrap().expect("a preview");
+        let mp4 = r.preview_path.clone().expect("a clip");
+        assert_eq!(mp4, out.join("preview.mp4"));
+        assert_eq!(r.poster_path, out.join("poster.jpg"));
+        let info = stream_info(&t, &mp4);
+        let streams = info["streams"].as_array().unwrap();
+        assert_eq!(streams.len(), 1, "no audio: {info}");
+        assert_eq!(streams[0]["codec_type"], "video");
+        assert_eq!(streams[0]["pix_fmt"], "yuv420p");
+        assert_eq!(streams[0]["width"], 540);
+        assert_eq!(streams[0]["height"].as_u64().unwrap() % 2, 0);
+        let dur: f64 = info["format"]["duration"].as_str().unwrap().parse().unwrap();
+        assert!(dur <= 10.1 && dur > 3.0, "{dur}");
+        assert!(std::fs::metadata(&mp4).unwrap().len() <= 3 * 1024 * 1024);
+        let poster = stream_info(&t, &r.poster_path);
+        assert_eq!(poster["streams"][0]["width"], 540);
+        assert!(!source.exists(), "source deleted");
+        assert!(!study.join("frames").exists(), "frames deleted");
+        assert!(study.join("style.json").exists(), "style.json stays");
+    }
+
+    #[test]
+    fn style_preview_without_a_source_is_none() {
+        let Some(t) = test_tools() else { return };
+        let tmp = tempfile::tempdir().unwrap();
+        let study = tmp.path().join("study");
+        std::fs::create_dir_all(&study).unwrap();
+        std::fs::write(study.join("style.json"), "{}").unwrap();
+        assert_eq!(make_style_preview(&t, &study, &tmp.path().join("out")).unwrap(), None);
+        assert!(!tmp.path().join("out").exists());
+    }
+
+    #[test]
+    fn style_preview_deletes_the_source_even_when_ffmpeg_fails() {
+        let Some(t) = test_tools() else { return };
+        let tmp = tempfile::tempdir().unwrap();
+        let study = tmp.path().join("study");
+        std::fs::create_dir_all(&study).unwrap();
+        let bad = study.join("source.webm");
+        std::fs::write(&bad, "not a video").unwrap();
+        assert_eq!(make_style_preview(&t, &study, &tmp.path().join("out")).unwrap(), None);
+        assert!(!bad.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn style_preview_ignores_a_symlinked_source() {
+        let Some(t) = test_tools() else { return };
+        let tmp = tempfile::tempdir().unwrap();
+        let real = make_source(&t, &tmp.path().join("elsewhere"), "private.mp4");
+        let study = tmp.path().join("study");
+        std::fs::create_dir_all(&study).unwrap();
+        std::os::unix::fs::symlink(&real, study.join("source.mp4")).unwrap();
+        assert_eq!(make_style_preview(&t, &study, &tmp.path().join("out")).unwrap(), None);
+        assert!(real.exists(), "the link target is never touched");
+    }
+
+    #[test]
+    fn removing_style_media_deletes_only_that_styles_folder() {
+        let tmp = tempfile::tempdir().unwrap();
+        let a = style_media_dir(tmp.path(), "copied-1").unwrap();
+        let b = style_media_dir(tmp.path(), "copied-2").unwrap();
+        for d in [&a, &b] {
+            std::fs::create_dir_all(d).unwrap();
+            std::fs::write(d.join("poster.jpg"), "x").unwrap();
+        }
+        remove_style_media(tmp.path(), "copied-1");
+        assert!(!a.exists() && b.exists());
+        remove_style_media(tmp.path(), "copied-1"); // already gone
+        remove_style_media(tmp.path(), "../style-media"); // invalid: ignored
+        assert!(b.exists());
+        assert_eq!(style_media_dir(tmp.path(), ".."), None);
+    }
+
+    #[test]
+    fn style_ids_are_validated() {
+        for ok in ["copied-1a2b", "mine_9", "A-z_0"] {
+            assert!(valid_style_id(ok), "{ok}");
+        }
+        for bad in ["", ".", "..", "a/b", "a\\b", "../x", "a b", "é"] {
+            assert!(!valid_style_id(bad), "{bad}");
+        }
     }
 
     #[test]

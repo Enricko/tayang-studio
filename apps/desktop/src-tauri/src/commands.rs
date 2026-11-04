@@ -227,8 +227,39 @@ pub fn save_style(state: State<'_, AppState>, style: Style) -> CmdResult<()> {
 }
 
 #[tauri::command]
-pub fn delete_style(state: State<'_, AppState>, id: String) -> CmdResult<()> {
-    state.db.delete_style(&id).map_err(err)
+pub fn delete_style(app: AppHandle, state: State<'_, AppState>, id: String) -> CmdResult<()> {
+    state.db.delete_style(&id).map_err(err)?;
+    if let Ok(data) = app.path().app_data_dir() {
+        media::remove_style_media(&data, &id);
+    }
+    Ok(())
+}
+
+/// Where copied styles keep their preview clip and poster; the webview may read it.
+pub fn allow_style_media(app: &AppHandle) {
+    if let Ok(data) = app.path().app_data_dir() {
+        let dir = data.join("style-media");
+        let _ = std::fs::create_dir_all(&dir);
+        let _ = app.asset_protocol_scope().allow_directory(&dir, true);
+    }
+}
+
+/// Makes the preview clip and poster of a finished study (from its downloaded source), then deletes the
+/// source. `None` when there was no source or nothing could be made.
+#[tauri::command]
+pub async fn make_style_preview(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    study_id: String,
+    style_id: String,
+) -> CmdResult<Option<media::StylePreview>> {
+    let study = study_path(&state.working(), &study_id)?;
+    let data = app.path().app_data_dir().map_err(err)?;
+    let out = media::style_media_dir(&data, &style_id).ok_or("That style id isn't valid")?;
+    let tools = state.media.clone();
+    tauri::async_runtime::spawn_blocking(move || media::make_style_preview(&tools, &study, &out))
+        .await
+        .map_err(err)?
 }
 
 /// `<working>/.tayang/style-study/<id>`, rejected if it would leave the working folder.
