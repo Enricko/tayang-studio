@@ -253,7 +253,7 @@ describe('frames-checked marker', () => {
     expect(stripFramesToken('Selesai.\n\n[tayang:frames-checked]')).toBe('Selesai.');
   });
   it('leaves no empty code span when the agent wraps the token in backticks', () => {
-    expect(stripFramesToken('Selesai `[tayang:frames-checked]` ya')).toBe('Selesai  ya');
+    expect(stripFramesToken('Selesai `[tayang:frames-checked]` ya')).toBe('Selesai ya');
     expect(stripFramesToken('Selesai.\n\n`[tayang:frames-checked]`')).toBe('Selesai.');
     expect(stripFramesToken('Ok ``[tayang:frames-checked]``')).toBe('Ok');
   });

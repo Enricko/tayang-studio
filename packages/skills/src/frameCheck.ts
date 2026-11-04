@@ -24,7 +24,7 @@ export const stripFramesToken = (text: string): string => {
   const whole = text.replace(WRAPPED_TOKEN, '');
   const cut = whole.replace(PARTIAL_TOKEN, '');
   if (cut === text) return text;
-  return cut.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+  return cut.replace(/(\S) {2,}/g, '$1 ').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
 };
 
 export const FRAME_CHECK_PROMPT = [
