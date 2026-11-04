@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Link2, Loader2, Pause, Play } from 'lucide-react';
+import { Film, Link2, Loader2, Pause, Play } from 'lucide-react';
 import type { Style as StyleT, StyleAspect } from '@tayang/shared';
 import { Button } from '@/components/Button';
 import { Oyen } from '@/components/Oyen';
@@ -57,6 +57,45 @@ function swatch(id: string) {
   let h = 0;
   for (const c of id) h = (h * 31 + c.charCodeAt(0)) >>> 0;
   return SWATCHES[h % SWATCHES.length]!;
+}
+
+/** The public thumbnail of a YouTube link (watch?v=, youtu.be/, shorts/, embed/), null for anything else. */
+export function youtubeThumbnail(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  let u: URL;
+  try {
+    u = new URL(raw.trim());
+  } catch {
+    return null;
+  }
+  if (u.protocol !== 'https:' && u.protocol !== 'http:') return null;
+  const host = u.hostname.replace(/^www\./, '').replace(/^m\./, '');
+  let id: string | null = null;
+  if (host === 'youtu.be') id = u.pathname.split('/')[1] ?? null;
+  else if (host === 'youtube.com') {
+    const m = /^\/(?:shorts|embed)\/([^/]+)/.exec(u.pathname);
+    id = m ? m[1]! : u.pathname === '/watch' ? u.searchParams.get('v') : null;
+  }
+  return id && /^[A-Za-z0-9_-]{11}$/.test(id) ? `https://i.ytimg.com/vi/${id}/hqdefault.jpg` : null;
+}
+
+/** The style's picture: its own preview, else the YouTube thumbnail of a copied video. */
+const posterOf = (s: StyleT): string | null => s.previewUrl || (s.source === 'copied' ? youtubeThumbnail(s.sourceUrl) : null);
+
+/** The calm panel shown when a style has no picture at all. */
+function NoPreview({ id, text, className }: { id: string; text?: boolean; className?: string }) {
+  const [bg] = swatch(id);
+  return (
+    <div
+      data-testid="style-swatch"
+      className={cn('flex aspect-[9/16] w-full flex-col items-center justify-center gap-2 rounded-md border border-[#333]', className)}
+      style={{ background: bg }}
+      aria-hidden={text ? undefined : 'true'}
+    >
+      <Film size={24} strokeWidth={1.5} aria-hidden="true" className="text-text-3" />
+      {text && <span className="text-xs text-text-3">No preview for this style</span>}
+    </div>
+  );
 }
 
 const ENGINE_LABEL = {
@@ -181,7 +220,6 @@ const VIDEO_TIMEOUT_MS = 5000;
  * data; the image alone shows when there is no clip, it errors, or it has no data after 5 s.
  */
 function StylePreview({ style }: { style: StyleT }) {
-  const [bg] = swatch(style.id);
   const [failed, setFailed] = useState<string | null>(null);
   const [playing, setPlaying] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -213,21 +251,12 @@ function StylePreview({ style }: { style: StyleT }) {
     };
   }, [src]);
 
-  const frames = (
-    <div className="flex gap-1" aria-label="Sampled frames">
-      {[0, 1, 2, 3, 4, 5].map((i) => (
-        <span
-          key={i}
-          className="aspect-[9/16] flex-1 rounded-sm border border-[#333]"
-          style={{ background: bg, opacity: 1 - i * 0.08 }}
-        />
-      ))}
-    </div>
-  );
+  const poster = posterOf(style);
+  const frames = <NoPreview id={style.id} text className="max-h-[60vh]" />;
   if (!src || failed === src) {
     return (
       <PreviewImage
-        src={style.previewUrl}
+        src={poster}
         className="aspect-[9/16] max-h-[60vh] w-full rounded-md border border-[#333] bg-black object-cover"
         fallback={frames}
       />
@@ -245,7 +274,7 @@ function StylePreview({ style }: { style: StyleT }) {
       <video
         ref={video}
         src={src}
-        poster={style.previewUrl ?? undefined}
+        poster={poster ?? undefined}
         autoPlay={!reduced}
         muted
         loop
@@ -263,7 +292,7 @@ function StylePreview({ style }: { style: StyleT }) {
       />
       {!loaded && (
         <div data-testid="preview-poster" className="pointer-events-none absolute inset-0 flex items-center bg-black">
-          <PreviewImage src={style.previewUrl} className="size-full object-cover" fallback={frames} />
+          <PreviewImage src={poster} className="size-full object-cover" fallback={frames} />
         </div>
       )}
       <button
@@ -666,7 +695,6 @@ export function Style() {
             }}
           >
             {shown.map((s) => {
-              const [bg, fg] = swatch(s.id);
               return (
                 <button
                   key={s.id}
@@ -680,20 +708,10 @@ export function Style() {
                   className="flex flex-col gap-1 rounded-xl border border-transparent bg-transparent p-2 text-left text-foreground hover:border-border hover:bg-card focus-visible:border-primary focus-visible:outline-none"
                 >
                   <PreviewImage
-                    src={s.previewUrl}
+                    src={posterOf(s)}
                     lazy
                     className="mb-1 aspect-[9/16] w-full rounded-md border border-[#333] object-cover"
-                    fallback={
-                      <div
-                        data-testid="style-swatch"
-                        aria-hidden="true"
-                        className="mb-1 flex aspect-[9/16] flex-col justify-between rounded-md border border-[#333] p-3"
-                        style={{ background: bg, color: fg }}
-                      >
-                        <span className="font-mono text-[9px] uppercase opacity-80">{s.source === 'builtin' ? 'Style' : s.source}</span>
-                        <span className="text-xl leading-[1.02] font-extrabold tracking-[-0.02em]">{s.name}</span>
-                      </div>
-                    }
+                    fallback={<NoPreview id={s.id} className="mb-1" />}
                   />
                   <span className="text-[13px] font-medium">{s.name}</span>
                   <span className="text-xs text-text-3">{sourceLabel(s)}</span>

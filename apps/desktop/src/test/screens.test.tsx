@@ -52,7 +52,7 @@ import * as ipc from '@/lib/ipc';
 import { Agents } from '@/screens/Agents';
 import { Calendar } from '@/screens/Calendar';
 import { Settings as SettingsScreen } from '@/screens/Settings';
-import { Style } from '@/screens/Style';
+import { Style, youtubeThumbnail } from '@/screens/Style';
 import { Videos } from '@/screens/Videos';
 import { useApp } from '@/state/app';
 import { useStudy } from '@/state/study';
@@ -271,7 +271,7 @@ describe('Style built-in styles from the API', () => {
     const dialog = await openCard('Atlas journey');
     fireEvent.error(dialog.querySelector('video')!);
     fireEvent.error(dialog.querySelector('img')!);
-    expect(screen.getByLabelText('Sampled frames')).toBeInTheDocument();
+    expect(screen.getByText('No preview for this style')).toBeInTheDocument();
   });
 
   it('shows the engine in the detail', async () => {
@@ -387,7 +387,7 @@ describe('Style popup', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     dialog = await openCard('Plain look');
     expect(dialog.querySelector('video')).toBeNull();
-    expect(within(dialog).getByLabelText('Sampled frames')).toBeInTheDocument();
+    expect(within(dialog).getByText('No preview for this style')).toBeInTheDocument();
   });
 
   it('falls back to the image when the video fails to load', async () => {
@@ -641,6 +641,86 @@ describe('Style popup', () => {
     render(<Style />);
     const dialog = await openCard('Atlas journey');
     expect(within(dialog).queryByRole('button', { name: 'Delete' })).toBeNull();
+  });
+});
+
+describe('youtubeThumbnail', () => {
+  const thumb = (id: string) => `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
+  it('reads the 11-character id from every YouTube link shape', () => {
+    const id = 'dQw4w9WgXcQ';
+    for (const u of [
+      `https://www.youtube.com/watch?v=${id}`,
+      `https://youtube.com/watch?v=${id}&t=30s`,
+      `https://m.youtube.com/watch?feature=share&v=${id}`,
+      `https://youtu.be/${id}`,
+      `https://youtu.be/${id}?si=abc`,
+      `https://www.youtube.com/shorts/${id}`,
+      `https://www.youtube.com/embed/${id}`,
+    ])
+      expect(youtubeThumbnail(u), u).toBe(thumb(id));
+  });
+  it('gives nothing for bad ids, other sites and junk', () => {
+    for (const u of [
+      'https://youtu.be/short',
+      'https://youtu.be/dQw4w9WgXcQextra',
+      'https://www.youtube.com/watch?v=../../x',
+      'https://www.youtube.com/watch?v=dQw4w9WgXc!',
+      'https://www.youtube.com/watch',
+      'https://www.tiktok.com/@a/video/123',
+      'https://www.instagram.com/reel/abc/',
+      'https://evil.example/watch?v=dQw4w9WgXcQ',
+      'https://notyoutube.com/shorts/dQw4w9WgXcQ',
+      'not a url',
+      '',
+    ])
+      expect(youtubeThumbnail(u), u).toBeNull();
+  });
+});
+
+describe('Copied style previews and the empty fallback', () => {
+  const copied = (over: Partial<StyleT>): StyleT => ({
+    id: 'c1',
+    name: 'Chibi Map Explainer',
+    source: 'copied',
+    sourceUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+    notes: {},
+    prompt: 'Chibi.',
+    createdAt: '2026-11-04T00:00:00Z',
+    ...over,
+  });
+  const show = (styles: StyleT[]) => {
+    vi.mocked(ipc.syncStyles).mockResolvedValue({ styles: [], offline: false });
+    vi.mocked(ipc.listStyles).mockResolvedValue(styles);
+  };
+
+  it('uses the YouTube thumbnail as the poster in the card and the popup, with no video', async () => {
+    show([copied({})]);
+    const { container } = render(<Style />);
+    await screen.findByRole('button', { name: /^Chibi Map Explainer/ });
+    expect(container.querySelector('img')).toHaveAttribute('src', 'https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg');
+    const dialog = await openCard('Chibi Map Explainer');
+    expect(dialog.querySelector('img')).toHaveAttribute('src', 'https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg');
+    expect(dialog.querySelector('video')).toBeNull();
+  });
+
+  it('prefers the style\'s own preview image over the thumbnail', async () => {
+    show([copied({ previewUrl: 'asset://localhost/p.jpg' })]);
+    const { container } = render(<Style />);
+    await screen.findByRole('button', { name: /^Chibi Map Explainer/ });
+    expect(container.querySelector('img')).toHaveAttribute('src', 'asset://localhost/p.jpg');
+  });
+
+  it('shows no image for TikTok sources or a bad YouTube id, just the fallback panel', async () => {
+    show([copied({ sourceUrl: 'https://www.tiktok.com/@a/video/123' }), copied({ id: 'c2', name: 'Bad id', sourceUrl: 'https://youtu.be/short' })]);
+    const { container } = render(<Style />);
+    await screen.findByRole('button', { name: /^Bad id/ });
+    expect(container.querySelector('img')).toBeNull();
+    expect(screen.getAllByTestId('style-swatch')).toHaveLength(2);
+    expect(screen.queryByText('No preview for this style')).toBeNull(); // icon only in the grid
+    const dialog = await openCard('Bad id');
+    expect(within(dialog).getByText('No preview for this style')).toBeInTheDocument();
+    expect(dialog.querySelector('svg.lucide-film')).not.toBeNull();
+    expect(within(dialog).queryByLabelText('Sampled frames')).toBeNull();
   });
 });
 
