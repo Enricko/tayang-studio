@@ -108,6 +108,8 @@ export type ToolKind =
 export type MessagePart =
   | { type: 'text'; text: string }
   | { type: 'mention'; projectId: string; title: string }
+  /** A style the user @mentioned; the agent gets its prompt and notes in front of the message. */
+  | { type: 'style-mention'; styleId: string; name: string }
   | {
       type: 'file';
       path: string;

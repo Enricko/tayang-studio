@@ -971,7 +971,11 @@ pub fn build_prompt(
                     out.push(PromptPart::Text(format!("Attached file: {rel} ({name}, {size})")));
                 }
             }
-            MessagePart::Tool { .. } | MessagePart::Thought { .. } | MessagePart::A2ui { .. } => {}
+            // A style's context comes from the app, which has its prompt and notes.
+            MessagePart::Tool { .. }
+            | MessagePart::Thought { .. }
+            | MessagePart::A2ui { .. }
+            | MessagePart::StyleMention { .. } => {}
             MessagePart::A2uiAction { summary, action } => {
                 out.push(PromptPart::Text(format!("{summary}\n\n```a2ui-action\n{action}\n```")));
             }
@@ -1877,6 +1881,16 @@ mod tests {
                 "Picked: Kenapa rupiah melemah?\n\n```a2ui-action\n{\"action\":{\"name\":\"pick\"},\"version\":\"v0.9\"}\n```".into()
             )]
         );
+    }
+
+    #[test]
+    fn style_mention_adds_nothing_of_its_own() {
+        // The app sends the style's prompt and notes in front of the message itself.
+        let parts = vec![
+            MessagePart::StyleMention { style_id: "s1".into(), name: "Atlas".into() },
+            MessagePart::Text { text: "pakai ini".into() },
+        ];
+        assert_eq!(build_prompt(&parts, 30, |_| None, |_| None), vec![PromptPart::Text("pakai ini".into())]);
     }
 
     #[test]

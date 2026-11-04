@@ -221,6 +221,12 @@ pub enum MessagePart {
         project_id: String,
         title: String,
     },
+    /// A style the user @mentioned. The app puts its prompt and notes in front of the message.
+    #[serde(rename = "style-mention")]
+    StyleMention {
+        style_id: String,
+        name: String,
+    },
     File {
         path: String,
         name: String,
@@ -627,6 +633,14 @@ mod tests {
         let v = json!({"type":"a2ui-action","summary":"Picked: A","action":{"version":"v0.9"}});
         let part: MessagePart = serde_json::from_value(v.clone()).unwrap();
         assert!(matches!(&part, MessagePart::A2uiAction { summary, .. } if summary == "Picked: A"));
+        assert_eq!(serde_json::to_value(&part).unwrap(), v);
+    }
+
+    #[test]
+    fn message_part_style_mention_round_trips() {
+        let v = json!({"type":"style-mention","styleId":"builtin-atlas","name":"Atlas journey"});
+        let part: MessagePart = serde_json::from_value(v.clone()).unwrap();
+        assert!(matches!(&part, MessagePart::StyleMention { style_id, .. } if style_id == "builtin-atlas"));
         assert_eq!(serde_json::to_value(&part).unwrap(), v);
     }
 
