@@ -1,3 +1,5 @@
+pub mod types;
+
 #[tauri::command]
 fn list_projects() -> Vec<serde_json::Value> {
     // Placeholder until the project store lands.
