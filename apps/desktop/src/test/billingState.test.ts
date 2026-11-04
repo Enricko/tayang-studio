@@ -8,18 +8,19 @@ vi.mock('@/lib/billing', async (importOriginal) => ({
 }));
 
 import * as billing from '@/lib/billing';
-import { POLL_LIMIT_MS, POLL_MS } from '@/lib/billing';
+import { POLL_MS } from '@/lib/billing';
 import { useBilling } from '@/state/billing';
 
+const NOW = new Date('2026-11-04T12:00:00.000Z');
 const free: BillingStatus = { plan: 'free', lastPlan: null, currentPeriodEnd: null, active: false, pending: null };
 const creator: BillingStatus = { plan: 'creator', lastPlan: 'creator', currentPeriodEnd: '2026-12-04T12:00:00.000Z', active: true, pending: null };
 const checkout = { orderId: 'TYG-A', paymentLinkUrl: 'https://pay.sumopod.com/p/1', expiresAt: '2026-11-04T13:00:00.000Z', amount: 50000 };
 
 beforeEach(() => {
   vi.useFakeTimers();
-  vi.clearAllMocks();
+  vi.setSystemTime(NOW);
+  vi.resetAllMocks();
   useBilling.getState().reset();
-  useBilling.setState({ ...useBilling.getInitialState(), attempt: useBilling.getState().attempt });
   vi.mocked(billing.billingStatus).mockResolvedValue(free);
   vi.mocked(billing.billingCheckout).mockResolvedValue(checkout);
 });
@@ -28,24 +29,32 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe('paying', () => {
-  it('waits for the browser, polls every 5 s, and succeeds when the plan runs', async () => {
-    await useBilling.getState().refresh();
+describe('the plans flow', () => {
+  it('pick → review → pay: waits, polls every 5 s, and succeeds when the plan runs', async () => {
+    useBilling.getState().open();
+    expect(useBilling.getState().flow).toEqual({ phase: 'picking' });
+    useBilling.getState().choose('creator');
+    expect(useBilling.getState().flow).toEqual({ phase: 'review', plan: 'creator' });
     await useBilling.getState().pay('creator');
     expect(billing.billingCheckout).toHaveBeenCalledWith('creator');
-    expect(useBilling.getState().flow).toMatchObject({ phase: 'waiting', plan: 'creator', checkout });
+    expect(useBilling.getState().flow).toMatchObject({ phase: 'waiting', plan: 'creator', checkout, startedAt: NOW.getTime() });
     vi.mocked(billing.billingStatus).mockClear();
     await vi.advanceTimersByTimeAsync(POLL_MS - 1);
     expect(billing.billingStatus).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1);
     expect(billing.billingStatus).toHaveBeenCalledTimes(1);
-    expect(useBilling.getState().flow.phase).toBe('waiting');
     vi.mocked(billing.billingStatus).mockResolvedValue(creator);
     await vi.advanceTimersByTimeAsync(POLL_MS);
     expect(useBilling.getState().flow).toEqual({ phase: 'done', plan: 'creator', currentPeriodEnd: creator.currentPeriodEnd });
-    expect(useBilling.getState().status).toEqual(creator);
     await vi.advanceTimersByTimeAsync(POLL_MS * 3);
     expect(billing.billingStatus).toHaveBeenCalledTimes(2);
+  });
+
+  it('back from review goes to picking', () => {
+    useBilling.getState().open();
+    useBilling.getState().choose('pro');
+    useBilling.getState().back();
+    expect(useBilling.getState().flow).toEqual({ phase: 'picking' });
   });
 
   it('a renewal succeeds only once the end moves', async () => {
@@ -59,20 +68,38 @@ describe('paying', () => {
     expect(useBilling.getState().flow).toMatchObject({ phase: 'done', currentPeriodEnd: '2027-01-03T12:00:00.000Z' });
   });
 
-  it('stops after 30 minutes, and Check again looks for another while', async () => {
+  it('stops polling when the link expires, and a new link starts over', async () => {
     await useBilling.getState().pay('lite');
-    await vi.advanceTimersByTimeAsync(POLL_LIMIT_MS + POLL_MS);
-    expect(useBilling.getState().flow).toMatchObject({ phase: 'timeout', plan: 'lite', checkout });
+    await vi.advanceTimersByTimeAsync(60 * 60_000 + POLL_MS);
+    expect(useBilling.getState().flow).toMatchObject({ phase: 'expired', plan: 'lite', checkout });
     const calls = vi.mocked(billing.billingStatus).mock.calls.length;
     await vi.advanceTimersByTimeAsync(POLL_MS * 4);
     expect(billing.billingStatus).toHaveBeenCalledTimes(calls);
-    useBilling.getState().checkAgain();
-    vi.mocked(billing.billingStatus).mockResolvedValue({ ...creator, plan: 'lite', lastPlan: 'lite' });
-    await vi.advanceTimersByTimeAsync(POLL_MS);
-    expect(useBilling.getState().flow.phase).toBe('done');
+    vi.mocked(billing.billingCheckout).mockResolvedValueOnce({ ...checkout, orderId: 'TYG-B', expiresAt: '2026-11-04T14:30:00.000Z' });
+    await useBilling.getState().pay('lite');
+    expect(useBilling.getState().flow).toMatchObject({ phase: 'waiting', checkout: { orderId: 'TYG-B' } });
   });
 
-  it('closing the dialog stops polling', async () => {
+  it('resumes a pending payment straight into waiting, without a new checkout', async () => {
+    vi.mocked(billing.billingStatus).mockResolvedValue({
+      ...free,
+      pending: { orderId: 'TYG-P', plan: 'pro', paymentLinkUrl: checkout.paymentLinkUrl, expiresAt: checkout.expiresAt },
+    });
+    await useBilling.getState().enter();
+    expect(useBilling.getState().flow).toMatchObject({
+      phase: 'waiting',
+      plan: 'pro',
+      checkout: { orderId: 'TYG-P', paymentLinkUrl: checkout.paymentLinkUrl, expiresAt: checkout.expiresAt, amount: 90000 },
+    });
+    expect(billing.billingCheckout).not.toHaveBeenCalled();
+  });
+
+  it('entering with nothing pending starts at picking', async () => {
+    await useBilling.getState().enter();
+    expect(useBilling.getState().flow).toEqual({ phase: 'picking' });
+  });
+
+  it('closing stops polling', async () => {
     await useBilling.getState().pay('lite');
     useBilling.getState().close();
     vi.mocked(billing.billingStatus).mockClear();
@@ -100,7 +127,7 @@ describe('paying', () => {
     expect(useBilling.getState().flow).toEqual({ phase: 'failed', plan: 'pro', error: { message: 'boom' } });
   });
 
-  it('a checkout answered after the dialog closed is dropped', async () => {
+  it('a checkout answered after closing is dropped', async () => {
     await useBilling.getState().refresh();
     let answer!: (c: typeof checkout) => void;
     vi.mocked(billing.billingCheckout).mockReturnValueOnce(new Promise((r) => (answer = r)));
@@ -119,7 +146,6 @@ describe('paying', () => {
 
   it('reads the status before paying, so a renewal is not seen as paid at once (M8)', async () => {
     vi.mocked(billing.billingStatus).mockResolvedValue(creator);
-    // Pay pressed before anything was read.
     await useBilling.getState().pay('creator');
     expect(billing.billingStatus).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(POLL_MS);
