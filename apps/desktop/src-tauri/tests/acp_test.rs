@@ -234,6 +234,7 @@ async fn fs_write_outside_cwd_is_refused() {
     let texts = sink.texts();
     assert_eq!(texts.len(), 1, "{texts:?}");
     assert!(texts[0].starts_with("fs-error"), "{texts:?}");
+    assert!(texts[0].contains("outside the project folder"), "{texts:?}");
     let leaked: Vec<_> = std::fs::read_dir(&ws.parent)
         .unwrap()
         .filter_map(|e| e.ok())

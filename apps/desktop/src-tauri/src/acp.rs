@@ -3,6 +3,7 @@
 //! Hand-rolled newline-delimited JSON-RPC 2.0 following the ACP v1 schema
 //! (https://agentclientprotocol.com). One agent process per chat.
 
+use crate::projects;
 use crate::types::{
     AgentUpdate, PermissionOption, PermissionOptionKind, PermissionRequest, ToolCallStatus,
 };
@@ -52,6 +53,7 @@ pub enum PromptPart {
 const INVALID_PARAMS: i64 = -32602;
 const METHOD_NOT_FOUND: i64 = -32601;
 const INTERNAL_ERROR: i64 = -32603;
+const RESOURCE_NOT_FOUND: i64 = -32002;
 /// Local-only code for "the connection is gone"; never sent over the wire.
 const CONNECTION_CLOSED: i64 = -1;
 
@@ -362,6 +364,8 @@ impl SessionCore {
     fn on_request(self: &Arc<Self>, id: Value, method: &str, params: Value) {
         match method {
             "session/request_permission" => self.on_permission(id, &params),
+            "fs/read_text_file" => self.rpc.respond(id, self.read_text_file(&params)),
+            "fs/write_text_file" => self.rpc.respond(id, self.write_text_file(&params)),
             _ => self.rpc.respond(
                 id,
                 Err(RpcError::new(METHOD_NOT_FOUND, format!("Method not found: {method}"))),
@@ -485,6 +489,27 @@ impl SessionCore {
         Some((id.to_string(), state.clone()))
     }
 
+    fn read_text_file(&self, params: &Value) -> RpcResult {
+        let path = resolve_inside(&self.cwd, params.get("path"))?;
+        let content = std::fs::read_to_string(&path).map_err(|e| io_error("read", &path, e))?;
+        let line = params.get("line").and_then(Value::as_u64);
+        let limit = params.get("limit").and_then(Value::as_u64);
+        Ok(json!({ "content": slice_lines(&content, line, limit) }))
+    }
+
+    fn write_text_file(&self, params: &Value) -> RpcResult {
+        let path = resolve_inside(&self.cwd, params.get("path"))?;
+        let content = params
+            .get("content")
+            .and_then(Value::as_str)
+            .ok_or_else(|| RpcError::new(INVALID_PARAMS, "content is required"))?;
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| io_error("write", &path, e))?;
+        }
+        std::fs::write(&path, content).map_err(|e| io_error("write", &path, e))?;
+        Ok(json!({}))
+    }
+
     async fn handshake(&self) -> Result<()> {
         let init = self
             .rpc
@@ -557,6 +582,47 @@ impl SessionCore {
     fn on_closed(&self) {
         self.rpc.close();
         self.permissions.cancel_session(self.uid);
+    }
+}
+
+/// Resolves an agent-supplied path and refuses anything outside `cwd`, including
+/// paths that escape through a symlinked folder that already exists.
+fn resolve_inside(cwd: &Path, raw: Option<&Value>) -> std::result::Result<PathBuf, RpcError> {
+    let raw = raw
+        .and_then(Value::as_str)
+        .filter(|p| !p.is_empty())
+        .ok_or_else(|| RpcError::new(INVALID_PARAMS, "path is required"))?;
+    let p = Path::new(raw);
+    let full = if p.is_absolute() { p.to_path_buf() } else { cwd.join(p) };
+    let outside = || RpcError::new(INVALID_PARAMS, format!("{raw} is outside the project folder"));
+    if !projects::ensure_inside(cwd, &full) {
+        return Err(outside());
+    }
+    let existing = full.ancestors().find(|a| a.exists());
+    if let (Some(existing), Ok(root)) = (existing, std::fs::canonicalize(cwd)) {
+        match std::fs::canonicalize(existing) {
+            Ok(real) if real.starts_with(&root) => {}
+            _ => return Err(outside()),
+        }
+    }
+    Ok(full)
+}
+
+fn io_error(action: &str, path: &Path, e: std::io::Error) -> RpcError {
+    let code = if e.kind() == std::io::ErrorKind::NotFound { RESOURCE_NOT_FOUND } else { INTERNAL_ERROR };
+    RpcError::new(code, format!("Could not {action} {}: {e}", path.display()))
+}
+
+/// ACP `line` is 1-based; `limit` counts lines. Line endings are kept.
+fn slice_lines(content: &str, line: Option<u64>, limit: Option<u64>) -> String {
+    if line.is_none() && limit.is_none() {
+        return content.to_string();
+    }
+    let skip = line.unwrap_or(1).saturating_sub(1) as usize;
+    let lines = content.split_inclusive('\n').skip(skip);
+    match limit {
+        Some(n) => lines.take(n as usize).collect(),
+        None => lines.collect(),
     }
 }
 
@@ -820,6 +886,53 @@ mod tests {
         );
         assert_eq!(parse_message("not json"), None);
         assert_eq!(parse_message("[1,2]"), None);
+    }
+
+    #[test]
+    fn slices_lines_one_based() {
+        let text = "a\nb\nc\n";
+        assert_eq!(slice_lines(text, None, None), text);
+        assert_eq!(slice_lines(text, Some(2), None), "b\nc\n");
+        assert_eq!(slice_lines(text, Some(2), Some(1)), "b\n");
+        assert_eq!(slice_lines(text, None, Some(2)), "a\nb\n");
+        assert_eq!(slice_lines(text, Some(9), Some(1)), "");
+    }
+
+    #[test]
+    fn fs_paths_must_stay_inside_cwd() {
+        let root = tempfile::tempdir().unwrap();
+        let cwd = root.path().join("project");
+        std::fs::create_dir_all(cwd.join("src")).unwrap();
+        let p = |s: &str| json!(s);
+        let inside = cwd.join("src").join("a.txt");
+        assert_eq!(resolve_inside(&cwd, Some(&p(&inside.to_string_lossy()))).unwrap(), inside);
+        assert_eq!(resolve_inside(&cwd, Some(&p("new/b.txt"))).unwrap(), cwd.join("new/b.txt"));
+        let sibling = root.path().join("other.txt");
+        assert!(resolve_inside(&cwd, Some(&p(&sibling.to_string_lossy()))).is_err());
+        assert!(resolve_inside(&cwd, Some(&p("../other.txt"))).is_err());
+        assert!(resolve_inside(&cwd, None).is_err());
+        assert!(resolve_inside(&cwd, Some(&p(""))).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn fs_paths_cannot_escape_through_symlinked_folders() {
+        let root = tempfile::tempdir().unwrap();
+        let cwd = root.path().join("project");
+        let outside = root.path().join("outside");
+        std::fs::create_dir_all(&cwd).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::os::unix::fs::symlink(&outside, cwd.join("link")).unwrap();
+        let target = cwd.join("link").join("new").join("x.txt");
+        assert!(resolve_inside(&cwd, Some(&json!(target.to_string_lossy()))).is_err());
+    }
+
+    #[test]
+    fn raw_command_accepts_string_or_argv() {
+        assert_eq!(raw_command(&json!({"command": "brew install ffmpeg"})).as_deref(), Some("brew install ffmpeg"));
+        assert_eq!(raw_command(&json!({"command": ["npm", "i", "-g", "x"]})).as_deref(), Some("npm i -g x"));
+        assert_eq!(raw_command(&json!({"path": "/x"})), None);
+        assert_eq!(raw_command(&json!({"command": ""})), None);
     }
 
     #[tokio::test]
