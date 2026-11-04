@@ -69,7 +69,7 @@ export function Composer({
 
   const pick = (p: Project) => {
     onMention?.({ projectId: p.id, title: p.title });
-    setText((t) => t.replace(TOKEN, '$1').trimEnd());
+    setText((t) => t.replace(TOKEN, '$1'));
     ref.current?.focus();
   };
 

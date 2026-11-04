@@ -244,3 +244,67 @@ describe('ChatProject', () => {
     expect(useChat.getState().attachments['c1'] ?? []).toHaveLength(0);
   });
 });
+
+describe('chat failure handling', () => {
+  const permission: PermissionRequest = {
+    chatId: 'c1',
+    requestId: 'r1',
+    title: 'Install a font',
+    commands: ['brew install font'],
+    options: [{ id: 'opt-allow', label: 'Allow', kind: 'allow-once' }],
+  };
+  const sendFirst = async (user: ReturnType<typeof userEvent.setup>, text: string) => {
+    await user.type(await screen.findByRole('textbox', { name: 'Message' }), text);
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+  };
+
+  it('restarts the agent session after an error', async () => {
+    const user = userEvent.setup();
+    render(<ChatProject chatId="c1" />);
+    await sendFirst(user, 'one');
+    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalledTimes(1));
+    await emit('c1', { kind: 'error', message: 'crash' });
+    const box = screen.getByRole('textbox', { name: 'Message' });
+    await waitFor(() => expect(box).toBeEnabled());
+    await user.type(box, 'two');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalledTimes(2));
+    expect(ipc.agentStart).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(['done', 'error'] as const)('clears an open permission card on %s', async (kind) => {
+    render(<ChatProject chatId="c1" />);
+    await screen.findByRole('textbox', { name: 'Message' });
+    await act(async () => {
+      handlers.perm.forEach((cb) => cb(permission));
+    });
+    expect(await screen.findByRole('button', { name: 'Allow' })).toBeInTheDocument();
+    await emit('c1', kind === 'done' ? { kind: 'done', stopReason: 'end_turn' } : { kind: 'error', message: 'x' });
+    expect(screen.queryByRole('button', { name: 'Allow' })).not.toBeInTheDocument();
+  });
+
+  it('shows an inline error and keeps the draft and mention when the first send fails', async () => {
+    const user = userEvent.setup();
+    vi.mocked(ipc.createChat).mockRejectedValue(new Error('disk full'));
+    render(<ChatNew />);
+    const box = await screen.findByRole('textbox', { name: 'Message' });
+    await user.type(box, 'remix @');
+    await user.keyboard('{Enter}');
+    await user.type(box, 'faster');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+    expect(await screen.findByText("Couldn't start the chat: disk full")).toBeInTheDocument();
+    expect(box).toHaveValue('remix faster');
+    expect(screen.getByText('1 video attached')).toBeInTheDocument();
+    expect(ipc.agentPrompt).not.toHaveBeenCalled();
+  });
+
+  it('does not send on Enter when the @ menu has no matches', async () => {
+    const user = userEvent.setup();
+    render(<ChatNew />);
+    await user.type(await screen.findByRole('textbox', { name: 'Message' }), '@zzzz');
+    await user.keyboard('{Enter}');
+    expect(ipc.createChat).not.toHaveBeenCalled();
+    expect(ipc.agentPrompt).not.toHaveBeenCalled();
+  });
+});
+
