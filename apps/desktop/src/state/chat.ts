@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { buildSessionPreamble, languageHint } from '@tayang/skills';
+import { buildSessionPreamble, languageHint, stripFramesToken } from '@tayang/skills';
 import type { AgentId, AgentUpdate, ChatMessage, JobStatus, MessagePart, PermissionRequest } from '@tayang/shared';
 import {
   addMessage,
@@ -112,7 +112,7 @@ export function buildRecap(messages: ChatMessage[]): string {
   for (const m of messages) {
     if (m.role === 'system') continue;
     // A2UI blocks are drawn cards, not words: the next agent gets the prose only.
-    const text = extractA2ui(m.parts.map((p) => (p.type === 'text' ? p.text : '')).join('')).text.trim();
+    const text = extractA2ui(stripFramesToken(m.parts.map((p) => (p.type === 'text' ? p.text : '')).join(''))).text.trim();
     if (text) lines.push(`${m.role === 'user' ? 'You' : 'Agent'}: ${text}`);
   }
   const kept: string[] = [];

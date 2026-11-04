@@ -1217,6 +1217,12 @@ describe('buildRecap', () => {
     expect(recap.indexOf('You: line 2')).toBeLessThan(recap.indexOf('Agent: line 7'));
   });
 
+  it('strips the frames-checked token', () => {
+    const recap = buildRecap([msg('agent', 'Done `[tayang:frames-checked]`\nTwo fixes.', 1)]);
+    expect(recap).not.toContain('tayang:frames');
+    expect(recap).toBe('Agent: Done\nTwo fixes.');
+  });
+
   it('leaves out A2UI blocks and keeps the prose around them', () => {
     const block = '```a2ui\n{"version":"v0.9","createSurface":{"surfaceId":"s","catalogId":"x"}}\n```';
     const recap = buildRecap([msg('agent', `Pick one:\n${block}\nThen tell me.`, 1), msg('agent', block, 2)]);
