@@ -9,13 +9,20 @@ export type Route =
   | { name: 'chat'; chatId: string; /** Prefilled in the composer, never sent. */ draft?: string }
   | { name: 'videos' }
   | { name: 'style'; /** Focus the link box when the screen opens. */ focusLink?: boolean }
+  | { name: 'autopilot'; /** One autopilot's detail view. */ id?: string }
+  | { name: 'autopilot-wizard'; /** Editing this autopilot; none for a new one. */ id?: string }
   | { name: 'agents' }
   | { name: 'calendar' }
   | { name: 'settings' };
 
+/** Asked before every navigation while set; returning false keeps the current screen (it asks the user itself). */
+export type LeaveGuard = (next: Route) => boolean;
+
 interface AppState {
   route: Route;
   navigate(r: Route): void;
+  leaveGuard: LeaveGuard | null;
+  setLeaveGuard(guard: LeaveGuard | null): void;
   settings: Settings | null;
   setSettings(s: Settings): void;
   needsYouCount: number;
@@ -27,9 +34,15 @@ interface AppState {
   setNotificationsBlocked(blocked: boolean): void;
 }
 
-export const useApp = create<AppState>((set) => ({
+export const useApp = create<AppState>((set, get) => ({
   route: { name: 'welcome' },
-  navigate: (route) => set({ route }),
+  navigate: (route) => {
+    const guard = get().leaveGuard;
+    if (guard && !guard(route)) return;
+    set({ route });
+  },
+  leaveGuard: null,
+  setLeaveGuard: (leaveGuard) => set({ leaveGuard }),
   settings: null,
   setSettings: (settings) => set({ settings }),
   needsYouCount: 0,

@@ -21,6 +21,7 @@ export const id: Translations = {
     chat: 'Chat',
     videos: 'Video',
     style: 'Gaya',
+    autopilot: 'Autopilot',
     agents: 'Agen',
     calendar: 'Kalender',
     settings: 'Pengaturan',

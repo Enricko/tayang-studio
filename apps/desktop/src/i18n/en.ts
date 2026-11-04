@@ -19,6 +19,7 @@ export const en = {
     chat: 'Chat',
     videos: 'Videos',
     style: 'Style',
+    autopilot: 'Autopilot',
     agents: 'Agents',
     calendar: 'Calendar',
     settings: 'Settings',

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Calendar, LayoutPanelLeft, MessageCircle, Palette, Plus, Smartphone, SlidersHorizontal } from 'lucide-react';
+import { Calendar, LayoutPanelLeft, MessageCircle, Palette, Plane, Plus, Smartphone, SlidersHorizontal } from 'lucide-react';
 import type { Project } from '@tayang/shared';
 import logo from '@/assets/brand/tayang-horizontal-reversed-color.svg';
 import ditherCard from '@/assets/brand/dither-card.png';
@@ -10,12 +10,13 @@ import { createChat, listChats, listProjects } from '@/lib/ipc';
 import { useApp, type Route } from '@/state/app';
 import { cn } from '@/lib/utils';
 
-export type SidebarKey = 'chat' | 'videos' | 'style' | 'agents' | 'calendar' | 'settings';
+export type SidebarKey = 'chat' | 'videos' | 'style' | 'autopilot' | 'agents' | 'calendar' | 'settings';
 
 const NAV: { key: SidebarKey; icon: typeof Calendar; route: Route }[] = [
   { key: 'chat', icon: MessageCircle, route: { name: 'chat-new' } },
   { key: 'videos', icon: Smartphone, route: { name: 'videos' } },
   { key: 'style', icon: Palette, route: { name: 'style' } },
+  { key: 'autopilot', icon: Plane, route: { name: 'autopilot' } },
   { key: 'agents', icon: LayoutPanelLeft, route: { name: 'agents' } },
   { key: 'calendar', icon: Calendar, route: { name: 'calendar' } },
 ];
