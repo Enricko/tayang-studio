@@ -7,12 +7,15 @@ import { MessageList } from '@/components/MessageList';
 import { PermissionCard } from '@/components/PermissionCard';
 import { Preview } from '@/screens/preview/Preview';
 import { StepBar } from '@/components/StepBar';
-import { getChat, listProjects, mediaProbe, mediaRender, renderCommand, updateProject } from '@/lib/ipc';
+import { getChat, listProjects, mediaProbe, mediaRender, renderCommand, updateProject, type RenderCommand } from '@/lib/ipc';
 import { useApp } from '@/state/app';
 import { headPermission, useChat } from '@/state/chat';
 import { useUsage } from '@/state/usage';
 
 const NO_MESSAGES: never[] = [];
+/** One argv as a shell-looking line: arguments with spaces or quotes are double-quoted. */
+const shellDisplay = (argv: string[]) =>
+  argv.map((a) => (/[\s"']/.test(a) ? `"${a.replace(/(["\\])/g, '\\$1')}"` : a)).join(' ');
 const KIND: Record<VideoKind, string> = {
   explainer: 'Explainer',
   promo: 'Promo',
@@ -31,7 +34,7 @@ export function ChatProject({ chatId }: { chatId: string }) {
   const [rendering, setRendering] = useState(false);
   const [renderError, setRenderError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
-  const [runs, setRuns] = useState<string[] | null>(null);
+  const [runs, setRuns] = useState<RenderCommand | null>(null);
   const messages = useChat((s) => s.messages[chatId]) ?? NO_MESSAGES;
   const streaming = useChat((s) => !!s.streaming[chatId]);
   const permission = useChat((s) => headPermission(s, chatId));
@@ -62,7 +65,8 @@ export function ChatProject({ chatId }: { chatId: string }) {
     return () => {
       alive = false;
     };
-  }, [project?.id]);
+    // the agent may add tayang.json or node_modules during a turn, and a render installs: refetch on both
+  }, [project?.id, reloadKey]);
 
   useEffect(() => {
     useUsage.getState().setChatAgent(agent);
@@ -139,9 +143,9 @@ export function ChatProject({ chatId }: { chatId: string }) {
           {rendering ? 'Rendering…' : 'Render video'}
         </Button>
       </header>
-      {runs && runs.length > 0 && (
-        <p className="m-0 truncate border-b border-border px-6 py-2 font-mono text-xs text-text-3" title={runs.join(' ')}>
-          Runs: {runs.join(' ')}
+      {runs && runs.render.length > 0 && (
+        <p className="m-0 border-b border-border px-6 py-2 font-mono text-xs break-words text-text-3">
+          Runs: {[...(runs.install?.length ? [runs.install] : []), runs.render].map(shellDisplay).join(' && ')}
         </p>
       )}
       {renderError && (

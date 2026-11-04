@@ -348,6 +348,25 @@ describe('Settings', () => {
     await waitFor(() => expect(ipc.updateSettings).toHaveBeenCalledWith({ apiUrl: 'http://localhost:8787' }));
   });
 
+  it('rejects an API address that is not http(s)', async () => {
+    render(<SettingsScreen />);
+    const input = await screen.findByLabelText('API address');
+    await userEvent.clear(input);
+    await userEvent.type(input, 'ftp://nope');
+    await userEvent.tab();
+    expect(await screen.findByText('Enter an address that starts with http:// or https://')).toBeInTheDocument();
+    expect(ipc.updateSettings).not.toHaveBeenCalled();
+  });
+
+  it('clearing the API address resets it to the default', async () => {
+    useApp.setState({ settings: { ...settings, apiUrl: 'http://localhost:8787' } });
+    render(<SettingsScreen />);
+    const input = await screen.findByLabelText('API address');
+    await userEvent.clear(input);
+    await userEvent.tab();
+    await waitFor(() => expect(ipc.updateSettings).toHaveBeenCalledWith({ apiUrl: 'https://api.tayang.app' }));
+  });
+
   it('says existing projects stay put when the working folder changes', async () => {
     render(<SettingsScreen />);
     expect(await screen.findByText('Existing projects stay where they are')).toBeInTheDocument();
