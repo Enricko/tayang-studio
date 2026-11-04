@@ -51,7 +51,7 @@ export const AUTOPILOT_TOPIC_RETRY =
   'I could not use that. Reply again with only one fenced ```json block, {"title": "...", "kind": "...", "lengthSec": ...}, ' +
   'with a new title that is not one of the earlier titles. Nothing else.';
 
-const jsonBlock = (text: string): string | null => /```json\s*\n([\s\S]*?)```/.exec(text)?.[1] ?? null;
+const jsonBlock = (text: string): string | null => /```json\s*([\s\S]*?)```/.exec(text)?.[1] ?? null;
 
 /** The topic in an autopilot reply (a ```json block, or bare json), or null when it has no title. */
 export function parseAutopilotTopic(text: string): AutopilotTopic | null {

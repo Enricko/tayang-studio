@@ -63,6 +63,10 @@ describe('parseAutopilotTopic', () => {
     });
   });
 
+  it('reads a json block written on one line', () => {
+    expect(parseAutopilotTopic('```json {"title":"One line","kind":"data","lengthSec":30}```')?.title).toBe('One line');
+  });
+
   it('accepts bare json and a one-item array, trims the title', () => {
     expect(parseAutopilotTopic('{"title":"  A  ","kind":"data","lengthSec":30}')).toEqual({ title: 'A', kind: 'data', lengthSec: 30 });
     expect(parseAutopilotTopic('```json\n[{"title":"B","kind":"news","lengthSec":20}]\n```')?.title).toBe('B');
