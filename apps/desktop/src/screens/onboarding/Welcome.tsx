@@ -26,6 +26,13 @@ function Post({ tag, className, children }: { tag: string; className: string; ch
   );
 }
 
+/** The sample posts are made-up Indonesian captions: the same in both languages. */
+const SAMPLE = {
+  explainer: ['Kenapa rupiah melemah?', 'dolar menguat'],
+  quote: ['Mulai', 'aja', 'dulu.'],
+  promo: ['Buy 1 get 1. Cuma Jumat.', 'Kopi Senja'],
+};
+
 const chip = 'mt-auto self-start rounded-sm bg-foreground px-1.5 py-0.5 text-xs font-semibold text-ink';
 
 export function Welcome() {
@@ -98,22 +105,22 @@ export function Welcome() {
         className="relative flex min-w-0 flex-[1_1_460px] items-center justify-center px-6 py-12"
       >
         <div className="relative h-[520px] w-[472px] max-w-full" aria-hidden="true">
-          <Post tag="EXPLAINER" className="top-[72px] left-0 -rotate-10">
-            <span className="mt-2 text-[26px] leading-[1.04] font-extrabold tracking-[-0.03em]">Kenapa rupiah melemah?</span>
-            <span className={chip}>dolar menguat</span>
+          <Post tag={t('kinds.explainer').toUpperCase()} className="top-[72px] left-0 -rotate-10">
+            <span className="mt-2 text-[26px] leading-[1.04] font-extrabold tracking-[-0.03em]">{SAMPLE.explainer[0]}</span>
+            <span className={chip}>{SAMPLE.explainer[1]}</span>
           </Post>
-          <Post tag="QUOTE" className="top-3 left-[140px]">
+          <Post tag={t('kinds.quote').toUpperCase()} className="top-3 left-[140px]">
             <span className="mt-3 text-[40px] leading-[0.98] font-extrabold tracking-[-0.035em]">
-              Mulai
+              {SAMPLE.quote[0]}
               <br />
-              <span className="text-primary">aja</span>
+              <span className="text-primary">{SAMPLE.quote[1]}</span>
               <br />
-              dulu.
+              {SAMPLE.quote[2]}
             </span>
           </Post>
-          <Post tag="PROMO" className="top-[72px] right-0 rotate-10">
-            <span className="mt-2 text-[26px] leading-[1.04] font-extrabold tracking-[-0.03em]">Buy 1 get 1. Cuma Jumat.</span>
-            <span className={chip}>Kopi Senja</span>
+          <Post tag={t('kinds.promo').toUpperCase()} className="top-[72px] right-0 rotate-10">
+            <span className="mt-2 text-[26px] leading-[1.04] font-extrabold tracking-[-0.03em]">{SAMPLE.promo[0]}</span>
+            <span className={chip}>{SAMPLE.promo[1]}</span>
           </Post>
           <img src={wink} alt={t('onboarding.welcome.oyenAlt')} className="absolute top-[300px] left-40 h-[152px] w-[152px]" />
         </div>

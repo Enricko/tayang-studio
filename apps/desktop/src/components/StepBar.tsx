@@ -1,7 +1,8 @@
+import { useTranslation } from 'react-i18next';
 import type { ProjectStatus } from '@tayang/shared';
 import { cn } from '@/lib/utils';
 
-export const STEPS = ['Topic', 'Script', 'Style', 'Build', 'Render'] as const;
+export const STEPS = ['topic', 'script', 'style', 'build', 'render'] as const;
 
 /** Index of the step the project is on: draft→Script, building→Build, rendered→Render. */
 export function currentStep(status: ProjectStatus): number {
@@ -11,9 +12,10 @@ export function currentStep(status: ProjectStatus): number {
 }
 
 export function StepBar({ status }: { status: ProjectStatus }) {
+  const { t } = useTranslation();
   const cur = currentStep(status);
   return (
-    <ol aria-label="Progress" className="m-0 flex list-none items-center gap-2 p-0">
+    <ol aria-label={t('stepBar.aria')} className="m-0 flex list-none items-center gap-2 p-0">
       {STEPS.map((name, i) => {
         const done = i < cur;
         const active = i === cur;
@@ -30,7 +32,7 @@ export function StepBar({ status }: { status: ProjectStatus }) {
             >
               {done ? '✓' : i + 1}
             </span>
-            <span className={cn('text-[13px]', active ? 'font-medium text-foreground' : 'text-text-2')}>{name}</span>
+            <span className={cn('text-[13px]', active ? 'font-medium text-foreground' : 'text-text-2')}>{t(`stepBar.${name}`)}</span>
             {i < STEPS.length - 1 && <span aria-hidden="true" className="h-px w-4 bg-hairline" />}
           </li>
         );
