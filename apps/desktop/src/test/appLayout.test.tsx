@@ -52,7 +52,7 @@ async function renderApp() {
 function drag(handle: HTMLElement, from: number, to: number) {
   handle.setPointerCapture = () => {};
   fireEvent.pointerDown(handle, { clientX: from, pointerId: 1, button: 0 });
-  fireEvent.pointerMove(handle, { clientX: to, pointerId: 1 });
+  fireEvent.pointerMove(handle, { clientX: to, pointerId: 1, buttons: 1 });
   fireEvent.pointerUp(handle, { clientX: to, pointerId: 1 });
 }
 
