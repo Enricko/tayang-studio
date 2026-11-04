@@ -21,5 +21,6 @@ const CODES: readonly string[] = ['expired', 'denied', 'network', 'server', 'rat
 /** The code in an `auth:<code>` rejection, or null for anything else. */
 export function authErrorCode(e: unknown): AuthErrorCode | 'cancelled' | null {
   const m = /^auth:([a-z-]+)$/.exec(e instanceof Error ? e.message : String(e));
-  return m && CODES.includes(m[1]) ? (m[1] as AuthErrorCode | 'cancelled') : null;
+  const code = m?.[1];
+  return code && CODES.includes(code) ? (code as AuthErrorCode | 'cancelled') : null;
 }

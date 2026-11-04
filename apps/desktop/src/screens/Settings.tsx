@@ -2,11 +2,10 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { RefreshCw } from 'lucide-react';
 import { disable as disableAutostart, enable as enableAutostart } from '@tauri-apps/plugin-autostart';
-import { openUrl } from '@tauri-apps/plugin-opener';
 import { DEFAULT_SETTINGS, type AgentInfo, type Settings as SettingsT, type SystemInfo, type ToolId } from '@tayang/shared';
+import { AccountSection } from '@/components/Account';
 import { AgentLogo } from '@/components/AgentLogo';
 import { Button } from '@/components/Button';
-import { Oyen } from '@/components/Oyen';
 import { ToolRow, TOOL_ORDER } from '@/components/ToolRow';
 import { Input } from '@/components/ui/input';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
@@ -425,14 +424,7 @@ export function Settings() {
 
         <section id="account" className="flex flex-col gap-3">
           <h2 className="m-0 text-base font-medium">{t('settings.sections.account')}</h2>
-          <div className="flex flex-wrap items-center gap-4 rounded-xl border border-border bg-card p-4">
-            <Oyen mood="default" size={40} />
-            <div className="flex min-w-[280px] flex-1 flex-col gap-1">
-              <span className="text-sm font-medium">{t('settings.freePlan')}</span>
-              <span className="text-[13px] leading-normal text-text-2">{t('settings.planText')}</span>
-            </div>
-            <Button onClick={() => void openUrl('https://tayang.app')}>{t('settings.signIn')}</Button>
-          </div>
+          <AccountSection />
           <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3">
             <div className="mr-auto flex flex-col gap-1">
               <label htmlFor="share-install-stats" className="text-sm font-medium">

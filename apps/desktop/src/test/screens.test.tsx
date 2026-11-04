@@ -57,10 +57,25 @@ vi.mock('@/lib/events', () => ({
   }),
 }));
 vi.mock('@tauri-apps/plugin-opener', () => ({ openUrl: vi.fn() }));
+vi.mock('@/lib/auth', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/auth')>()),
+  authStart: vi.fn().mockResolvedValue({
+    userCode: 'ABCD-EFGH',
+    verificationUri: 'https://studio.tayang.app/api/auth/device',
+    verificationUriComplete: 'https://studio.tayang.app/api/auth/device?code=ABCD-EFGH',
+    expiresIn: 600,
+  }),
+  authCancel: vi.fn().mockResolvedValue(undefined),
+  authStatus: vi.fn().mockResolvedValue({ state: 'signed-out', signedIn: false, offline: false, apiUrl: 'https://studio.tayang.app/api' }),
+  authLogout: vi.fn(),
+  onAuthChanged: vi.fn().mockResolvedValue(() => {}),
+}));
 vi.mock('@/lib/scheduler', () => ({ sendTestNotification: vi.fn() }));
 vi.mock('@tauri-apps/plugin-autostart', () => ({ enable: vi.fn(), disable: vi.fn() }));
 
 import * as ipc from '@/lib/ipc';
+import * as authIpc from '@/lib/auth';
+import { openUrl } from '@tauri-apps/plugin-opener';
 import { Agents } from '@/screens/Agents';
 import { Calendar } from '@/screens/Calendar';
 import { sendTestNotification } from '@/lib/scheduler';
@@ -1636,7 +1651,7 @@ describe('Settings', () => {
     render(<SettingsScreen />);
     const input = await screen.findByLabelText('API address');
     expect(input).toHaveValue('https://studio.tayang.app/api');
-    expect(screen.getByText('Used for built-in styles and install stats')).toBeInTheDocument();
+    expect(screen.getByText('Used for built-in styles, signing in and install stats')).toBeInTheDocument();
     expect(screen.getByText('Leave it empty to use https://studio.tayang.app/api')).toBeInTheDocument();
     expect(input).toHaveAttribute('placeholder', 'https://studio.tayang.app/api');
     await userEvent.clear(input);
@@ -1662,6 +1677,15 @@ describe('Settings', () => {
     await userEvent.clear(input);
     await userEvent.tab();
     await waitFor(() => expect(ipc.updateSettings).toHaveBeenCalledWith({ apiUrl: 'https://studio.tayang.app/api' }));
+  });
+
+  it('signs in with Google through the API, not tayang.app', async () => {
+    render(<SettingsScreen />);
+    expect(screen.queryByRole('button', { name: /tayang\.app/ })).not.toBeInTheDocument();
+    await userEvent.click(await screen.findByRole('button', { name: 'Sign in with Google' }));
+    expect(authIpc.authStart).toHaveBeenCalled();
+    expect(await screen.findByText('ABCD-EFGH')).toBeInTheDocument();
+    expect(openUrl).not.toHaveBeenCalledWith('https://tayang.app');
   });
 
   it('says existing projects stay put when the working folder changes', async () => {
