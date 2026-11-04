@@ -458,6 +458,13 @@ impl Db {
         let tx = conn.transaction()?;
         tx.execute("DELETE FROM styles WHERE source = 'builtin'", [])?;
         for s in styles {
+            let existing: Option<String> =
+                tx.query_row("SELECT source FROM styles WHERE id = ?1", [&s.id], |r| r.get(0)).optional()?;
+            if existing.is_some() {
+                // Only built-in rows were deleted above, so this one belongs to the user.
+                eprintln!("style sync: skipping built-in \"{}\", a style of that id already exists", s.id);
+                continue;
+            }
             let engine = match s.engine {
                 Some(e) => serde_json::to_value(e)?.as_str().map(str::to_string),
                 None => None,
@@ -824,6 +831,19 @@ mod tests {
         db.replace_builtin_styles(&[]).unwrap();
         assert_eq!(db.get_style("mine-1").unwrap().unwrap(), edited);
         assert!(db.get_style("atlas").unwrap().is_none());
+    }
+
+    #[test]
+    fn sync_never_overwrites_a_row_that_is_not_built_in() {
+        let db = db();
+        let mine = Style { id: "clash".into(), name: "Mine".into(), source: StyleSource::Mine, ..builtin("clash", false) };
+        let copied = Style { id: "clash2".into(), name: "Copied".into(), source: StyleSource::Copied, ..builtin("clash2", false) };
+        db.save_style(&mine).unwrap();
+        db.save_style(&copied).unwrap();
+        db.replace_builtin_styles(&[builtin("clash", true), builtin("clash2", true), builtin("ok", true)]).unwrap();
+        assert_eq!(db.get_style("clash").unwrap().unwrap(), mine);
+        assert_eq!(db.get_style("clash2").unwrap().unwrap(), copied);
+        assert_eq!(db.get_style("ok").unwrap().unwrap().source, StyleSource::Builtin);
     }
 
     #[test]
