@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { AgentId, Chat, MessagePart, Project } from '@tayang/shared';
-import { SKIP_FRAME_CHECK } from '@tayang/skills';
 import { Button } from '@/components/Button';
 import { Composer } from '@/components/Composer';
 import { MessageList } from '@/components/MessageList';
@@ -13,6 +12,7 @@ import { TurnRail } from '@/components/TurnRail';
 import { StepBar } from '@/components/StepBar';
 import { getChat, listProjects, mediaProbe, mediaRender, renderCommand, updateProject, type RenderCommand } from '@/lib/ipc';
 import { LANGUAGE_NAMES } from '@/i18n';
+import { projectSendOptions } from '@/lib/openProject';
 import { useApp } from '@/state/app';
 import { headPermission, useChat, type SendOpts } from '@/state/chat';
 import { useUsage } from '@/state/usage';
@@ -90,16 +90,7 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
   }, [streaming, messages]);
 
   /** What every send from this screen carries: the composer's and an answered A2UI surface's alike. */
-  const sendOptions = (prompt: MessagePart[]): SendOpts => {
-    // The brief's frame check applies to projects made while it was on; this covers turning it off later.
-    const skip = useApp.getState().settings?.frameCheck === false;
-    const job = project ? { projectId: project.id, title: project.title } : undefined;
-    return {
-      job,
-      agentId: agent,
-      ...(skip ? { promptParts: [{ type: 'text', text: SKIP_FRAME_CHECK }, ...prompt] } : {}),
-    };
-  };
+  const sendOptions = (prompt: MessagePart[]): SendOpts => projectSendOptions(project, agent, prompt);
 
   const send = (parts: MessagePart[]) => {
     void useChat.getState().send(chatId, parts, sendOptions(parts));

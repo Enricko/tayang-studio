@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Sparkles } from 'lucide-react';
 import type { Project } from '@tayang/shared';
 import { Button } from '@/components/Button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { setSchedule } from '@/lib/ipc';
+import { askAgentToSchedule } from '@/lib/openProject';
 
 const pad = (n: number) => String(n).padStart(2, '0');
 const dateValue = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -70,6 +72,19 @@ export function ScheduleDialog({
     }
   };
 
+  const agentPick = async () => {
+    if (!target || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await askAgentToSchedule(target, () => onOpenChange(false));
+    } catch {
+      setError(t('schedule.cantAsk'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const iso = localToIso(date, time);
 
   return (
@@ -115,6 +130,12 @@ export function ScheduleDialog({
           {target?.scheduledAt && (
             <Button variant="ghost" className="mr-auto" disabled={busy} onClick={() => void save(null)}>
               {t('schedule.clear')}
+            </Button>
+          )}
+          {target && (
+            <Button variant="secondary" disabled={busy} onClick={() => void agentPick()}>
+              <Sparkles size={16} strokeWidth={1.5} aria-hidden="true" />
+              {t('schedule.agentPick')}
             </Button>
           )}
           <Button disabled={busy || !target || !iso} onClick={() => void save(iso)}>
