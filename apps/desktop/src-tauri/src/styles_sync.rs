@@ -68,7 +68,8 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
 
-/// `TAYANG_API_URL` (when set and non-empty) wins over the stored `apiUrl`; never stored.
+/// `TAYANG_API_URL` (when set and non-empty) wins over the stored `apiUrl`; never stored and
+/// used as given (no /api migration), e.g. `TAYANG_API_URL=http://localhost:8787/api`.
 pub fn effective_api_url(settings: &crate::types::Settings) -> String {
     resolve_api_url(std::env::var("TAYANG_API_URL").ok(), settings)
 }

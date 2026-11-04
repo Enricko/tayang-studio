@@ -104,6 +104,18 @@ const SLOT_SELECT: &str = "SELECT id, autopilot_id AS autopilotId, due_at AS due
 
 pub const DEFAULT_API_URL: &str = "https://studio.tayang.app/api";
 
+/// The API moved under `/api` (https://studio.tayang.app/api). A saved address from before
+/// that is rewritten on read: the old production host becomes the default, a bare local dev
+/// server gets `/api`. Anything else is the user's choice and is left alone.
+fn migrate_api_url(url: &str) -> Option<String> {
+    let bare = url.strip_suffix('/').unwrap_or(url);
+    match bare {
+        "https://api.tayang.app" => Some(DEFAULT_API_URL.to_string()),
+        "http://localhost:8787" | "http://127.0.0.1:8787" => Some(format!("{bare}/api")),
+        _ => None,
+    }
+}
+
 /// Ids of the hard-coded built-ins older versions seeded; they now come from the API.
 const LEGACY_BUILTIN_IDS: [&str; 3] =
     ["builtin-bold-explainer", "builtin-kinetic-quote", "builtin-news-recap"];
@@ -311,6 +323,9 @@ impl Db {
             if let (Ok(val), Some(obj)) = (serde_json::from_str::<Value>(&raw), v.as_object_mut()) {
                 obj.insert(k, val);
             }
+        }
+        if let Some(new) = v.get("apiUrl").and_then(Value::as_str).and_then(migrate_api_url) {
+            v["apiUrl"] = Value::String(new);
         }
         Ok(v)
     }
@@ -982,6 +997,34 @@ mod tests {
             duration_sec: None,
             created_at: "2026-01-01T00:00:00Z".into(),
             updated_at: updated.into(),
+        }
+    }
+
+    #[test]
+    fn old_api_addresses_are_migrated_on_read() {
+        let home = PathBuf::from("/home/u");
+        for (stored, want) in [
+            ("https://api.tayang.app", DEFAULT_API_URL),
+            ("https://api.tayang.app/", DEFAULT_API_URL),
+            ("http://localhost:8787", "http://localhost:8787/api"),
+            ("http://localhost:8787/", "http://localhost:8787/api"),
+            ("http://127.0.0.1:8787", "http://127.0.0.1:8787/api"),
+            ("http://127.0.0.1:8787/", "http://127.0.0.1:8787/api"),
+            // Anything else is left alone.
+            ("http://localhost:8787/api", "http://localhost:8787/api"),
+            ("http://localhost:8787/v2", "http://localhost:8787/v2"),
+            ("https://api.tayang.app/v1", "https://api.tayang.app/v1"),
+            ("http://localhost:8790", "http://localhost:8790"),
+            ("https://mine.test", "https://mine.test"),
+        ] {
+            let db = db();
+            db.conn()
+                .execute("INSERT INTO settings (key, value) VALUES ('apiUrl', ?1)", [json!(stored).to_string()])
+                .unwrap();
+            assert_eq!(db.get_settings(&home).api_url, want, "{stored}");
+            assert_eq!(db.get_settings(&home).api_url, want, "idempotent: {stored}");
+            // A later save of another key keeps the migrated address.
+            assert_eq!(db.update_settings(json!({"fps": 60})).unwrap().api_url, want, "{stored}");
         }
     }
 
