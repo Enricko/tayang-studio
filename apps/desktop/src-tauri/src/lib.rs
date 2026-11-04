@@ -81,6 +81,8 @@ pub fn run() {
             commands::get_agent_usage,
             commands::sync_styles,
             commands::install_style_template,
+            commands::render_command,
+            commands::write_brief,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Tayang Studio");

@@ -1,14 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link2 } from 'lucide-react';
+import { Link2, Loader2 } from 'lucide-react';
 import type { Style as StyleT, StyleAspect } from '@tayang/shared';
-import { BUILTIN_STYLES } from '@tayang/skills';
 import { Button } from '@/components/Button';
 import { Oyen } from '@/components/Oyen';
 import { PermissionCard } from '@/components/PermissionCard';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
-import { deleteStyle, listStyles, saveStyle } from '@/lib/ipc';
+import { deleteStyle, listStyles, saveStyle, syncStyles } from '@/lib/ipc';
 import { cn } from '@/lib/utils';
 import { useApp } from '@/state/app';
 import { useStudy } from '@/state/study';
@@ -58,6 +57,8 @@ function swatch(id: string) {
   for (const c of id) h = (h * 31 + c.charCodeAt(0)) >>> 0;
   return SWATCHES[h % SWATCHES.length]!;
 }
+
+const ENGINE_LABEL = { remotion: 'Remotion', hyperframes: 'HyperFrames' } as const;
 
 function sourceLabel(s: StyleT): string {
   if (s.source === 'builtin') return 'Built in';
@@ -198,16 +199,21 @@ function Detail({ style, onChanged }: { style: StyleT; onChanged(): void }) {
           <span className="text-base font-medium">{style.name}</span>
         )}
         <span className="text-xs text-text-3">{sourceLabel(style)}</span>
+        {style.engine && <span className="font-mono text-xs text-text-3">{ENGINE_LABEL[style.engine]}</span>}
       </div>
-      <div className="flex gap-1" aria-label="Sampled frames">
-        {[0, 1, 2, 3, 4, 5].map((i) => (
-          <span
-            key={i}
-            className="aspect-[9/16] flex-1 rounded-sm border border-[#333]"
-            style={{ background: bg, opacity: 1 - i * 0.08 }}
-          />
-        ))}
-      </div>
+      {style.previewUrl ? (
+        <img src={style.previewUrl} alt="" className="aspect-video w-full rounded-md border border-[#333] object-cover" />
+      ) : (
+        <div className="flex gap-1" aria-label="Sampled frames">
+          {[0, 1, 2, 3, 4, 5].map((i) => (
+            <span
+              key={i}
+              className="aspect-[9/16] flex-1 rounded-sm border border-[#333]"
+              style={{ background: bg, opacity: 1 - i * 0.08 }}
+            />
+          ))}
+        </div>
+      )}
       {notes.length > 0 && (
         <dl className="m-0 flex flex-col gap-2">
           {notes.map((a) => (
@@ -256,7 +262,7 @@ function Detail({ style, onChanged }: { style: StyleT; onChanged(): void }) {
           </>
         ) : (
           <>
-            <Button variant="secondary" className="h-9 px-3 text-[13px]" onClick={() => navigate({ name: 'chat-new' })}>
+            <Button variant="secondary" className="h-9 px-3 text-[13px]" onClick={() => navigate({ name: 'chat-new', ...(style.template ? { styleId: style.id } : {}) })}>
               Use in a new chat
             </Button>
             <Button variant="ghost" className="h-9 px-3 text-[13px]" onClick={() => setEditing(true)}>
@@ -285,6 +291,24 @@ export function Style() {
   const [sel, setSel] = useState<string | null>(null);
   const [url, setUrl] = useState('');
   const [urlError, setUrlError] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(true);
+  const [offline, setOffline] = useState(false);
+
+  // Built-in styles come from the API: refresh them whenever the screen opens.
+  useEffect(() => {
+    let alive = true;
+    syncStyles()
+      .then((r) => {
+        if (!alive) return;
+        setOffline(r.offline);
+        setVersion((v) => v + 1);
+      })
+      .catch(() => alive && setOffline(true))
+      .finally(() => alive && setSyncing(false));
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -296,10 +320,8 @@ export function Style() {
     };
   }, [version, savedVersion]);
 
-  const all = useMemo(() => {
-    const ids = new Set(stored.map((s) => s.id));
-    return [...BUILTIN_STYLES.filter((b) => !ids.has(b.id)), ...stored];
-  }, [stored]);
+  const all = stored;
+  const hasBuiltin = useMemo(() => stored.some((s) => s.source === 'builtin'), [stored]);
   const shown = all.filter((s) => tab === 'all' || s.source === tab);
   const current = all.find((s) => s.id === sel) ?? shown[0] ?? all[0];
 
@@ -368,7 +390,18 @@ export function Style() {
               ))}
             </TabsList>
           </Tabs>
-          {shown.length === 0 && <p className="m-0 text-sm text-text-3">Nothing here yet</p>}
+          {syncing && (
+            <p role="status" className="m-0 flex items-center gap-2 text-xs text-text-3">
+              <Loader2 size={14} strokeWidth={1.5} aria-hidden="true" className="animate-spin" />
+              Updating built-in styles
+            </p>
+          )}
+          {!syncing && offline && (
+            <p className="m-0 text-xs text-text-3">
+              {hasBuiltin ? 'Built-in styles are from your last sync' : 'Connect to the internet to load built-in styles'}
+            </p>
+          )}
+          {shown.length === 0 && !syncing && <p className="m-0 text-sm text-text-3">Nothing here yet</p>}
           <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(148px, 1fr))' }}>
             {shown.map((s) => {
               const on = current?.id === s.id;
@@ -384,15 +417,25 @@ export function Style() {
                     on ? 'border-primary bg-card' : 'border-transparent bg-transparent',
                   )}
                 >
-                  <div
-                    className="mb-1 flex aspect-[9/16] flex-col justify-between rounded-md border border-[#333] p-3"
-                    style={{ background: bg, color: fg }}
-                  >
-                    <span className="font-mono text-[9px] uppercase opacity-80">{s.source === 'builtin' ? 'Style' : s.source}</span>
-                    <span className="text-xl leading-[1.02] font-extrabold tracking-[-0.02em]">{s.name}</span>
-                  </div>
+                  {s.previewUrl ? (
+                    <img
+                      src={s.previewUrl}
+                      alt=""
+                      loading="lazy"
+                      className="mb-1 aspect-[9/16] w-full rounded-md border border-[#333] object-cover"
+                    />
+                  ) : (
+                    <div
+                      className="mb-1 flex aspect-[9/16] flex-col justify-between rounded-md border border-[#333] p-3"
+                      style={{ background: bg, color: fg }}
+                    >
+                      <span className="font-mono text-[9px] uppercase opacity-80">{s.source === 'builtin' ? 'Style' : s.source}</span>
+                      <span className="text-xl leading-[1.02] font-extrabold tracking-[-0.02em]">{s.name}</span>
+                    </div>
+                  )}
                   <span className="text-[13px] font-medium">{s.name}</span>
                   <span className="text-xs text-text-3">{sourceLabel(s)}</span>
+                  {s.template && <span className="text-xs text-text-3">Starts from a working project</span>}
                 </button>
               );
             })}

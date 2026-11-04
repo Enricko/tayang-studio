@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link2, Lightbulb, Disc3 } from 'lucide-react';
+import { Link2, Lightbulb, Disc3, X } from 'lucide-react';
 import type { AgentId, MessagePart, Project, Style, VideoKind } from '@tayang/shared';
-import { BUILTIN_STYLES, buildProjectBrief, buildTopicIdeasPrompt, parseTopicIdeas } from '@tayang/skills';
+import { buildProjectBrief, buildTopicIdeasPrompt, parseTopicIdeas } from '@tayang/skills';
 import oyen from '@/assets/brand/oyen-expr-default.svg';
 import { Composer, type MentionRef } from '@/components/Composer';
 import { MessageList } from '@/components/MessageList';
 import { PermissionCard } from '@/components/PermissionCard';
-import { createChat, createProject, listProjects, listStyles } from '@/lib/ipc';
+import { addMessage, createChat, createProject, installStyleTemplate, listProjects, listStyles, writeBrief } from '@/lib/ipc';
 import { useApp } from '@/state/app';
 import { headPermission, useChat } from '@/state/chat';
 import { useUsage } from '@/state/usage';
@@ -23,6 +23,10 @@ function agentText(parts: MessagePart[]) {
 export function ChatNew() {
   const settings = useApp((s) => s.settings);
   const navigate = useApp((s) => s.navigate);
+  const routeStyleId = useApp((s) => (s.route.name === 'chat-new' ? (s.route.styleId ?? null) : null));
+  // The template the user picked on the Style screen; kept until a topic starts a project, or the user removes it.
+  const [styleId, setStyleId] = useState<string | null>(routeStyleId);
+  const [pendingStyle, setPendingStyle] = useState<Style | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [chatId, setChatId] = useState<string | null>(null);
   const [mention, setMention] = useState<MentionRef | null>(null);
@@ -56,6 +60,17 @@ export function ChatNew() {
     }
     setPicked(next);
   };
+
+  useEffect(() => {
+    if (!styleId) return;
+    let alive = true;
+    listStyles()
+      .then((all) => alive && setPendingStyle(all.find((s) => s.id === styleId) ?? null))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [styleId]);
 
   useEffect(() => {
     useChat.getState().listen();
@@ -92,7 +107,7 @@ export function ChatNew() {
       if (part.type !== 'mention' || seen.includes(part.projectId)) continue;
       const p = projects.find((x) => x.id === part.projectId);
       if (!p || !settings) continue;
-      const style = [...styles, ...BUILTIN_STYLES].find((s) => s.id === p.styleId) ?? null;
+      const style = styles.find((s) => s.id === p.styleId) ?? null;
       out.push({
         type: 'text',
         text: `The user attached the video "${p.title}". Its project folder is ${p.folder}.\n\n${buildProjectBrief(p, style, settings)}`,
@@ -138,22 +153,56 @@ export function ChatNew() {
     if (!settings || busy) return;
     setBusy(true);
     try {
-      const input = { title: idea.title, kind: idea.kind, format: settings.format, language: settings.language };
+      let style: Style | null = null;
+      let styleProblem: string | null = null;
+      if (styleId) {
+        try {
+          style = (await listStyles()).find((s) => s.id === styleId) ?? null;
+          if (!style) styleProblem = 'that style is no longer in your library';
+        } catch (e) {
+          styleProblem = e instanceof Error ? e.message : String(e);
+        }
+      }
+      const input = {
+        title: idea.title,
+        kind: idea.kind,
+        format: settings.format,
+        language: settings.language,
+        ...(style ? { styleId: style.id } : {}),
+      };
       const draft: Project = {
         id: '',
         slug: '',
         folder: '',
         status: 'draft',
-        styleId: null,
+        styleId: style?.id ?? null,
         scheduledAt: null,
         durationSec: null,
         createdAt: '',
         updatedAt: '',
         ...input,
       };
-      const project = await createProject(input, buildProjectBrief(draft, null, settings));
+      const project = await createProject(input, buildProjectBrief(draft, style, settings));
       useApp.getState().bumpProjects();
       const chat = await createChat(project.id, agent, idea.title);
+      const say = (text: string) => addMessage(chat.id, 'system', [{ type: 'text', text }]).catch(() => {});
+      if (styleProblem) await say(`Couldn't set up the template: ${styleProblem}. Continuing without it.`);
+      if (style?.template) {
+        await say(`Setting up the ${style.name} template…`);
+        let reason: string | null = null;
+        try {
+          const r = await installStyleTemplate(project.id);
+          if (!r.installed) reason = 'the template files were not added';
+        } catch (e) {
+          reason = e instanceof Error ? e.message : String(e);
+        }
+        if (reason !== null) {
+          // The brief promised a template: take that promise back.
+          await writeBrief(project.id, buildProjectBrief(draft, { ...style, template: null }, settings)).catch(() => {});
+          await say(`Couldn't set up the ${style.name} template: ${reason}. Continuing without it.`);
+        }
+      }
+      setStyleId(null);
       navigate({ name: 'chat', chatId: chat.id });
       void useChat
         .getState()
@@ -231,6 +280,22 @@ export function ChatNew() {
         </div>
 
         <div className="w-full max-w-[720px] pb-6 pt-4">
+          {styleId && pendingStyle?.template && (
+            <div
+              title="Pick a topic to start from this template"
+              className="mb-2 inline-flex items-center gap-1 rounded-full border border-border bg-card py-1 pr-1 pl-3 text-xs text-text-2"
+            >
+              <span>Starting from the {pendingStyle.name} template</span>
+              <button
+                type="button"
+                aria-label={`Remove the ${pendingStyle.name} template`}
+                onClick={() => setStyleId(null)}
+                className="inline-flex size-5 cursor-pointer items-center justify-center rounded-full text-text-3 hover:text-foreground"
+              >
+                <X size={12} strokeWidth={1.5} aria-hidden="true" />
+              </button>
+            </div>
+          )}
           <Composer
             chatId={chatId}
             ensureChat={() => ensureChat('New chat')}

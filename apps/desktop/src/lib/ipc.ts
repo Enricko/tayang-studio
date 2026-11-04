@@ -49,6 +49,14 @@ export const addMessage = (chatId: string, role: ChatMessage['role'], parts: Mes
 
 // ---- styles ----
 export const listStyles = () => invoke<Style[]>('list_styles');
+/** What `sync_styles` returns: the built-in styles now in the library, and whether the API was out of reach. */
+export interface StylesSync {
+  styles: Style[];
+  offline: boolean;
+}
+export const syncStyles = () => invoke<StylesSync>('sync_styles');
+export const installStyleTemplate = (projectId: string) =>
+  invoke<{ installed: boolean }>('install_style_template', { projectId });
 export const saveStyle = (style: Style) => invoke<void>('save_style', { style });
 export const deleteStyle = (id: string) => invoke<void>('delete_style', { id });
 export const readStyleResult = (studyId: string) =>
@@ -78,6 +86,12 @@ export const mediaExtractFrame = (projectId: string, timeSec: number) =>
   invoke<string>('media_extract_frame', { projectId, timeSec });
 export const mediaThumbnails = (projectId: string, count: number) =>
   invoke<string[]>('media_thumbnails', { projectId, count });
+export interface RenderCommand {
+  install: string[] | null;
+  render: string[];
+}
+export const renderCommand = (projectId: string) => invoke<RenderCommand | null>('render_command', { projectId });
+export const writeBrief = (projectId: string, brief: string) => invoke<void>('write_brief', { projectId, brief });
 export const mediaRender = (projectId: string) => invoke<string>('media_render', { projectId });
 
 /** URL the webview can load for a file on disk. */

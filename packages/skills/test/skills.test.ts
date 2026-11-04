@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { Project, Settings, SystemInfo } from '@tayang/shared';
+import type { Project, Settings, Style, SystemInfo } from '@tayang/shared';
 import {
-  BUILTIN_STYLES,
   FRAME_CHECK_PROMPT,
   buildInstallPrompt,
   buildProjectBrief,
@@ -113,18 +112,42 @@ describe('style', () => {
     const w = buildStudyStylePrompt('https://v', 'C:\\Users\\a b\\x');
     expect(w).toContain('`"C:\\Users\\a b\\x\\style.json"`');
   });
-  it('builtins', () => {
-    expect(BUILTIN_STYLES.length).toBe(3);
-    expect(BUILTIN_STYLES[0]!.id).toBe('builtin-bold-explainer');
-  });
 });
 
+const STYLE: Style = {
+  id: 'copied-1',
+  name: 'Bold explainer',
+  source: 'copied',
+  sourceUrl: null,
+  notes: {},
+  prompt: 'Navy background, white heavy sans.',
+  createdAt: '2026-11-04T00:00:00Z',
+};
+
 describe('brief', () => {
+  it('adds the template paragraph for template styles', () => {
+    const project = { title: 'Promo', kind: 'promo', format: '9:16', language: 'id' } as Project;
+    const t: Style = {
+      ...STYLE,
+      name: 'Atlas journey',
+      source: 'builtin',
+      engine: 'remotion',
+      template: { sha256: 'a', size: 1, version: 1 },
+    };
+    const b = buildProjectBrief(project, t, { fps: 30, frameCheck: false });
+    expect(b).toContain(
+      'This project starts from the Atlas journey template. Read STYLE.md first, then run the install command in tayang.json once. Render with the command in tayang.json.',
+    );
+    expect(b).not.toContain('npx -y hyperframes');
+    expect(b).not.toContain('Use HyperFrames');
+    expect(b).toContain('Follow STYLE.md for the toolchain; install and render with the commands in tayang.json.');
+    expect(buildProjectBrief(project, STYLE, { fps: 30, frameCheck: false })).not.toContain('template');
+  });
   it('contains style prompt and Frames checked', () => {
     const project = { title: 'Promo', kind: 'promo', format: '9:16', language: 'id' } as Project;
     const settings = { fps: 30, frameCheck: true } as Settings;
-    const b = buildProjectBrief(project, BUILTIN_STYLES[0]!, settings);
-    expect(b).toContain(BUILTIN_STYLES[0]!.prompt);
+    const b = buildProjectBrief(project, STYLE, settings);
+    expect(b).toContain(STYLE.prompt);
     expect(b).toContain('Frames checked');
     expect(b).toContain(FRAME_CHECK_PROMPT);
     expect(b).toContain('npx hyperframes');

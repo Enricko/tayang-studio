@@ -265,6 +265,11 @@ pub fn render_plan(folder: &Path, unix_secs: u64) -> Result<Option<RenderPlan>> 
     Ok(Some(RenderPlan { install, render, output }))
 }
 
+/// The render command to show the user: the `tayang.json` one, or `None` for the HyperFrames default.
+pub fn render_command(folder: &Path, unix_secs: u64) -> Result<Option<RenderPlan>> {
+    render_plan(folder, unix_secs)
+}
+
 /// Resolves argv[0] the way detection does (GUI apps can start with a minimal PATH).
 fn argv_command(argv: &[String], folder: &Path) -> Command {
     let exec = crate::system::RealExec;
@@ -456,6 +461,28 @@ mod tests {
         // Installed already: no install step.
         std::fs::create_dir_all(folder.join("node_modules")).unwrap();
         assert!(render_plan(&folder, 1700).unwrap().unwrap().install.is_none());
+    }
+
+    #[test]
+    fn render_command_is_the_manifest_render_argv() {
+        let tmp = tempfile::tempdir().unwrap();
+        let folder = tmp.path().join("v");
+        std::fs::create_dir_all(&folder).unwrap();
+        assert_eq!(render_command(&folder, 5).unwrap(), None);
+        std::fs::write(folder.join("tayang.json"), r#"{"render":["npx","remotion","render","{output}"]}"#).unwrap();
+        let out = Path::new("renders").join("v-5.mp4");
+        let plan = render_command(&folder, 5).unwrap().unwrap();
+        assert_eq!(plan.render, ["npx", "remotion", "render", out.to_str().unwrap()]);
+        assert_eq!(plan.install, None);
+        std::fs::write(
+            folder.join("tayang.json"),
+            r#"{"render":["npx","remotion","render","{output}"],"install":["npm","install"]}"#,
+        )
+        .unwrap();
+        let plan = render_command(&folder, 5).unwrap().unwrap();
+        assert_eq!(plan.install, Some(vec!["npm".to_string(), "install".to_string()]));
+        std::fs::create_dir_all(folder.join("node_modules")).unwrap();
+        assert_eq!(render_command(&folder, 5).unwrap().unwrap().install, None, "installed already");
     }
 
     #[test]

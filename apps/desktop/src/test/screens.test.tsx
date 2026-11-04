@@ -1,7 +1,7 @@
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AgentInfo, AgentUpdate, Job, PermissionRequest, Project, Settings } from '@tayang/shared';
+import type { AgentInfo, AgentUpdate, Job, PermissionRequest, Project, Settings, Style as StyleT } from '@tayang/shared';
 
 vi.mock('@/lib/ipc', () => ({
   listProjects: vi.fn(),
@@ -9,6 +9,7 @@ vi.mock('@/lib/ipc', () => ({
   listChats: vi.fn(),
   createChat: vi.fn(),
   listStyles: vi.fn(),
+  syncStyles: vi.fn(),
   saveStyle: vi.fn(),
   deleteStyle: vi.fn(),
   readStyleResult: vi.fn(),
@@ -94,6 +95,7 @@ beforeEach(() => {
   useApp.setState({ settings, needsYouCount: 0, route: { name: 'videos' } });
   vi.mocked(ipc.listProjects).mockResolvedValue([]);
   vi.mocked(ipc.listStyles).mockResolvedValue([]);
+  vi.mocked(ipc.syncStyles).mockResolvedValue({ styles: [], offline: false });
   vi.mocked(ipc.listJobs).mockResolvedValue([]);
   vi.mocked(ipc.detectAgents).mockResolvedValue(agents);
   vi.mocked(ipc.checkTools).mockResolvedValue([]);
@@ -166,6 +168,65 @@ describe('Style', () => {
       unmount();
       useStudy.getState().dismiss();
     }
+  });
+});
+
+const atlas: StyleT = {
+  id: 'atlas-journey',
+  name: 'Atlas journey',
+  source: 'builtin',
+  sourceUrl: null,
+  notes: { camera: 'Map fly-through' },
+  prompt: 'Fly over a map.',
+  createdAt: '2026-11-04T00:00:00Z',
+  engine: 'remotion',
+  previewUrl: 'https://api.tayang.app/v1/styles/atlas-journey/preview',
+  template: { sha256: 'a', size: 1, version: 1 },
+};
+const plain: StyleT = { ...atlas, id: 'plain', name: 'Plain look', engine: 'hyperframes', previewUrl: null, template: null };
+
+describe('Style built-in styles from the API', () => {
+  it('syncs on open and shows the synced styles with preview images', async () => {
+    let done: (r: { styles: StyleT[]; offline: boolean }) => void = () => {};
+    vi.mocked(ipc.syncStyles).mockReturnValue(new Promise((res) => (done = res)));
+    vi.mocked(ipc.listStyles).mockResolvedValue([atlas, plain]);
+    const { container } = render(<Style />);
+    expect(await screen.findByText('Updating built-in styles')).toBeInTheDocument();
+    await act(async () => done({ styles: [atlas, plain], offline: false }));
+    expect(await screen.findByText('Starts from a working project')).toBeInTheDocument();
+    expect(ipc.syncStyles).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('Updating built-in styles')).not.toBeInTheDocument();
+    expect(container.querySelector('img')).toHaveAttribute('src', atlas.previewUrl);
+    expect(screen.queryByText('Built-in styles are from your last sync')).not.toBeInTheDocument();
+    expect(screen.getAllByText('Plain look').length).toBeGreaterThan(0);
+  });
+
+  it('shows the engine in the detail', async () => {
+    vi.mocked(ipc.syncStyles).mockResolvedValue({ styles: [atlas], offline: false });
+    vi.mocked(ipc.listStyles).mockResolvedValue([atlas]);
+    render(<Style />);
+    expect(await screen.findByText('Remotion')).toBeInTheDocument();
+  });
+
+  it('offline with cached styles says they are from the last sync', async () => {
+    vi.mocked(ipc.syncStyles).mockResolvedValue({ styles: [atlas], offline: true });
+    vi.mocked(ipc.listStyles).mockResolvedValue([atlas]);
+    render(<Style />);
+    expect(await screen.findByText('Built-in styles are from your last sync')).toBeInTheDocument();
+  });
+
+  it('offline with nothing cached asks to connect', async () => {
+    vi.mocked(ipc.syncStyles).mockResolvedValue({ styles: [], offline: true });
+    render(<Style />);
+    expect(await screen.findByText('Connect to the internet to load built-in styles')).toBeInTheDocument();
+  });
+
+  it('Use in a new chat carries the style', async () => {
+    vi.mocked(ipc.syncStyles).mockResolvedValue({ styles: [atlas], offline: false });
+    vi.mocked(ipc.listStyles).mockResolvedValue([atlas]);
+    render(<Style />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Use in a new chat' }));
+    expect(useApp.getState().route).toEqual({ name: 'chat-new', styleId: 'atlas-journey' });
   });
 });
 
@@ -269,11 +330,41 @@ describe('Settings', () => {
     expect(sw).toBeChecked();
     expect(
       screen.getByText(
-        'Sends a random install ID, your system (macOS, Windows or Linux), its version and the app version once a day. Nothing about you or your videos.',
+        'Sends a random install ID, your system (macOS, Windows or Linux), its version, your computer\'s processor type and the app version once a day. Nothing about you or your videos.',
       ),
     ).toBeInTheDocument();
     await userEvent.click(sw);
     await waitFor(() => expect(ipc.updateSettings).toHaveBeenCalledWith({ shareInstallStats: false }));
+  });
+
+  it('edits the API address and explains what it is for', async () => {
+    render(<SettingsScreen />);
+    const input = await screen.findByLabelText('API address');
+    expect(input).toHaveValue('https://api.tayang.app');
+    expect(screen.getByText('Used for built-in styles and install stats')).toBeInTheDocument();
+    await userEvent.clear(input);
+    await userEvent.type(input, 'http://localhost:8787');
+    await userEvent.tab();
+    await waitFor(() => expect(ipc.updateSettings).toHaveBeenCalledWith({ apiUrl: 'http://localhost:8787' }));
+  });
+
+  it('rejects an API address that is not http(s)', async () => {
+    render(<SettingsScreen />);
+    const input = await screen.findByLabelText('API address');
+    await userEvent.clear(input);
+    await userEvent.type(input, 'ftp://nope');
+    await userEvent.tab();
+    expect(await screen.findByText('Enter an address that starts with http:// or https://')).toBeInTheDocument();
+    expect(ipc.updateSettings).not.toHaveBeenCalled();
+  });
+
+  it('clearing the API address resets it to the default', async () => {
+    useApp.setState({ settings: { ...settings, apiUrl: 'http://localhost:8787' } });
+    render(<SettingsScreen />);
+    const input = await screen.findByLabelText('API address');
+    await userEvent.clear(input);
+    await userEvent.tab();
+    await waitFor(() => expect(ipc.updateSettings).toHaveBeenCalledWith({ apiUrl: 'https://api.tayang.app' }));
   });
 
   it('says existing projects stay put when the working folder changes', async () => {

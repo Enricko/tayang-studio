@@ -46,7 +46,7 @@ tayang-desktop/
 
 ## Privacy
 
-Tayang sends a random install ID, your system (macOS, Windows or Linux), its version and the app version once a day. Nothing about you or your videos. The API stores no IP address, name or path.
+Tayang sends a random install ID, your system (macOS, Windows or Linux), its version, your computer's processor type and the app version once a day. Nothing about you or your videos. The API stores no IP address, name or path.
 
 To turn it off, open Settings › Account and switch off "Share anonymous install stats".
 
