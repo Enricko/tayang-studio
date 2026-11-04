@@ -62,6 +62,8 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
   const [ideas, setIdeas] = useState<Idea[]>(() => readCache(cacheKey));
   const [chatId, setChatId] = useState<string | null>(null);
   const [asking, setAsking] = useState(false);
+  const [making, setMaking] = useState(false);
+  const makingRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const pending = useRef(false);
 
@@ -109,12 +111,16 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
   }, [chatId, streaming, messages, cacheKey]);
 
   const makeIdea = async (idea: Idea) => {
-    if (!settings) return;
+    if (!settings || makingRef.current) return;
+    makingRef.current = true;
+    setMaking(true);
     try {
       const styles = await listStyles().catch(() => []);
       await startTopic(idea, { settings, agent: settings.defaultAgent, styles });
     } catch {
       setError("Couldn't start this video. Try again");
+      makingRef.current = false;
+      setMaking(false);
     }
   };
 
@@ -258,7 +264,7 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
                   {i.kind[0]!.toUpperCase() + i.kind.slice(1)} · {i.lengthSec}s
                 </span>
               </div>
-              <Button variant="secondary" className="h-7 shrink-0 rounded-sm px-2 text-xs" onClick={() => void makeIdea(i)}>
+              <Button variant="secondary" className="h-7 shrink-0 rounded-sm px-2 text-xs" disabled={making} onClick={() => void makeIdea(i)}>
                 Make it
               </Button>
             </div>

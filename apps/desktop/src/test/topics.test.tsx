@@ -32,6 +32,7 @@ vi.mock('@tauri-apps/plugin-opener', () => ({ openUrl: vi.fn() }));
 
 import * as ipc from '@/lib/ipc';
 import { ideasFromReply } from '@/lib/topics';
+import { Calendar } from '@/screens/Calendar';
 import { ChatNew } from '@/screens/ChatNew';
 import { useApp } from '@/state/app';
 import { useChat } from '@/state/chat';
@@ -109,6 +110,24 @@ beforeEach(() => {
   vi.mocked(ipc.listStyles).mockResolvedValue([atlas]);
   vi.mocked(ipc.createChat).mockResolvedValue({ id: 'chat-1' } as never);
   vi.mocked(ipc.createProject).mockResolvedValue({ id: 'p1', title: 'Mengapa Selat Malaka penting' } as never);
+});
+
+describe('Calendar make it', () => {
+  it('double click creates one project, with the style', async () => {
+    localStorage.setItem(
+      'tayang.ideas.2026-11-02',
+      JSON.stringify([{ title: 'Ide Kalender', kind: 'explainer', lengthSec: 30, styleId: 'atlas-journey' }]),
+    );
+    vi.mocked(ipc.createProject).mockImplementation(
+      () => new Promise((r) => setTimeout(() => r({ id: 'p1', title: 'Ide Kalender' } as never), 30)),
+    );
+    render(<Calendar today={new Date(2026, 10, 4)} />);
+    await userEvent.dblClick(await screen.findByRole('button', { name: 'Make it' }));
+    await waitFor(() => expect(ipc.createChat).toHaveBeenCalled());
+    expect(ipc.createProject).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(ipc.createProject).mock.calls[0]![0]).toMatchObject({ styleId: 'atlas-journey' });
+    localStorage.clear();
+  });
 });
 
 describe('ideasFromReply (Calendar ideas)', () => {
