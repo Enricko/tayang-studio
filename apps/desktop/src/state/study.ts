@@ -24,6 +24,8 @@ interface StudyState {
   studyId: string | null;
   /** Number of agent tool calls so far; drives the progress steps. */
   toolCalls: number;
+  /** "Ran without asking: …" lines from auto mode, oldest first. */
+  ranLog: string[];
   request: PermissionRequest | null;
   /** Requests that arrived while `request` was open, oldest first. */
   queue: PermissionRequest[];
@@ -118,7 +120,10 @@ export const useStudy = create<StudyState>((set, get) => {
       onAgentUpdate(({ chatId, update }: { chatId: string; update: AgentUpdate }) => {
         const id = get().studyId;
         if (!id || chatId !== studyChatId(id) || get().phase !== 'running') return;
-        if (update.kind === 'tool') set((s) => ({ toolCalls: s.toolCalls + (update.status === 'done' ? 1 : 0) }));
+        if (update.kind === 'tool') {
+          if (update.toolCallId.startsWith('auto-')) set((s) => ({ ranLog: [...s.ranLog, update.title] }));
+          else set((s) => ({ toolCalls: s.toolCalls + (update.status === 'done' ? 1 : 0) }));
+        }
         else if (update.kind === 'error') void fail(agentErrorText(update.message, agent));
         else if (update.kind === 'done') void finish();
       }),
@@ -136,6 +141,7 @@ export const useStudy = create<StudyState>((set, get) => {
     url: '',
     studyId: null,
     toolCalls: 0,
+    ranLog: [],
     request: null,
     queue: [],
     error: null,
@@ -145,12 +151,13 @@ export const useStudy = create<StudyState>((set, get) => {
       if (get().phase === 'running') return;
       agent = agentId;
       const studyId = newId();
-      set({ phase: 'running', url, studyId, toolCalls: 0, request: null, queue: [], error: null });
+      set({ phase: 'running', url, studyId, toolCalls: 0, ranLog: [], request: null, queue: [], error: null });
       listen();
       try {
         const dir = await studyDir(studyId);
         await writeJob('working', null);
-        await agentStart(studyChatId(studyId), agentId);
+        // Style studies always run in auto mode (the app enforces it too).
+        await agentStart(studyChatId(studyId), agentId, true);
         await agentPrompt(studyChatId(studyId), [{ type: 'text', text: buildStudyStylePrompt(url, dir) }]);
       } catch (e) {
         await fail(agentErrorText(e instanceof Error ? e.message : String(e), agentId));

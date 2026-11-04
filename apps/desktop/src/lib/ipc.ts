@@ -69,8 +69,10 @@ export const upsertJob = (job: Job) => invoke<void>('upsert_job', { job });
 
 // ---- agent ----
 /** Resolves true when Claude started without the Tayang plugin: send it the skills as text too. */
-export const agentStart = (chatId: string, agentId: AgentId) =>
-  invoke<boolean>('agent_start', { chatId, agentId });
+export const agentStart = (chatId: string, agentId: AgentId, auto?: boolean) =>
+  invoke<boolean>('agent_start', auto === undefined ? { chatId, agentId } : { chatId, agentId, auto });
+/** Auto mode for the running session: the agent runs commands without asking. */
+export const agentSetAuto = (chatId: string, on: boolean) => invoke<void>('agent_set_auto', { chatId, on });
 export const agentPrompt = (chatId: string, parts: MessagePart[]) =>
   invoke<void>('agent_prompt', { chatId, parts });
 export const agentCancel = (chatId: string) => invoke<void>('agent_cancel', { chatId });

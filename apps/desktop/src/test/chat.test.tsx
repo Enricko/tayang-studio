@@ -13,6 +13,7 @@ vi.mock('@/lib/ipc', () => ({
   listMessages: vi.fn(),
   addMessage: vi.fn(),
   agentStart: vi.fn(),
+  agentSetAuto: vi.fn().mockResolvedValue(undefined),
   agentPrompt: vi.fn(),
   agentCancel: vi.fn(),
   agentStop: vi.fn().mockResolvedValue(undefined),
@@ -71,6 +72,7 @@ const settings: Settings = {
   apiUrl: 'https://api.tayang.app',
   installId: '',
   shareInstallStats: true,
+  autoMode: false,
   lastPingAt: null,
 };
 
@@ -382,6 +384,35 @@ describe('ChatProject', () => {
     expect(screen.getAllByTestId('agent-message')).toHaveLength(1);
     await emit('c1', { kind: 'done', stopReason: 'end_turn' });
     expect(screen.getAllByTestId('agent-message')).toHaveLength(1);
+  });
+
+  it('starts with auto mode when Settings has it on, and the Auto toggle switches the running session', async () => {
+    const user = userEvent.setup();
+    useApp.setState({ settings: { ...settings, autoMode: true } });
+    render(<ChatProject chatId="c1" />);
+    const toggle = await screen.findByRole('switch', { name: 'Auto' });
+    expect(toggle).toBeChecked();
+    await user.type(screen.getByRole('textbox', { name: 'Message' }), 'go');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(ipc.agentStart).toHaveBeenCalledWith('c1', 'claude', true));
+    // Disabled while the turn streams.
+    expect(screen.getByRole('switch', { name: 'Auto' })).toBeDisabled();
+    await emit('c1', { kind: 'done', stopReason: 'end_turn' });
+    await user.click(screen.getByRole('switch', { name: 'Auto' }));
+    expect(ipc.agentSetAuto).toHaveBeenCalledWith('c1', false);
+    expect(screen.getByRole('switch', { name: 'Auto' })).not.toBeChecked();
+  });
+
+  it('Auto is off by default and a chat that has not started just remembers the toggle', async () => {
+    const user = userEvent.setup();
+    render(<ChatProject chatId="c1" />);
+    const toggle = await screen.findByRole('switch', { name: 'Auto' });
+    expect(toggle).not.toBeChecked();
+    await user.click(toggle);
+    expect(ipc.agentSetAuto).not.toHaveBeenCalled();
+    await user.type(screen.getByRole('textbox', { name: 'Message' }), 'go');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(ipc.agentStart).toHaveBeenCalledWith('c1', 'claude', true));
   });
 
   it("talks to the chat's own agent, not the default one", async () => {

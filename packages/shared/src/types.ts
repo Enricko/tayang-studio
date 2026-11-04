@@ -159,6 +159,8 @@ export interface Settings {
   shareInstallStats: boolean;
   /** RFC 3339 time of the last successful ping. */
   lastPingAt: string | null;
+  /** Chats start in auto mode: the agent runs commands without asking. Style studies always do. */
+  autoMode: boolean;
 }
 
 /** Defaults; workingFolder is `<home>/Tayang`, resolved at runtime. */
@@ -173,6 +175,7 @@ export const DEFAULT_SETTINGS: Omit<Settings, 'workingFolder'> = {
   installId: '',
   shareInstallStats: true,
   lastPingAt: null,
+  autoMode: false,
 };
 
 export type AgentUpdate =

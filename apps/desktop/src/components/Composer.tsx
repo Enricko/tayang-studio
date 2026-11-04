@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
-import { ArrowUp, Check, ChevronDown, File as FileIcon, Paperclip, Square, X } from 'lucide-react';
+import { ArrowUp, Check, ChevronDown, File as FileIcon, Paperclip, Square, X, Zap } from 'lucide-react';
 import type { AgentId, AgentInfo, MessagePart, Project } from '@tayang/shared';
 import { AgentLogo } from '@/components/AgentLogo';
 import { FrameChip } from '@/components/MessageList';
@@ -17,8 +17,9 @@ import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
 import { Textarea } from '@/components/ui/textarea';
 import { AGENT_NAMES } from '@/lib/agents';
 import { assetUrl, attachFile, detectAgents } from '@/lib/ipc';
+import { cn } from '@/lib/utils';
 import { useApp } from '@/state/app';
-import { useChat } from '@/state/chat';
+import { autoOn, useChat } from '@/state/chat';
 
 export const QUICK_CHIPS = ['Faster pace', 'Bigger text', 'Change colors', 'Add music', 'Make it 15s'];
 
@@ -163,6 +164,7 @@ export function Composer({
 }) {
   const defaultAgent = useApp((s) => s.settings?.defaultAgent ?? 'claude');
   const agent = agentId ?? defaultAgent;
+  const auto = useChat((s) => autoOn(s, chatId));
   const attachments = useChat((s) => (chatId ? s.attachments[chatId] : undefined)) ?? NONE;
   const [text, setText] = useState('');
   const [dismissed, setDismissed] = useState<string | null>(null);
@@ -400,6 +402,24 @@ export function Composer({
                   <AgentLogo id={agent} size={14} />
                   {AGENT_NAMES[agent]}
                   <ChevronDown size={12} strokeWidth={1.5} aria-hidden="true" />
+                </button>
+              )}
+              {onAgentChange && (
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={auto}
+                  aria-label="Auto"
+                  title="Your agent runs commands without asking"
+                  disabled={disabled}
+                  onClick={() => void useChat.getState().setAuto(chatId, !auto)}
+                  className={cn(
+                    'inline-flex h-7 cursor-pointer items-center gap-1 rounded-sm border-none px-2 text-xs font-medium disabled:cursor-default disabled:opacity-50',
+                    auto ? 'bg-tint text-orange-light' : 'bg-transparent text-text-2 hover:text-foreground',
+                  )}
+                >
+                  <Zap size={14} strokeWidth={1.5} aria-hidden="true" />
+                  Auto
                 </button>
               )}
               {projects && (

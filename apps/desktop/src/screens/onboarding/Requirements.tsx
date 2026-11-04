@@ -92,7 +92,7 @@ export function Requirements() {
           <p className="text-base leading-[1.6] text-text-2">
             Videos render on your computer, so Tayang needs a few tools. If something is missing, your agent installs
             it. Tayang shows you every command your agent asks to run, and nothing it asks about runs until you allow
-            it.
+            it. Installs always ask, even if you turn on Auto mode for chats.
           </p>
         </div>
 

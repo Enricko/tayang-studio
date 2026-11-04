@@ -55,6 +55,7 @@ const settings: Settings = {
   apiUrl: 'https://api.tayang.app',
   installId: '',
   shareInstallStats: true,
+  autoMode: false,
   lastPingAt: null,
 };
 

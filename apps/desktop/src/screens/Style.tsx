@@ -116,7 +116,7 @@ function StudyBox() {
                   className={cn(
                     'size-1.5 rounded-full',
                     i < active && 'bg-text-3',
-                    i === active && 'bg-primary',
+                    i === active && 'tayang-pulse bg-primary',
                     i > active && 'border border-[#4A4A4A]',
                   )}
                 />
@@ -126,6 +126,15 @@ function StudyBox() {
           </div>
         </div>
       </div>
+      {study.ranLog.length > 0 && (
+        <ul aria-label="Commands run without asking" className="m-0 flex list-none flex-col gap-1 p-0">
+          {study.ranLog.slice(-4).map((line, i) => (
+            <li key={`${study.ranLog.length}-${i}`} className="truncate font-mono text-xs text-text-3" title={line}>
+              {line}
+            </li>
+          ))}
+        </ul>
+      )}
       {study.request && (
         <PermissionCard
           request={study.request}

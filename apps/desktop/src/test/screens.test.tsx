@@ -17,6 +17,7 @@ vi.mock('@/lib/ipc', () => ({
   listJobs: vi.fn(),
   upsertJob: vi.fn(),
   agentStart: vi.fn(),
+  agentSetAuto: vi.fn(),
   agentPrompt: vi.fn(),
   agentCancel: vi.fn(),
   agentStop: vi.fn().mockResolvedValue(undefined),
@@ -65,6 +66,7 @@ const settings: Settings = {
   apiUrl: 'https://api.tayang.app',
   installId: '',
   shareInstallStats: true,
+  autoMode: false,
   lastPingAt: null,
 };
 
@@ -149,6 +151,23 @@ describe('Style', () => {
     expect(chatId).toMatch(/^study-/);
     expect(JSON.stringify(parts)).toContain('/w/Tayang/.tayang/style-study/s1');
   });
+  it('runs in auto mode: no Allow card, and shows the commands it ran without asking', async () => {
+    vi.mocked(ipc.studyDir).mockResolvedValue('/w/s');
+    render(<Style />);
+    await userEvent.type(screen.getByLabelText('Video link'), 'https://youtu.be/abc');
+    await userEvent.click(screen.getByRole('button', { name: 'Study video' }));
+    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
+    expect(vi.mocked(ipc.agentStart).mock.calls[0]).toEqual([expect.stringMatching(/^study-/), 'claude', true]);
+    const chatId = vi.mocked(ipc.agentPrompt).mock.calls[0]![0];
+    act(() =>
+      updateHandlers.forEach((h) =>
+        h({ chatId, update: { kind: 'tool', toolCallId: 'auto-1', title: 'Ran without asking: yt-dlp -x https://youtu.be/abc', status: 'done' } }),
+      ),
+    );
+    expect(await screen.findByText('Ran without asking: yt-dlp -x https://youtu.be/abc')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Allow' })).not.toBeInTheDocument();
+  });
+
   it('saves the style on done and marks the job failed when the result is unreadable', async () => {
     vi.mocked(ipc.studyDir).mockResolvedValue('/w/s');
     const good = JSON.stringify({ name: 'Zoom cut', notes: { camera: 'Punch-in' }, prompt: 'Cut on every beat' });
@@ -259,6 +278,35 @@ describe('Style study cancel', () => {
   });
 });
 
+describe('Agents working indicator', () => {
+  const job = (id: string, status: Job['status']): Job => ({
+    id,
+    kind: 'build',
+    title: `Job ${id}`,
+    projectId: null,
+    chatId: 'c1',
+    agentId: 'claude',
+    status,
+    progress: null,
+    note: null,
+    updatedAt: new Date().toISOString(),
+  });
+
+  it('shows an animated bar and "working ·" only on working cards', async () => {
+    vi.mocked(ipc.listJobs).mockResolvedValue([job('w', 'working'), job('q', 'queued'), job('d', 'done')]);
+    render(<Agents />);
+    const working = await screen.findByRole('region', { name: 'Working' });
+    expect(within(working).getByRole('progressbar', { name: 'Working' })).toBeInTheDocument();
+    expect(within(working).getByText(/^working · /)).toBeInTheDocument();
+    for (const name of ['Queued', 'Done']) {
+      const col = screen.getByRole('region', { name });
+      expect(within(col).queryByRole('progressbar')).not.toBeInTheDocument();
+      expect(within(col).queryByText(/working ·/)).not.toBeInTheDocument();
+    }
+    expect(screen.getAllByRole('progressbar')).toHaveLength(1);
+  });
+});
+
 describe('Agents', () => {
   it('puts a failed job in Needs you with Fix it', async () => {
     const failed: Job = {
@@ -335,6 +383,19 @@ describe('Settings', () => {
     const sw = await screen.findByRole('switch', { name: 'Check every frame before showing me' });
     await userEvent.click(sw);
     await waitFor(() => expect(ipc.updateSettings).toHaveBeenCalledWith({ frameCheck: false }));
+  });
+
+  it('toggles auto mode through updateSettings and explains it', async () => {
+    render(<SettingsScreen />);
+    const sw = await screen.findByRole('switch', { name: 'Auto mode for chats' });
+    expect(sw).not.toBeChecked();
+    expect(
+      screen.getByText(
+        "Your agent runs commands without asking. Claude Code reviews risky steps itself; other agents' requests are approved one at a time.",
+      ),
+    ).toBeInTheDocument();
+    await userEvent.click(sw);
+    await waitFor(() => expect(ipc.updateSettings).toHaveBeenCalledWith({ autoMode: true }));
   });
 
   it('toggles shareInstallStats through updateSettings and explains what is sent', async () => {

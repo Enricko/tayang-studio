@@ -208,6 +208,22 @@ export function Settings() {
               onCheckedChange={(v) => void save({ frameCheck: v })}
             />
           </div>
+          <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3">
+            <div className="mr-auto flex flex-col gap-1">
+              <label htmlFor="auto-mode" className="text-sm font-medium">
+                Auto mode for chats
+              </label>
+              <span className="text-xs text-text-3">
+                Your agent runs commands without asking. Claude Code reviews risky steps itself; other agents' requests are approved one at a time.
+              </span>
+            </div>
+            <Switch
+              id="auto-mode"
+              checked={settings.autoMode}
+              aria-label="Auto mode for chats"
+              onCheckedChange={(v) => void save({ autoMode: v })}
+            />
+          </div>
         </section>
 
         <section id="video" className="flex flex-col gap-3">
