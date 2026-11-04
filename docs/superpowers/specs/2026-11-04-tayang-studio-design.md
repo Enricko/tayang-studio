@@ -172,6 +172,10 @@ A kanban board with four columns: Queued, Working, Needs you, Done. Each column 
 
 A month view with each video marked as ready to post or planned. It also shows topic ideas for the week. An Autopilot card leads to tayang.app, which posts on schedule. The free app only reminds the user to post.
 
+#### Agent usage
+
+The sidebar's bottom shows the default agent's usage, the same way Orca does: a thin bar for the 5-hour window and a line like "33% used 1h 41m · 48% used 3d 13h · 26% used Fable". Clicking it opens a Usage panel for all installed agents (Detailed or Compact), with each agent's 5-hour, weekly and model-specific weekly limits, reset times, a refresh button, and links to usage history (Agents) and account settings. Claude's numbers come from Anthropic's usage endpoint using the token Claude Code already stores on this computer (read locally, sent only to Anthropic). Agents without a usage source show "Usage isn't available for <agent> yet". **(owner request; data source is my call)**
+
 #### Settings
 
 - Default agent

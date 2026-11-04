@@ -377,3 +377,25 @@ Execution order and parallel waves (tasks in a wave touch disjoint files):
 - [ ] **Step 2:** Run `pnpm --filter @tayang/desktop tauri build --debug` (or `cargo build`) → builds. Launch `pnpm dev:desktop` briefly and confirm the window opens on Welcome (screenshot if possible).
 - [ ] **Step 3:** `docs/development.md`: prerequisites (Node 22+, pnpm, Rust, ffmpeg for media tests), how to run desktop/api, how to deploy api (`wrangler d1 create tayang`, set `database_id`, `pnpm --filter @tayang/api db:migrate`, `pnpm --filter @tayang/api deploy`), where data lives (SQLite in app data dir, projects in the working folder).
 - [ ] **Step 4:** Commit `docs: development guide`.
+
+---
+
+### Task 16: Agent usage (status bar + usage popover)
+
+Added mid-run at the owner's request (reference: Orca's usage bar — "33% used 1h 41m · 48% used 3d 13h · 26% used Fable" and a "Usage" popover with per-agent 5h / wk / Fable bars, "Resets in 1h 39m", Detailed/Compact toggle, "Usage details & history", "Manage accounts…").
+
+**Files:**
+- Create: `apps/desktop/src-tauri/src/usage.rs`; Modify: `commands.rs`, `lib.rs`, `types.rs`
+- Create: `apps/desktop/src/state/usage.ts`, `src/components/{UsageBar.tsx,UsagePopover.tsx}`; Modify: `src/components/Sidebar.tsx` (replace the static agent card), `src/lib/ipc.ts`
+- Modify: `packages/shared/src/types.ts`; Test: `src-tauri` unit tests in usage.rs, `src/test/usage.test.tsx`
+
+**Interfaces:**
+- Shared types: `UsageWindow { usedPercent: number; resetsAt: string | null }`; `AgentUsage { agentId: AgentId; status: 'ok' | 'signed-out' | 'unavailable' | 'error'; session: UsageWindow | null /* 5h */; weekly: UsageWindow | null; modelWeekly: { label: string; window: UsageWindow } | null /* e.g. Fable */; updatedAt: string; message: string | null }`.
+- Rust `usage.rs`:
+  - `fn read_claude_token(exec: &dyn Exec, home: &Path) -> Option<String>` — macOS: `security find-generic-password -s "Claude Code-credentials" -w` (JSON → `claudeAiOauth.accessToken`); else `<home>/.claude/.credentials.json` same field. Never log or return the token to the UI.
+  - `fn parse_claude_usage(json: &str, now) -> AgentUsage` — maps `five_hour`, `seven_day` (`utilization` or `used_percentage` 0–100, `resets_at` ISO or epoch) and the model-scoped weekly limit (`limits[]` with `kind == "weekly_scoped"` and `scope.model.display_name`, label = that name; fallbacks `seven_day_fable`/`fable_weekly`).
+  - `async fn fetch_claude_usage(token) -> Result<AgentUsage>` — `GET https://api.anthropic.com/api/oauth/usage`, headers `Authorization: Bearer <token>`, `anthropic-beta: oauth-2025-04-20`, `User-Agent: tayang-studio/<version>`; 10 s timeout; 401/403 → `signed-out`; 429 → `error` "Usage is busy, try again in a minute".
+  - Other agents → `unavailable` with message "Usage isn't available for <name> yet".
+- Command `get_agent_usage(force: bool) -> AgentUsage[]` (installed agents only; results cached 5 min unless `force`).
+- UI: `useUsage` store (load on app start, poll every 5 min, refresh button, keeps last good value on error). `<UsageBar />` at the bottom of the sidebar: default-agent logo, a thin bar for the 5h window, text `33% used 1h 41m · 48% used 3d 13h · 26% used Fable` (reset countdown `1h 41m`, `3d 13h`); clicking opens `<UsagePopover />` (shadcn Popover): header "Usage" + "all agents" + refresh icon; Detailed/Compact segmented toggle (persist choice in settings or localStorage); one row per installed agent with logo, name, "Resets in 1h 39m", and 5h / wk / model bars with percentages (Compact = one line per agent); footer rows "Usage details & history" (→ Agents screen) and "Manage accounts…" (→ Settings). Bars turn orange at ≥ 80% (accent), otherwise neutral.
+- [ ] Steps: failing tests (parse_claude_usage fixtures incl. weekly_scoped Fable, epoch vs ISO resets, 401 → signed-out; UsageBar text formatting `formatResetIn`; popover rows) → implement → green → commit in small steps.
