@@ -1,54 +1,35 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link2, Lightbulb, Disc3, X } from 'lucide-react';
+import { Link2, Lightbulb, Disc3 } from 'lucide-react';
 import type { AgentId, MessagePart, Project, Style, VideoKind } from '@tayang/shared';
-import { buildProjectBrief, buildTopicIdeasPrompt, topicIdeaFromAction } from '@tayang/skills';
+import { buildTopicIdeasPrompt } from '@tayang/skills';
 import oyen from '@/assets/brand/oyen-expr-default.svg';
 import { Composer, type MentionRef } from '@/components/Composer';
-import { MessageList } from '@/components/MessageList';
-import { ScrollToBottom } from '@/components/ScrollToBottom';
-import { TurnRail } from '@/components/TurnRail';
-import { PermissionCard } from '@/components/PermissionCard';
+import { TemplateChip } from '@/components/TemplateChip';
 import { createChat, listProjects, listStyles } from '@/lib/ipc';
+import { mentionContext } from '@/lib/mentions';
 import { useApp } from '@/state/app';
-import { headPermission, useChat } from '@/state/chat';
+import { NEW_CHAT_DRAFT, useChat } from '@/state/chat';
 import { useUsage } from '@/state/usage';
-import { ideasFromReply, startTopic, type TopicIdea } from '@/lib/topics';
-import { extractA2ui } from '@/a2ui/parse';
 
 const KINDS: VideoKind[] = ['explainer', 'promo', 'quote', 'news', 'tutorial', 'data', 'event'];
-const NO_MESSAGES: never[] = [];
 
-type Idea = TopicIdea;
-
-function agentText(parts: MessagePart[]) {
-  return parts.map((p) => (p.type === 'text' ? p.text : '')).join('');
-}
-
+/**
+ * New chat: the start screen until the first send, topic ask or attachment makes the chat. Then the
+ * route becomes that chat (ChatThread), so it is never lost when the user goes elsewhere.
+ */
 export function ChatNew() {
   const { t } = useTranslation();
   const settings = useApp((s) => s.settings);
   const navigate = useApp((s) => s.navigate);
   const routeStyleId = useApp((s) => (s.route.name === 'chat-new' ? (s.route.styleId ?? null) : null));
-  // The template the user picked on the Style screen; kept until a topic starts a project, or the user removes it.
+  // The template the user picked on the Style screen; it goes with the chat until a topic starts a project.
   const [styleId, setStyleId] = useState<string | null>(routeStyleId);
-  const [pendingStyle, setPendingStyle] = useState<Style | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
-  const [chatId, setChatId] = useState<string | null>(null);
   const [mention, setMention] = useState<MentionRef | null>(null);
-  const [seen, setSeen] = useState<string[]>([]);
-  const [ideas, setIdeas] = useState<Idea[]>([]);
   const [signal, setSignal] = useState(0);
-  /** A picked topic is being set up (project, chat, template). */
-  const [busy, setBusy] = useState(false);
-  const [setupLine, setSetupLine] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const topicPending = useRef(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
-
-  const messages = useChat((s) => (chatId ? s.messages[chatId] : undefined)) ?? NO_MESSAGES;
-  const streaming = useChat((s) => (chatId ? !!s.streaming[chatId] : false));
-  const permission = useChat((s) => headPermission(s, chatId));
+  const creating = useRef<Promise<string> | null>(null);
   const [picked, setPicked] = useState<AgentId | null>(null);
   const agent = picked ?? settings?.defaultAgent ?? 'claude';
 
@@ -59,30 +40,6 @@ export function ChatNew() {
     useUsage.getState().setChatAgent(agent);
     return () => useUsage.getState().setChatAgent(null);
   }, [agent]);
-
-  const changeAgent = async (next: AgentId) => {
-    if (next === agent || streaming) return;
-    // Before the first send nothing exists yet: the pick is used when the chat is created.
-    if (chatId) {
-      try {
-        await useChat.getState().switchAgent(chatId, next);
-      } catch {
-        return;
-      }
-    }
-    setPicked(next);
-  };
-
-  useEffect(() => {
-    if (!styleId) return;
-    let alive = true;
-    listStyles()
-      .then((all) => alive && setPendingStyle(all.find((s) => s.id === styleId) ?? null))
-      .catch(() => {});
-    return () => {
-      alive = false;
-    };
-  }, [styleId]);
 
   useEffect(() => {
     useChat.getState().listen();
@@ -95,103 +52,69 @@ export function ChatNew() {
     };
   }, []);
 
-  // When the topic turn ends, turn the agent's JSON into clickable cards.
-  useEffect(() => {
-    if (!chatId || streaming || !topicPending.current) return;
-    const last = messages[messages.length - 1];
-    if (last?.role === 'system') topicPending.current = false; // the turn failed
-    if (last?.role !== 'agent') return;
-    topicPending.current = false;
-    // A2UI replies draw their own cards; only a ```json answer needs the fallback cards.
-    const text = agentText(last.parts);
-    setIdeas(extractA2ui(text).blocks.length ? [] : ideasFromReply(text));
-  }, [chatId, streaming, messages]);
-
-  const ensureChat = async (title: string) => {
-    if (chatId) return chatId;
-    const c = await createChat(null, agent, title);
-    useChat.getState().adoptPendingAuto(c.id);
-    setChatId(c.id);
-    return c.id;
+  /** The chat is made on the first send (or topic ask, or attachment); once, however many ask at the same time. */
+  const ensureChat = (title: string) => {
+    creating.current ??= createChat(null, agent, title).then(
+      (c) => {
+        useChat.getState().adoptPendingAuto(c.id);
+        useChat.getState().rememberChat(c);
+        useApp.setState({ newChatId: c.id });
+        return c.id;
+      },
+      (e: unknown) => {
+        creating.current = null;
+        throw e;
+      },
+    );
+    return creating.current;
   };
 
-  const context = async (parts: MessagePart[]): Promise<MessagePart[]> => {
-    const out: MessagePart[] = [];
-    const styles: Style[] = await listStyles().catch(() => []);
-    for (const part of parts) {
-      if (part.type !== 'mention' || seen.includes(part.projectId)) continue;
-      const p = projects.find((x) => x.id === part.projectId);
-      if (!p || !settings) continue;
-      const style = styles.find((s) => s.id === p.styleId) ?? null;
-      out.push({
-        type: 'text',
-        // i18n-ignore: this goes to the agent, not the user
-        text: `The user attached the video "${p.title}". Its Tayang id is ${p.id}. Its project folder is ${p.folder}.\n\n${buildProjectBrief(p, style, settings)}`,
-      });
-    }
-    return out;
+  /** The chat exists: the screen becomes that chat, so leaving and coming back finds it. */
+  const openChat = (chatId: string, draft?: string) => {
+    useChat.getState().setDraft(NEW_CHAT_DRAFT, '');
+    navigate({ name: 'chat', chatId, ...(draft ? { draft } : {}), ...(styleId ? { styleId } : {}) });
   };
 
   const onSend = async (parts: MessagePart[]): Promise<boolean> => {
     setError(null);
-    const sentMention = mention;
-    setMention(null);
     try {
       const text = parts.find((p) => p.type === 'text');
       const id = await ensureChat(text?.type === 'text' ? text.text.slice(0, 48) : t('chat.newChat'));
-      const ctx = await context(parts);
-      const failure = await useChat
+      const ctx = await mentionContext(parts, [], projects, settings);
+      // The message is in the chat as soon as send starts; the chat screen shows the rest of the turn.
+      void useChat
         .getState()
         .send(id, parts, { agentId: agent, ...(ctx.length ? { promptParts: [...ctx, ...parts] } : {}) });
-      if (failure) throw new Error(failure);
-      const ids = parts.flatMap((p) => (p.type === 'mention' ? [p.projectId] : []));
-      setSeen((s) => [...new Set([...s, ...ids])]);
+      openChat(id);
       return true;
     } catch (e) {
-      setMention(sentMention);
       setError(t('chat.couldntStartChat', { message: e instanceof Error ? e.message : String(e) }));
       return false;
     }
   };
 
   const askTopics = async () => {
-    if (!settings || streaming) return;
-    const id = await ensureChat(t('chat.topicIdeas'));
-    topicPending.current = true;
-    setIdeas([]);
-    const styles = await listStyles().catch(() => [] as Style[]);
-    void useChat.getState().send(id, [{ type: 'text', text: t('chat.suggestTopics') }], {
-      agentId: agent,
-      promptParts: [{ type: 'text', text: buildTopicIdeasPrompt(KINDS, settings.language, styles.map((s) => ({ id: s.id, name: s.name }))) }],
-    });
-  };
-
-  const pickIdea = async (idea: Idea) => {
-    if (!settings || busy || streaming) return;
-    setBusy(true);
-    setSetupLine(t('chat.settingUp'));
+    if (!settings) return;
     setError(null);
     try {
-      // The idea's own style wins when it is a synced one; else the template chip's style.
-      await startTopic(idea, { settings, agent, styleId, onStatus: setSetupLine });
-      setStyleId(null);
+      const id = await ensureChat(t('chat.topicIdeas'));
+      const styles = await listStyles().catch(() => [] as Style[]);
+      void useChat.getState().send(id, [{ type: 'text', text: t('chat.suggestTopics') }], {
+        agentId: agent,
+        promptParts: [{ type: 'text', text: buildTopicIdeasPrompt(KINDS, settings.language, styles.map((s) => ({ id: s.id, name: s.name }))) }],
+      });
+      openChat(id);
     } catch (e) {
-      setBusy(false);
-      setSetupLine(null);
-      setError(t('chat.couldntStartTopic', { title: idea.title, message: e instanceof Error ? e.message : String(e) }));
+      setError(t('chat.couldntStartChat', { message: e instanceof Error ? e.message : String(e) }));
     }
   };
 
-  const onA2uiAction = (a: { name: string; context: Record<string, unknown> }) => {
-    if (a.name !== 'pick_topic') return false;
-    const idea = topicIdeaFromAction(a.context);
-    if (!idea) return false;
-    void pickIdea(idea);
-    return true;
+  /** Attaching a file makes the chat: the typed text goes along, unsent. */
+  const ensureForAttach = async () => {
+    const id = await ensureChat(t('chat.newChat'));
+    openChat(id, useChat.getState().drafts[NEW_CHAT_DRAFT]);
+    return id;
   };
-
-  const attached = new Set([...seen, ...(mention ? [mention.projectId] : [])]).size;
-  const started = chatId !== null;
 
   return (
     <div className="flex h-full min-w-0 flex-col">
@@ -200,104 +123,39 @@ export function ChatNew() {
         className="flex h-16 shrink-0 items-center gap-3 border-b border-border px-6"
       >
         <span className="text-[15px] font-medium">{t('chat.newChat')}</span>
-        <span className="text-xs text-text-3">{attached === 0 ? t('chat.noVideo') : t('chat.videosAttached', { count: attached })}</span>
+        <span className="text-xs text-text-3">{mention ? t('chat.videosAttached', { count: 1 }) : t('chat.noVideo')}</span>
       </header>
 
       <div className="flex min-h-0 flex-1 flex-col items-center px-6">
         <div className="relative flex min-h-0 w-full flex-1 justify-center">
-        <div ref={scrollRef} className="no-scrollbar flex min-h-0 w-full max-w-[720px] flex-1 flex-col gap-6 overflow-y-auto py-6">
-          {!started ? (
+          <div className="no-scrollbar flex min-h-0 w-full max-w-[720px] flex-1 flex-col gap-6 overflow-y-auto py-6">
             <div className="my-auto flex flex-col gap-6">
               <div className="flex flex-col items-start gap-3">
                 <img src={oyen} alt="Oyen" className="size-14" />
                 <h1 className="m-0 text-[28px] font-semibold tracking-[-0.01em]">{t('chat.whatMaking')}</h1>
-                <p className="m-0 text-[15px] leading-[1.6] text-text-2">
-                  {t('chat.intro')}
-                </p>
+                <p className="m-0 text-[15px] leading-[1.6] text-text-2">{t('chat.intro')}</p>
               </div>
               <div className="grid grid-cols-3 gap-3">
-                <OptionCard icon={Lightbulb} title={t('chat.fromTopic')} body={t('chat.fromTopicBody')} onClick={askTopics} />
+                <OptionCard icon={Lightbulb} title={t('chat.fromTopic')} body={t('chat.fromTopicBody')} onClick={() => void askTopics()} />
                 <OptionCard icon={Disc3} title={t('chat.remix')} body={t('chat.remixBody')} onClick={() => setSignal((n) => n + 1)} />
                 <OptionCard icon={Link2} title={t('chat.copyStyle')} body={t('chat.copyStyleBody')} onClick={() => navigate({ name: 'style' })} />
               </div>
             </div>
-          ) : (
-            <div className="my-auto">
-              <MessageList
-                messages={messages}
-                streaming={streaming}
-                busy={busy}
-                scrollRef={scrollRef}
-                onA2uiAction={onA2uiAction}
-                sendOptions={() => ({ agentId: agent })}
-              >
-                {permission && chatId && (
-                  <PermissionCard
-                    request={permission}
-                    agentId={agent}
-                    allowLabel={t('permission.allow')}
-                    onRespond={(o) => void useChat.getState().respondPermission(chatId, o)}
-                  />
-                )}
-                {ideas.length > 0 && (
-                  <div className="flex flex-col gap-2">
-                    {ideas.map((idea) => (
-                      <button
-                        key={idea.title}
-                        type="button"
-                        disabled={busy || streaming}
-                        onClick={() => void pickIdea(idea)}
-                        className="flex cursor-pointer items-center justify-between gap-3 rounded-lg border border-border bg-card px-4 py-3 text-left text-foreground transition-colors hover:bg-raised disabled:cursor-default disabled:opacity-60"
-                      >
-                        <span className="text-[14px] font-medium">{idea.title}</span>
-                        <span className="font-mono text-xs text-text-3">
-                          {t(`kinds.${idea.kind}`)} · {t('chat.seconds', { n: idea.lengthSec })}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-                {busy && setupLine && (
-                  <p role="status" className="m-0 text-[13px] text-text-3">
-                    {setupLine}
-                  </p>
-                )}
-              </MessageList>
-            </div>
-          )}
-        </div>
-        <TurnRail messages={messages} scrollRef={scrollRef} className="-right-6" />
-        <ScrollToBottom scrollRef={scrollRef} />
+          </div>
         </div>
 
         <div className="w-full max-w-[720px] pb-6 pt-4">
-          {styleId && pendingStyle?.template && (
-            <div
-              title={t('chat.templateChipTitle')}
-              className="mb-2 inline-flex items-center gap-1 rounded-full border border-border bg-card py-1 pr-1 pl-3 text-xs text-text-2"
-            >
-              <span>{t('chat.startingFrom', { name: pendingStyle.name })}</span>
-              <button
-                type="button"
-                aria-label={t('chat.removeTemplate', { name: pendingStyle.name })}
-                onClick={() => setStyleId(null)}
-                className="inline-flex size-5 cursor-pointer items-center justify-center rounded-full text-text-3 hover:text-foreground"
-              >
-                <X size={12} strokeWidth={1.5} aria-hidden="true" />
-              </button>
-            </div>
-          )}
+          <TemplateChip styleId={styleId} onRemove={() => setStyleId(null)} />
           <Composer
-            chatId={chatId}
-            ensureChat={() => ensureChat(t('chat.newChat'))}
+            chatId={null}
+            draftKey={NEW_CHAT_DRAFT}
+            ensureChat={ensureForAttach}
             onSend={onSend}
-            disabled={streaming || busy}
-            onStop={chatId ? () => void useChat.getState().cancel(chatId) : undefined}
             projects={projects}
             mention={mention}
             onMention={setMention}
             agentId={agent}
-            onAgentChange={(a) => void changeAgent(a)}
+            onAgentChange={setPicked}
             mentionSignal={signal}
             placeholder={t('chat.placeholderNew')}
           />
