@@ -375,6 +375,10 @@ pub struct Job {
     /// The link a style study was reading, so a failed study can be tried again.
     #[serde(default)]
     pub source_url: Option<String>,
+    /// A build job: when the first turn since it was last done started (RFC 3339). A render made
+    /// after it is this job's video. None for other jobs, done ones, and jobs saved before it existed.
+    #[serde(default)]
+    pub render_baseline_at: Option<String>,
     pub updated_at: String,
 }
 

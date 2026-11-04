@@ -184,6 +184,11 @@ export interface Job {
   /** The link a style study was reading, so a failed study can be tried again. */
   sourceUrl: string | null;
   updatedAt: string;
+  /**
+   * A build job: when the first turn since it was last done started (RFC 3339). A render made after it
+   * is this job's video. Missing on other jobs, done ones, and jobs saved before it existed.
+   */
+  renderBaselineAt?: string | null;
 }
 
 /** A file on disk as the UI needs it: a render, or an image the agent made. */

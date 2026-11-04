@@ -61,7 +61,8 @@ CREATE TABLE IF NOT EXISTS styles (
 );
 CREATE TABLE IF NOT EXISTS jobs (
   id TEXT PRIMARY KEY, kind TEXT NOT NULL, title TEXT NOT NULL, project_id TEXT, chat_id TEXT,
-  agent_id TEXT NOT NULL, status TEXT NOT NULL, progress REAL, note TEXT, source_url TEXT, updated_at TEXT NOT NULL
+  agent_id TEXT NOT NULL, status TEXT NOT NULL, progress REAL, note TEXT, source_url TEXT, updated_at TEXT NOT NULL,
+  render_baseline_at TEXT
 );
 CREATE TABLE IF NOT EXISTS autopilots (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, niche TEXT NOT NULL, language TEXT NOT NULL,
@@ -88,10 +89,11 @@ const PROJECT_KEYS: [&str; 17] = [
 const CHAT_SELECT: &str = "SELECT id, project_id AS projectId, agent_id AS agentId, title, \
     created_at AS createdAt FROM chats";
 const JOB_SELECT: &str = "SELECT id, kind, title, project_id AS projectId, chat_id AS chatId, \
-    agent_id AS agentId, status, progress, note, source_url AS sourceUrl, updated_at AS updatedAt FROM jobs";
-const JOB_KEYS: [&str; 11] = [
+    agent_id AS agentId, status, progress, note, source_url AS sourceUrl, updated_at AS updatedAt, \
+    render_baseline_at AS renderBaselineAt FROM jobs";
+const JOB_KEYS: [&str; 12] = [
     "id", "kind", "title", "projectId", "chatId", "agentId", "status", "progress", "note",
-    "sourceUrl", "updatedAt",
+    "sourceUrl", "updatedAt", "renderBaselineAt",
 ];
 
 const AUTOPILOT_SELECT: &str = "SELECT id, name, niche, language, style_id AS styleId, agent_id AS agentId, \
@@ -561,7 +563,7 @@ impl Db {
         Ok(())
     }
 
-    /// Adds `jobs.source_url` to databases created before it.
+    /// Adds `jobs.source_url` and `jobs.render_baseline_at` to databases created before them.
     fn migrate_jobs(conn: &Connection) -> Result<()> {
         let mut stmt = conn.prepare("PRAGMA table_info(jobs)")?;
         let have = stmt
@@ -570,6 +572,9 @@ impl Db {
         drop(stmt);
         if !have.iter().any(|c| c == "source_url") {
             conn.execute_batch("ALTER TABLE jobs ADD COLUMN source_url TEXT")?;
+        }
+        if !have.iter().any(|c| c == "render_baseline_at") {
+            conn.execute_batch("ALTER TABLE jobs ADD COLUMN render_baseline_at TEXT")?;
         }
         Ok(())
     }
@@ -739,11 +744,12 @@ impl Db {
     pub fn upsert_job(&self, j: &Job) -> Result<()> {
         let vals = bind_values(j, &JOB_KEYS)?;
         self.conn().execute(
-            "INSERT INTO jobs (id, kind, title, project_id, chat_id, agent_id, status, progress, note, source_url, updated_at) \
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11) ON CONFLICT(id) DO UPDATE SET kind=excluded.kind, \
+            "INSERT INTO jobs (id, kind, title, project_id, chat_id, agent_id, status, progress, note, source_url, updated_at, render_baseline_at) \
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12) ON CONFLICT(id) DO UPDATE SET kind=excluded.kind, \
              title=excluded.title, project_id=excluded.project_id, chat_id=excluded.chat_id, \
              agent_id=excluded.agent_id, status=excluded.status, progress=excluded.progress, \
-             note=excluded.note, source_url=excluded.source_url, updated_at=excluded.updated_at",
+             note=excluded.note, source_url=excluded.source_url, updated_at=excluded.updated_at, \
+             render_baseline_at=excluded.render_baseline_at",
             params_from_iter(vals),
         )?;
         Ok(())
@@ -1217,14 +1223,21 @@ mod tests {
             progress: None,
             note: None,
             source_url: None,
+            render_baseline_at: None,
             updated_at: "2026-01-01T00:00:00Z".into(),
         };
         db.upsert_job(&j).unwrap();
         j.status = JobStatus::Working;
         j.progress = Some(0.5);
         j.updated_at = "2026-01-02T00:00:00Z".into();
+        j.render_baseline_at = Some("2026-01-01T23:59:00.000Z".into());
         db.upsert_job(&j).unwrap();
-        assert_eq!(db.list_jobs().unwrap(), vec![j]);
+        assert_eq!(db.list_jobs().unwrap(), vec![j.clone()]);
+        // A job written without it (an older UI) has none.
+        let raw = serde_json::json!({ "id": "j2", "kind": "build", "title": "B", "projectId": null, "chatId": null, "agentId": "claude",
+            "status": "done", "progress": null, "note": null, "sourceUrl": null, "updatedAt": "2026-01-03T00:00:00Z" });
+        db.upsert_job(&serde_json::from_value(raw).unwrap()).unwrap();
+        assert_eq!(db.list_jobs().unwrap()[0].render_baseline_at, None);
     }
 
     #[test]
@@ -1245,6 +1258,7 @@ mod tests {
         let jobs = db.list_jobs().unwrap();
         assert_eq!(jobs.len(), 1);
         assert_eq!(jobs[0].source_url, None);
+        assert_eq!(jobs[0].render_baseline_at, None);
         drop(db);
         // Opening again must not try to add the column twice.
         assert_eq!(Db::open(&path).unwrap().list_jobs().unwrap().len(), 1);
@@ -1306,6 +1320,7 @@ mod tests {
             progress: None,
             note: None,
             source_url: None,
+            render_baseline_at: None,
             updated_at: "2026-01-01T00:00:00Z".into(),
         };
         db.upsert_job(&job("a")).unwrap();
@@ -1335,6 +1350,7 @@ mod tests {
             progress: None,
             note: None,
             source_url: None,
+            render_baseline_at: None,
             updated_at: "2026-01-01T00:00:00Z".into(),
         };
         let mut w = job("w", JobStatus::Working);
