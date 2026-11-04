@@ -1,0 +1,92 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import '@fontsource/plus-jakarta-sans/400.css';
+@import '@fontsource/plus-jakarta-sans/500.css';
+@import '@fontsource/plus-jakarta-sans/600.css';
+@import '@fontsource/plus-jakarta-sans/800.css';
+@import '@fontsource/ibm-plex-mono/400.css';
+@import '@fontsource/ibm-plex-mono/500.css';
+@import '@fontsource/lora/400.css';
+@import '@fontsource/lora/500.css';
+
+@custom-variant dark (&:is(.dark *));
+
+/* Dark theme only: brand tokens mapped onto shadcn variables. */
+:root {
+  --background: #141414;
+  --foreground: #fdfdfd;
+  --card: #1a1a1a;
+  --card-foreground: #fdfdfd;
+  --popover: #1a1a1a;
+  --popover-foreground: #fdfdfd;
+  --primary: #f2470c;
+  --primary-foreground: #141414;
+  --secondary: #262626;
+  --secondary-foreground: #fdfdfd;
+  --muted: #262626;
+  --muted-foreground: #8c8c8c;
+  --accent: #262626;
+  --accent-foreground: #fdfdfd;
+  --destructive: #f2470c;
+  --border: #262626;
+  --input: #333333;
+  --ring: #f2470c;
+  --radius: 0.5rem;
+  --sidebar: #0f0f0f;
+  --sidebar-foreground: #b4b4b4;
+  --sidebar-border: #262626;
+
+  /* Brand extras */
+  --ink: #141414;
+  --raised: #262626;
+  --hairline-strong: #333333;
+  --text-2: #b4b4b4;
+  --text-3: #8c8c8c;
+  --deep-orange: #5c1c08;
+  --tint: #2a140c;
+  --orange-light: #ffb08f;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-ink: var(--ink);
+  --color-raised: var(--raised);
+  --color-hairline: var(--hairline-strong);
+  --color-text-2: var(--text-2);
+  --color-text-3: var(--text-3);
+  --color-deep-orange: var(--deep-orange);
+  --color-tint: var(--tint);
+  --color-orange-light: var(--orange-light);
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --font-sans: 'Plus Jakarta Sans', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+  --font-serif: 'Lora', Georgia, serif;
+}
+
+@layer base {
+  * { @apply border-border outline-ring/50; }
+  html, body, #root { height: 100%; }
+  body { @apply bg-background text-foreground font-sans antialiased; margin: 0; }
+}
