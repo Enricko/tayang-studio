@@ -12,6 +12,7 @@
 //   fs-inside  -> writes then reads line 2 of notes/inside.txt, reports "read: <JSON content>"
 //   pids       -> starts a long-lived helper process, reports "pids <agent pid> <helper pid>"
 //   fail       -> session/prompt error -32603 "Internal error" with data.details "quota exceeded"
+//   whoami     -> reports "whoami <JSON {meta, env}>": the session/new `_meta` and TAYANG_STUDIO
 //   any prompt with an image block -> text "image <mimeType> <data>"
 //
 // With the --hang argument, initialize is never answered.
@@ -24,6 +25,7 @@ let nextId = 1;
 const pending = new Map();
 let sessionId = null;
 let sessionCwd = null;
+let sessionMeta = null;
 let cancelWaiter = null;
 let cancelled = false;
 
@@ -102,6 +104,9 @@ async function runPrompt(params) {
       text("about to crash");
       setTimeout(() => process.exit(1), 50);
       return new Promise(() => {});
+    case "whoami":
+      text(`whoami ${JSON.stringify({ meta: sessionMeta, env: process.env.TAYANG_STUDIO ?? null })}`);
+      return "end_turn";
     case "pids": {
       const helper = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
       text(`pids ${process.pid} ${helper.pid}`);
@@ -177,6 +182,7 @@ function handle(msg) {
         return;
       }
       sessionCwd = params.cwd;
+      sessionMeta = params._meta ?? null;
       sessionId = "sess-1";
       send({ id, result: { sessionId } });
       return;
