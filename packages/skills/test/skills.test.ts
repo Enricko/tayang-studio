@@ -90,6 +90,9 @@ describe('brief', () => {
     expect(b).toContain('Frames checked');
     expect(b).toContain(FRAME_CHECK_PROMPT);
     expect(b).toContain('npx hyperframes');
+    expect(b).toContain(
+      'When a version is ready, render it with `npx -y hyperframes@0.9.10 render --output renders/promo-<n>.mp4` so Tayang can show it.',
+    );
     expect(FRAME_CHECK_PROMPT).toContain('Frames checked');
   });
   it('leaves out the frame check when it is off', () => {

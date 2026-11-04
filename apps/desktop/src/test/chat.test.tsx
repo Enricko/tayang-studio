@@ -421,6 +421,27 @@ describe('ChatProject render and jobs', () => {
   });
 });
 
+describe('ChatProject preview refresh', () => {
+  it('reloads the preview when a turn ends with done, not on error', async () => {
+    const user = userEvent.setup();
+    render(<ChatProject chatId="c1" />);
+    await screen.findByText('Nothing rendered yet');
+    const loads = () => vi.mocked(ipc.mediaLatestRender).mock.calls.length;
+    const before = loads();
+    await user.type(screen.getByRole('textbox', { name: 'Message' }), 'go');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
+    expect(loads()).toBe(before);
+    await emit('c1', { kind: 'done', stopReason: 'end_turn' });
+    await waitFor(() => expect(loads()).toBe(before + 1));
+
+    await user.type(screen.getByRole('textbox', { name: 'Message' }), 'again');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+    await emit('c1', { kind: 'error', message: 'x' });
+    expect(loads()).toBe(before + 1);
+  });
+});
+
 describe('chat failure handling', () => {
   const permission: PermissionRequest = {
     chatId: 'c1',

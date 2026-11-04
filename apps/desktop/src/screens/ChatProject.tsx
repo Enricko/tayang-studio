@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Chat, MessagePart, Project, VideoKind } from '@tayang/shared';
 import { SKIP_FRAME_CHECK } from '@tayang/skills';
 import { Button } from '@/components/Button';
@@ -45,6 +45,13 @@ export function ChatProject({ chatId }: { chatId: string }) {
       alive = false;
     };
   }, [chatId]);
+
+  // When a turn ends well the agent may have rendered a new version: reload the preview.
+  const wasStreaming = useRef(false);
+  useEffect(() => {
+    if (wasStreaming.current && !streaming && messages.at(-1)?.role !== 'system') setReloadKey((k) => k + 1);
+    wasStreaming.current = streaming;
+  }, [streaming, messages]);
 
   const send = (parts: MessagePart[]) => {
     // The brief's frame check applies to projects made while it was on; this covers turning it off later.

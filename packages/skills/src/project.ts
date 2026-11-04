@@ -1,4 +1,4 @@
-import type { Project, Settings, Style, VideoLanguage } from '@tayang/shared';
+import { slugify, type Project, type Settings, type Style, type VideoLanguage } from '@tayang/shared';
 import { FRAME_CHECK_PROMPT } from './frameCheck';
 
 const LANGUAGE: Record<VideoLanguage, string> = { id: 'Indonesian', en: 'English' };
@@ -23,6 +23,7 @@ export function buildProjectBrief(
     '## How to work',
     '- Use HyperFrames (`npx hyperframes`) to build and render the video.',
     '- Keep all files in this folder. Do not write outside it.',
+    `- When a version is ready, render it with \`npx -y hyperframes@0.9.10 render --output renders/${p.slug || slugify(p.title)}-<n>.mp4\` so Tayang can show it.`,
     '',
     '## Style',
     style ? `Style: ${style.name}\n${style.prompt}` : 'No style selected. Choose a clean, readable look and keep it consistent.',
