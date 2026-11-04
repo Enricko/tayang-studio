@@ -48,6 +48,7 @@ export const STORED_KEYS = [
   'schedule.agent.posted',
   'schedule.agent.exists',
   'schedule.agent.write',
+  'schedule.agent.couldntCheck',
   'schedule.agent.failedAnswered',
 ] as const;
 export type StoredKey = (typeof STORED_KEYS)[number];

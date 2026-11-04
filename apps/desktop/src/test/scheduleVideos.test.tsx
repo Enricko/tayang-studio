@@ -237,6 +237,8 @@ describe('a pressed schedule card', () => {
     await useChat.getState().send('c1', [{ type: 'text', text: 'thanks' }], { agentId: 'claude' });
     const sent = JSON.stringify(vi.mocked(agentPrompt).mock.calls[0]![1]);
     expect(sent).toContain('The user confirmed your schedule card. Tayang put these videos on the calendar:');
+    // Exact times with their offset, whatever language the user reads.
+    expect(sent).toContain(`${existing} — Jalur Rempah`);
     useChat.setState((s) => ({ streaming: { ...s.streaming, c1: false } }));
     await useChat.getState().send('c1', [{ type: 'text', text: 'more' }], { agentId: 'claude' });
     expect(JSON.stringify(vi.mocked(agentPrompt).mock.calls[1]![1])).not.toContain('schedule card');
@@ -268,6 +270,18 @@ describe('a pressed schedule card', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Schedule 1 video' }));
     await screen.findByText(/^The schedule wasn't saved: saving failed, so every change was undone\./);
     expect(screen.queryByText(/database is locked/)).toBeNull();
+  });
+
+  it("says the card couldn't be checked, not that saving failed, when the videos can't be read", async () => {
+    vi.mocked(listProjects).mockRejectedValueOnce(new Error('database is locked'));
+    seed('c1', agentMsg('c1', card([{ projectId: 'p1', at: inDays(1) }])));
+    render(<Chat chatId="c1" />);
+    await press();
+    await screen.findByText("Nothing was scheduled: Tayang couldn't read your videos to check the card. Press it again");
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.getByTestId('a2ui-surface')).not.toHaveAttribute('data-answered');
+    setUiLanguage('id');
+    expect(await screen.findByText('Belum ada yang dijadwalkan: Tayang tidak bisa membaca daftar videomu untuk memeriksa kartunya. Coba tekan lagi')).toBeInTheDocument();
   });
 
   it('an invalid card writes nothing, opens no dialog, says why and stays answerable', async () => {

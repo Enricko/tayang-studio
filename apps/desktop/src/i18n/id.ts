@@ -412,6 +412,7 @@ export const id: Translations = {
       posted: 'video ke-{{n}} sudah diposting',
       exists: 'video ke-{{n}} sudah ada. Sebut videonya supaya agent bisa memakainya',
       write: 'gagal menyimpan, jadi semua perubahan dibatalkan',
+      couldntCheck: 'Tayang tidak bisa membaca daftar videomu untuk memeriksa kartunya. Coba tekan lagi',
       failedAnswered: 'Jadwal tidak tersimpan: {{reason}}. Minta agent membuat kartu jadwal baru',
       openCalendar: 'Buka kalender',
     },

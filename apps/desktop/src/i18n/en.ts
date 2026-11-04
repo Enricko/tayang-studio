@@ -417,6 +417,7 @@ export const en = {
       posted: 'video {{n}} is already posted',
       exists: 'video {{n}} already exists. Mention it so the agent can use it',
       write: 'saving failed, so every change was undone',
+      couldntCheck: "Tayang couldn't read your videos to check the card. Press it again",
       failedAnswered: "The schedule wasn't saved: {{reason}}. Ask the agent for a new schedule card",
       openCalendar: 'Open calendar',
     },

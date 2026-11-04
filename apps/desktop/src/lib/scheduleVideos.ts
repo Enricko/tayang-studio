@@ -145,7 +145,8 @@ export async function prepareSchedule(chatId: string, a: A2uiAction): Promise<Pl
     if ('items' in checked) return checked.items;
     await appendSystem(chatId, stored('schedule.agent.failed', { reason: checked.reason }));
   } catch {
-    await appendSystem(chatId, stored('schedule.agent.failed', { reason: stored('schedule.agent.write') }));
+    // Nothing was written: only the lookup failed.
+    await appendSystem(chatId, stored('schedule.agent.failed', { reason: stored('schedule.agent.couldntCheck') }));
   }
   return null;
 }
@@ -174,6 +175,11 @@ export async function confirmSchedule(chatId: string, a: A2uiAction, items: Plan
   notifyAutopilotChanged();
   const list = scheduleList(items);
   await appendSystem(chatId, stored('schedule.agent.done', { list }), [record]);
+  // The agent gets exact times with their offset, not the user's wording.
+  const exact = [...items]
+    .sort((x, y) => Date.parse(x.at) - Date.parse(y.at))
+    .map((i) => `${i.at} — ${i.title}`)
+    .join(', ');
   // i18n-ignore: this goes to the agent, not the user
-  noteForAgent(chatId, `The user confirmed your schedule card. Tayang put these videos on the calendar: ${list}.`);
+  noteForAgent(chatId, `The user confirmed your schedule card. Tayang put these videos on the calendar: ${exact}.`);
 }
