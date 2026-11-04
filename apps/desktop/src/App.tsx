@@ -1,4 +1,9 @@
+import { useEffect } from 'react';
 import { Sidebar, type SidebarKey } from '@/components/Sidebar';
+import { getSettings } from '@/lib/ipc';
+import { Connect } from '@/screens/onboarding/Connect';
+import { Requirements } from '@/screens/onboarding/Requirements';
+import { Welcome } from '@/screens/onboarding/Welcome';
 import { useApp, type Route } from '@/state/app';
 
 const ONBOARDING = new Set<Route['name']>(['welcome', 'connect', 'requirements']);
@@ -34,13 +39,37 @@ function Placeholder({ name }: { name: Route['name'] }) {
   );
 }
 
+function Onboarding({ name }: { name: Route['name'] }) {
+  if (name === 'connect') return <Connect />;
+  if (name === 'requirements') return <Requirements />;
+  return <Welcome />;
+}
+
 export default function App() {
   const route = useApp((s) => s.route);
+  const settings = useApp((s) => s.settings);
+
+  // First launch decides where to start: onboarded users go straight to a new chat.
+  useEffect(() => {
+    let live = true;
+    getSettings()
+      .then((st) => {
+        if (!live) return;
+        useApp.getState().setSettings(st);
+        if (st.onboarded) useApp.getState().navigate({ name: 'chat-new' });
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  if (!settings) return <div data-tauri-drag-region className="h-full bg-background" />;
+
   if (ONBOARDING.has(route.name)) {
     return (
-      <div className="relative h-full bg-background">
-        <div data-tauri-drag-region className="absolute inset-x-0 top-0 h-8" />
-        <Placeholder name={route.name} />
+      <div className="h-full overflow-y-auto bg-background">
+        <Onboarding name={route.name} />
       </div>
     );
   }
@@ -50,7 +79,6 @@ export default function App() {
         <Sidebar active={SIDEBAR_KEY[route.name] ?? 'chat'} />
       </div>
       <main className="relative min-w-0 flex-1">
-        <div data-tauri-drag-region className="absolute inset-x-0 top-0 z-10 h-8" />
         <Placeholder name={route.name} />
       </main>
     </div>
