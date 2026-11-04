@@ -16,11 +16,24 @@ use serde::Deserialize;
 pub const SERVICE: &str = "app.tayang.studio";
 
 /// The keychain account for an API base: `api:` + origin + path, without a trailing slash,
-/// so a token is bound to the API it came from.
-pub fn account_key(base: &str) -> Result<String, String> {
-    let url = reqwest::Url::parse(base.trim()).map_err(|_| format!("That API address isn't valid: {base}"))?;
-    if !matches!(url.scheme(), "http" | "https") || url.host().is_none() {
-        return Err(format!("That API address isn't valid: {base}"));
+/// so a token is bound to the API it came from. Every sign-in path goes through here, so it is
+/// also the one guard against plain http: a token only travels over https, or over http to
+/// this computer (`localhost`, 127.0.0.0/8, `::1`). Anything else is `Insecure` and has no key.
+pub fn account_key(base: &str) -> Result<String, AuthError> {
+    let url = reqwest::Url::parse(base.trim()).map_err(|_| AuthError::Server)?;
+    let Some(host) = url.host_str() else { return Err(AuthError::Server) };
+    let secure = match url.scheme() {
+        "https" => true,
+        // The URL parser has already lower-cased the host and normalised IPv4 (`127.1`).
+        "http" => {
+            host == "localhost"
+                || host.parse::<std::net::Ipv4Addr>().is_ok_and(|ip| ip.is_loopback())
+                || host.trim_start_matches('[').trim_end_matches(']').parse::<std::net::Ipv6Addr>().is_ok_and(|ip| ip.is_loopback())
+        }
+        _ => return Err(AuthError::Server),
+    };
+    if !secure {
+        return Err(AuthError::Insecure);
     }
     Ok(format!("api:{}{}", url.origin().ascii_serialization(), url.path().trim_end_matches('/')))
 }
@@ -217,9 +230,12 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 /// Polls in a row that may fail (network or server) before signing in gives up.
 const MAX_POLL_FAILURES: u32 = 3;
 
+/// The client for every auth call. It never follows a redirect: the API doesn't send any, and
+/// this way a body holding the device code (or a bearer token) is never replayed elsewhere.
 pub fn http_client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
         .timeout(REQUEST_TIMEOUT)
+        .redirect(reqwest::redirect::Policy::none())
         .user_agent(concat!("tayang-studio/", env!("CARGO_PKG_VERSION")))
         .build()
         .map_err(|e| e.to_string())
@@ -584,6 +600,14 @@ impl Auth {
             i.base = base.clone();
             i.attempt
         };
+        // No request at all to an address a token couldn't safely come back from.
+        if let Err(e) = account_key(&base) {
+            let mut i = self.lock();
+            if i.attempt == attempt {
+                self.set(&mut i, make_status(AuthState::Error, &base, None, Some(e), false));
+            }
+            return Err(e);
+        }
         let device = request_device(&self.client, &base).await.and_then(|d| {
             // Only a web page may be opened from what the API says.
             let ok = |u: &str| reqwest::Url::parse(u).is_ok_and(|u| matches!(u.scheme(), "http" | "https"));
@@ -639,7 +663,7 @@ impl Auth {
                         }
                     }
                 }
-                Err(_) => make_status(AuthState::Error, &base, None, Some(AuthError::Server), false),
+                Err(e) => make_status(AuthState::Error, &base, None, Some(e), false),
             },
             Err(e) => make_status(AuthState::Error, &base, None, Some(e), false),
         };
@@ -703,6 +727,17 @@ mod tests {
         assert_ne!(account_key("http://localhost:8787/api").unwrap(), account_key("http://127.0.0.1:8787/api").unwrap());
         assert!(account_key("not a url").is_err());
         assert!(account_key("file:///etc/passwd").is_err());
+    }
+
+    #[test]
+    fn plain_http_is_only_for_this_computer() {
+        for ok in ["http://localhost:8787/api", "http://LOCALHOST/api", "http://127.0.0.1:8787/api", "http://127.9.8.7/api", "http://127.1/api", "http://[::1]:8787/api", "https://example.com/api"] {
+            assert!(account_key(ok).is_ok(), "{ok}");
+        }
+        for bad in ["http://studio.tayang.app/api", "http://192.168.1.20:8787/api", "http://10.0.0.1/api", "http://[::2]/api", "http://localhost.evil.com/api", "http://127.0.0.1.evil.com/api", "http://[::ffff:192.168.1.1]/api"] {
+            assert_eq!(account_key(bad), Err(AuthError::Insecure), "{bad}");
+        }
+        assert_eq!(account_key("not a url"), Err(AuthError::Server));
     }
 
     /// A keychain that is never there.
@@ -867,8 +902,10 @@ mod tests {
                         nth
                     };
                     let (status, body) = handler(&req, nth);
+                    // A 3xx body is where it redirects to.
+                    let location = if (300..400).contains(&status) { format!("Location: {body}\r\n") } else { String::new() };
                     let res = format!(
-                        "HTTP/1.1 {status} X\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        "HTTP/1.1 {status} X\r\n{location}Content-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
                         body.len()
                     );
                     let _ = s.write_all(res.as_bytes()).await;
@@ -1166,6 +1203,28 @@ mod tests {
         let s = until(&r.rec, |s| s.state == AuthState::Error).await;
         assert_eq!((s.error, s.signed_in), (Some(AuthError::Denied), false));
         assert_eq!(r.store.get(&key(&f.base)).unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn signing_in_over_plain_http_to_another_computer_is_refused_without_a_request() {
+        let r = rig();
+        let base = "http://example.test/api";
+        assert_eq!(r.auth.start(base).await.unwrap_err(), AuthError::Insecure);
+        let s = r.auth.status();
+        assert_eq!((s.state, s.error, s.signed_in), (AuthState::Error, Some(AuthError::Insecure), false));
+        r.auth.refresh(base).await;
+        assert_eq!(r.auth.status().state, AuthState::SignedOut);
+    }
+
+    #[tokio::test]
+    async fn auth_calls_never_follow_a_redirect() {
+        let target = fake(|_, _| (200, DEVICE.into())).await;
+        let to = format!("{}/v1/auth/device", target.base);
+        let f = fake(move |_, _| (307, to.clone())).await;
+        let c = http_client().unwrap();
+        assert_eq!(request_device(&c, &f.base).await.unwrap_err(), AuthError::Server);
+        assert!(matches!(poll_token(&c, &f.base, "dev-secret").await, PollReply::Server));
+        assert!(target.hits.lock().unwrap().is_empty(), "the device code went nowhere else");
     }
 
     #[tokio::test]

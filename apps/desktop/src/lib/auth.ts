@@ -16,7 +16,7 @@ export function onAuthChanged(cb: (s: AuthStatus) => void): Promise<UnlistenFn> 
   return listen<AuthStatus>('auth://changed', (e) => cb(e.payload));
 }
 
-const CODES: readonly string[] = ['expired', 'denied', 'network', 'server', 'rate-limited', 'storage', 'cancelled'];
+const CODES: readonly string[] = ['expired', 'denied', 'network', 'server', 'rate-limited', 'storage', 'insecure', 'cancelled'];
 
 /** The code in an `auth:<code>` rejection, or null for anything else. */
 export function authErrorCode(e: unknown): AuthErrorCode | 'cancelled' | null {

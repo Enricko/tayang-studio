@@ -62,6 +62,7 @@ describe('authErrorCode', () => {
     expect(authErrorCode('auth:rate-limited')).toBe('rate-limited');
     expect(authErrorCode(new Error('auth:network'))).toBe('network');
     expect(authErrorCode('auth:cancelled')).toBe('cancelled');
+    expect(authErrorCode('auth:insecure')).toBe('insecure');
     expect(authErrorCode('auth:whatever')).toBeNull();
     expect(authErrorCode('boom')).toBeNull();
   });
@@ -139,6 +140,12 @@ describe('Sign in with Google', () => {
     expect(within(dialog).queryByText('ABCD-EFGH')).not.toBeInTheDocument();
     await userEvent.click(within(dialog).getByRole('button', { name: 'Try again' }));
     expect(auth.authStart).toHaveBeenCalledTimes(2);
+  });
+
+  it('says plain http to another computer is not safe for signing in', async () => {
+    vi.mocked(auth.authStart).mockRejectedValueOnce('auth:insecure');
+    const dialog = await openDialog();
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Signing in needs a secure (https) API address');
   });
 
   it('shows an unexpected failure as it came', async () => {

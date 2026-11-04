@@ -245,6 +245,7 @@ export const id: Translations = {
       server: 'API Tayang di {{url}} memberi jawaban yang tidak terduga. Cek alamat API di Pengaturan',
       rateLimited: 'Terlalu banyak percobaan masuk. Tunggu beberapa menit, lalu coba lagi',
       storage: 'Kamu sudah masuk, tapi Tayang tidak bisa menyimpannya di komputer ini. Coba lagi',
+      insecure: 'Untuk masuk, alamat API harus aman (https). Cek alamat API di Pengaturan',
       unexpected: 'Gagal masuk: {{message}}',
     },
   },

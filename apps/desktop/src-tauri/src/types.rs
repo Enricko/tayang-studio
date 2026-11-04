@@ -770,6 +770,8 @@ pub enum AuthError {
     RateLimited,
     /// The token couldn't be saved on this computer.
     Storage,
+    /// The API address is plain http to another computer, so a token would travel unencrypted.
+    Insecure,
 }
 
 /// `auth_status()` and the `auth://changed` event. Never carries the token.

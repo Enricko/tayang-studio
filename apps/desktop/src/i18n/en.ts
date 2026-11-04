@@ -243,6 +243,7 @@ export const en = {
       server: 'The Tayang API at {{url}} answered something unexpected. Check the API address in Settings',
       rateLimited: 'Too many sign-in attempts. Wait a few minutes, then try again',
       storage: "Signed in, but Tayang couldn't keep your sign-in on this computer. Try again",
+      insecure: 'Signing in needs a secure (https) API address. Check the API address in Settings',
       unexpected: "Signing in didn't work: {{message}}",
     },
   },
