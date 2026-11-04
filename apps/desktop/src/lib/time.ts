@@ -35,3 +35,14 @@ export function formatResetIn(iso: string | null, now: Date = new Date()): strin
   const days = Math.floor(min / 1440);
   return `${unit(days, 'day')} ${h(Math.floor((min % 1440) / 60))}`;
 }
+
+/** How far ahead a moment is: "now", "in 45 minutes", "in 3 hours", "tomorrow", "in 2 days" (through `Intl`). */
+export function inTime(at: Date, now: Date = new Date()): string {
+  const min = Math.floor((at.getTime() - now.getTime()) / 60000);
+  if (!Number.isFinite(min)) return '';
+  if (min < 1) return i18n.t('common.now');
+  const rtf = new Intl.RelativeTimeFormat(locale(), { numeric: 'auto' });
+  if (min < 60) return rtf.format(min, 'minute');
+  if (min < 60 * 24) return rtf.format(Math.floor(min / 60), 'hour');
+  return rtf.format(Math.floor(min / 1440), 'day');
+}

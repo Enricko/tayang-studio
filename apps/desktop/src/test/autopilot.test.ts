@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { AutopilotFrequency } from '@tayang/shared';
-import { planSlots } from '@/lib/autopilot';
+import { frequencyLabel, planSlots, slotTime, validTimes } from '@/lib/autopilot';
+import { inTime } from '@/lib/time';
+import { setUiLanguage } from '@/i18n';
 
 const plan = (frequency: AutopilotFrequency, from: Date, days: number) =>
   planSlots({ frequency }, from, days).map((d) => [d.getFullYear(), d.getMonth() + 1, d.getDate(), d.getHours(), d.getMinutes()].join(','));
@@ -52,5 +54,35 @@ describe('planSlots', () => {
 
   it('drops a time listed twice', () => {
     expect(plan({ kind: 'daily', times: ['09:00', '09:00'] }, new Date(2026, 10, 4, 0, 0), 1)).toEqual(['2026,11,4,9,0']);
+  });
+});
+
+describe('autopilot labels', () => {
+  it('frequencyLabel reads daily times sorted and weekly days Monday first', () => {
+    expect(frequencyLabel({ frequency: { kind: 'daily', times: ['19:00', '12:00'] } })).toBe('2 a day · 12:00, 19:00');
+    expect(frequencyLabel({ frequency: { kind: 'weekly', days: [0, 5, 1], time: '09:00' } })).toBe('3 a week · Mon, Fri, Sun · 09:00');
+    setUiLanguage('id');
+    expect(frequencyLabel({ frequency: { kind: 'daily', times: ['12:00'] } })).toBe('1 sehari · 12:00');
+    setUiLanguage('en');
+  });
+
+  it('slotTime reads weekday, day, month and time', () => {
+    expect(slotTime(new Date(2026, 10, 5, 12, 0))).toBe('Thu 5 Nov 12:00');
+  });
+
+  it('inTime says how far ahead a moment is', () => {
+    const now = new Date(2026, 10, 4, 10, 0);
+    expect(inTime(new Date(2026, 10, 4, 10, 0, 20), now)).toBe('now');
+    expect(inTime(new Date(2026, 10, 4, 10, 45), now)).toBe('in 45 minutes');
+    expect(inTime(new Date(2026, 10, 4, 13, 0), now)).toBe('in 3 hours');
+    expect(inTime(new Date(2026, 10, 6, 13, 0), now)).toBe('in 2 days');
+  });
+
+  it('validTimes wants 1 to 6 different HH:MM times', () => {
+    expect(validTimes(['12:00'])).toBe(true);
+    expect(validTimes([])).toBe(false);
+    expect(validTimes(['12:00', '12:00'])).toBe(false);
+    expect(validTimes(['24:00'])).toBe(false);
+    expect(validTimes(Array.from({ length: 7 }, (_, i) => `0${i}:00`))).toBe(false);
   });
 });

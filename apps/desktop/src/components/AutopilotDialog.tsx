@@ -8,22 +8,12 @@ import { Input } from '@/components/ui/input';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
-import { locale } from '@/i18n';
 import { AGENT_NAMES } from '@/lib/agents';
 import { cn } from '@/lib/utils';
 import { PreviewImage, posterOf } from '@/screens/Style';
-
-export const LENGTHS = [15, 30, 45, 60, 90];
-export const MAX_TIMES = 6;
-
-/** Monday first; the number is `Date.getDay()` (0 is Sunday), what the model stores. */
-const WEEK = [1, 2, 3, 4, 5, 6, 0];
-
-/** The short weekday name in the active language (2024-01-07 is a Sunday). */
-export const dayName = (day: number) => new Intl.DateTimeFormat(locale(), { weekday: 'short' }).format(new Date(2024, 0, 7 + day));
+import { dayName, isTime, LENGTHS, MAX_TIMES, WEEK } from '@/lib/autopilot';
 
 const sameTimes = (times: string[]) => new Set(times).size === times.length;
-const isTime = (t: string) => /^([01]\d|2[0-3]):[0-5]\d$/.test(t);
 
 /** Create (no `autopilot`) or edit an autopilot. Calls `onSave` with the saved row. */
 export function AutopilotDialog({

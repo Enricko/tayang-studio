@@ -1,26 +1,14 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { TFunction } from 'i18next';
 import { Plus } from 'lucide-react';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import type { Autopilot, AutopilotSlot } from '@tayang/shared';
 import { Button } from '@/components/Button';
-import { dayName } from '@/components/AutopilotDialog';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { locale } from '@/i18n';
-import { planSlots } from '@/lib/autopilot';
+import { frequencyLabel, planSlots } from '@/lib/autopilot';
 import { useCanStopNow } from '@/lib/autopilotHooks';
 import { cn } from '@/lib/utils';
-
-const WEEK = [1, 2, 3, 4, 5, 6, 0];
-
-/** "2 a day · 12:00, 19:00" or "3 a week · Mon, Wed, Fri · 09:00". */
-export function frequencyLabel(a: Pick<Autopilot, 'frequency'>, t: TFunction) {
-  const f = a.frequency;
-  if (f.kind === 'daily') return t('autopilot.daily', { count: f.times.length, times: [...f.times].sort().join(', ') });
-  const days = WEEK.filter((d) => f.days.includes(d)).map(dayName).join(', ');
-  return t('autopilot.weekly', { count: f.days.length, days, time: f.time });
-}
 
 const when = (d: Date) =>
   new Intl.DateTimeFormat(locale(), { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(d);
@@ -80,7 +68,7 @@ export function AutopilotPanel({
               </span>
             </div>
             <span className="line-clamp-2 text-xs text-text-2">{a.niche}</span>
-            <span className="font-mono text-[11px] text-text-3">{frequencyLabel(a, t)}</span>
+            <span className="font-mono text-[11px] text-text-3">{frequencyLabel(a)}</span>
             {making ? (
               <div className="flex items-center gap-2 text-xs text-text-2">
                 <span className="mr-auto">{t('autopilot.makingNow')}</span>
