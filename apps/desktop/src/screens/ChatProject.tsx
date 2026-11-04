@@ -16,6 +16,7 @@ import { projectSendOptions } from '@/lib/openProject';
 import { useApp } from '@/state/app';
 import { headPermission, useChat, type SendOpts } from '@/state/chat';
 import { useUsage } from '@/state/usage';
+import { setRenderArgv, useRender } from '@/state/render';
 
 const NO_MESSAGES: never[] = [];
 /** One argv as a shell-looking line: arguments with spaces or quotes are double-quoted. */
@@ -58,7 +59,11 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
     if (!project) return;
     let alive = true;
     renderCommand(project.id)
-      .then((c) => alive && setRuns(c))
+      .then((c) => {
+        // The chat spots the agent running this exact command as a render.
+        setRenderArgv(project.id, c?.render ?? null);
+        if (alive) setRuns(c);
+      })
       .catch(() => alive && setRuns(null));
     return () => {
       alive = false;
@@ -100,6 +105,7 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
     if (!project || rendering) return;
     setRendering(true);
     setRenderError(null);
+    useRender.getState().start(project.id, { source: 'tayang' });
     try {
       await mediaRender(project.id);
       const info = await mediaProbe(project.id).catch(() => null);
@@ -110,6 +116,7 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
       setRenderError(t('chat.couldntRender', { message: e instanceof Error ? e.message : String(e) }));
     } finally {
       setRendering(false);
+      useRender.getState().end(project.id);
     }
   };
 

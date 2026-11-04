@@ -14,11 +14,28 @@ import {
   mediaRender,
   mediaThumbnails,
 } from '@/lib/ipc';
+import { useElapsed } from '@/components/Activity';
 import { useChat } from '@/state/chat';
+import { useRender } from '@/state/render';
 import { Scrubber, type Scene } from './Scrubber';
 
 const THUMBS = 12;
 const NO_MESSAGES: never[] = [];
+
+/** "● Rendering video… 1m 20s": the agent's or Tayang's render of this project is running. */
+function RenderBanner({ since }: { since: number }) {
+  const { t } = useTranslation();
+  const time = useElapsed(since);
+  return (
+    <div role="status" className="flex w-full flex-col gap-0.5 rounded-md border border-border bg-card px-3 py-2 text-left">
+      <span className="inline-flex items-center gap-2 text-[13px] text-foreground">
+        <span aria-hidden="true" className="tayang-pulse inline-block size-1.5 shrink-0 rounded-full bg-primary" />
+        {t('preview.renderingFor', { time: time ?? '' })}
+      </span>
+      <span className="pl-3.5 text-xs text-text-3">{t('preview.renderingHint')}</span>
+    </div>
+  );
+}
 
 const Key = ({ children, className = '' }: { children: React.ReactNode; className?: string }) => (
   <span
@@ -80,6 +97,14 @@ export function Preview({
     };
   }, [load, reloadKey]);
 
+  // A render of this project (the agent's or Tayang's) is running: say so, and show the new video once it ends.
+  const run = useRender((s) => s.runs[projectId]);
+  const wasRendering = useRef(!!run);
+  useEffect(() => {
+    if (wasRendering.current && !run) load().catch((e) => setError(String(e?.message ?? e)));
+    wasRendering.current = !!run;
+  }, [run, load]);
+
   // Marks belong to the frame they were placed on: a new frame (seek, step, playback) drops them.
   useEffect(() => {
     setMarks([]);
@@ -89,20 +114,23 @@ export function Preview({
     if (onRender) return onRender();
     setRendering(true);
     setError(null);
+    useRender.getState().start(projectId, { source: 'tayang' });
     try {
       await mediaRender(projectId);
-      await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setRendering(false);
+      // Ending the run reloads the preview.
+      useRender.getState().end(projectId);
     }
   };
 
-  const busy = rendering || renderingProp;
+  const busy = rendering || renderingProp || !!run;
   if (!videoPath || !info) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-4 bg-[#101010] px-5 text-center">
+        {run && <RenderBanner since={run.startedAt} />}
         <Oyen mood={busy ? 'sleepy' : 'default'} size={56} />
         <span className="text-[13px] text-text-2">{busy ? t('preview.rendering') : t('preview.nothing')}</span>
         {!busy && <Button variant="secondary" onClick={() => void render()}>{t('preview.renderPreview')}</Button>}
@@ -158,6 +186,7 @@ export function Preview({
 
   return (
     <div className="flex h-full flex-col gap-3 overflow-y-auto bg-[#101010] px-5 py-4">
+      {run && <RenderBanner since={run.startedAt} />}
       <div className="flex justify-center">
         <div
           ref={boxRef}

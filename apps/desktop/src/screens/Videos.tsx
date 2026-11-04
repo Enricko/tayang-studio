@@ -13,6 +13,7 @@ import { openProjectChat } from '@/lib/openProject';
 import { ago, mmss } from '@/lib/time';
 import { cn } from '@/lib/utils';
 import { useApp } from '@/state/app';
+import { useRender } from '@/state/render';
 
 type Tab = 'all' | 'progress' | 'rendered' | 'scheduled';
 
@@ -55,6 +56,7 @@ export function Videos() {
   const [tab, setTab] = useState<Tab>('all');
   const [q, setQ] = useState('');
   const [scheduleFor, setScheduleFor] = useState<Project | null>(null);
+  const rendering = useRender((s) => s.runs);
 
   useEffect(() => {
     let alive = true;
@@ -126,6 +128,12 @@ export function Videos() {
                   style={{ background: bg, color: fg }}
                 >
                   <span className="font-mono text-[9px] uppercase opacity-80">{t(`kinds.${p.kind}`)}</span>
+                  {rendering[p.id] && (
+                    <span className="absolute bottom-2 left-2 inline-flex items-center gap-1.5 rounded-sm bg-black/70 px-1.5 py-0.5 text-[11px] font-medium text-white">
+                      <span aria-hidden="true" className="tayang-pulse inline-block size-1.5 shrink-0 rounded-full bg-primary" />
+                      {t('videos.rendering')}
+                    </span>
+                  )}
                   <span className="text-[22px] leading-[1.02] font-extrabold tracking-[-0.03em]">{p.title}</span>
                   {p.durationSec != null && (
                     <span className="absolute right-2 bottom-2 rounded-sm bg-black/60 px-1 font-mono text-[11px] text-white">
