@@ -152,6 +152,12 @@ Style is a **prompt library**. Each style is a prompt the agent follows for a lo
 - Captions
 - Transitions
 
+**Built-in styles come from the API (owner request).** The Hono API serves the built-in style list (D1 table `styles`) and each style's starter template and preview image (Cloudflare R2). The desktop app syncs that list into its SQLite cache when online and works from the cache offline. A style can carry a **starter template**: a clean copy of a working video project that Tayang unpacks into a new project's folder, so the agent starts from a proven format instead of a blank folder. Launch set **(content from the owner's own projects)**:
+- **Atlas journey** — from `niche-to-video/prototype/geo`: a warm illustrated globe, one continuous camera flight, sprites that travel routes, word-by-word captions (Remotion + d3-geo).
+- **Cartoon 3D world** — from `video/tayang-ch-02`: flat 2D characters in a painted three.js world (Remotion + three.js, the MIT-licensed `cartoon-3d-short` skill, CC0 Kenney assets).
+- The three prompt-only styles (Bold explainer, Kinetic quote, News recap) move to the API too.
+Templates never include `.env`, `node_modules`, renders, episodes or other private material. A template declares its engine and render command in `tayang.json`, and Render preview uses it. **(storage, packaging and render contract are my calls)**
+
 Styles come from three places: **built in**, **copied from a video** and **yours**.
 
 **Copy a style from a video.** The user pastes a TikTok, Instagram Reels or YouTube link. The agent then:
