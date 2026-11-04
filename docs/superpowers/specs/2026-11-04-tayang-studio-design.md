@@ -158,7 +158,7 @@ Style is a **prompt library**. Each style is a prompt the agent follows for a lo
 - **Atlas journey** — from `niche-to-video/prototype/geo`: a warm illustrated globe, one continuous camera flight, sprites that travel routes, word-by-word captions (Remotion + d3-geo).
 - **Cartoon 3D world** — from `video/tayang-ch-02`: flat 2D characters in a painted three.js world (Remotion + three.js, the MIT-licensed `cartoon-3d-short` skill, CC0 Kenney assets).
 - **Cartoon 3D what-if** — also from `video/tayang-ch-02` (short form, `InvisibleShort`): the "What if you…" Day 1 → Day 30 escalation with an on-screen overlay layer, every step a real fact. Long-form 16:9 waits (owner: focus on short form for now).
-- Bold explainer, Kinetic quote and News recap are removed (owner request). Built-in styles are only the two template styles.
+- Bold explainer, Kinetic quote and News recap are removed (owner request). Built-in styles are only the three template styles.
 Templates never include `.env`, `node_modules`, renders, episodes or other private material. A template declares its engine and render command in `tayang.json`, and Render preview uses it. **(storage, packaging and render contract are my calls)**
 
 Styles come from three places: **built in**, **copied from a video** and **yours**.
