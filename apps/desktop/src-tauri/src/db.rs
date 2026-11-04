@@ -960,7 +960,7 @@ mod tests {
                  folder TEXT NOT NULL, kind TEXT NOT NULL, format TEXT NOT NULL, language TEXT NOT NULL, \
                  status TEXT NOT NULL, style_id TEXT, scheduled_at TEXT, duration_sec REAL, \
                  created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
-                 INSERT INTO projects VALUES ('old','T','t','/w/t','promo','portrait','id','rendered',NULL,'2026-11-05T09:00:00Z',NULL,'c','u');",
+                 INSERT INTO projects VALUES ('old','T','t','/w/t','promo','9:16','id','rendered',NULL,'2026-11-05T09:00:00Z',NULL,'c','u');",
             )
             .unwrap();
         }
