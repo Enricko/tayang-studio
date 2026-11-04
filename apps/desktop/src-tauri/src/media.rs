@@ -102,29 +102,65 @@ fn run(mut cmd: Command, what: &str) -> Result<std::process::Output> {
     }
 }
 
-fn newest_mp4(dir: &Path) -> Option<PathBuf> {
-    std::fs::read_dir(dir)
-        .ok()?
-        .filter_map(|e| e.ok())
-        .map(|e| e.path())
-        .filter(|p| {
-            p.is_file() && p.extension().map(|x| x.eq_ignore_ascii_case("mp4")).unwrap_or(false)
-        })
-        .filter_map(|p| {
-            let meta = p.metadata().ok()?;
-            // An empty file is a render that never got written (killed halfway): not a video.
-            if meta.len() == 0 {
-                return None;
-            }
-            Some((meta.modified().ok()?, p))
-        })
-        .max_by_key(|(m, _)| *m)
-        .map(|(_, p)| p)
+/// A real folder: not a symlink, not a dot folder, not dependencies or git.
+fn plain_dir(path: &Path) -> bool {
+    let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    !name.starts_with('.')
+        && !SKIP_DIRS.contains(&name.as_str())
+        && std::fs::symlink_metadata(path).is_ok_and(|m| m.is_dir() && !m.file_type().is_symlink())
 }
 
-/// Newest non-empty `*.mp4` in `<folder>/renders/`, else in `<folder>/`.
+/// Where a render lands, in this order: `renders/`, the project root, `out/`, then each `runs/<run>/out/`
+/// (a template pipeline's). Symlinks, dot folders, `node_modules` and `.git` are never looked in.
+fn render_dirs(folder: &Path) -> Vec<PathBuf> {
+    let mut dirs = vec![folder.join("renders"), folder.to_path_buf(), folder.join("out")];
+    dirs.retain(|d| d == folder || plain_dir(d));
+    let runs = folder.join("runs");
+    if plain_dir(&runs) {
+        if let Ok(entries) = std::fs::read_dir(&runs) {
+            let mut outs: Vec<PathBuf> = entries
+                .flatten()
+                .map(|e| e.path())
+                .filter(|run| plain_dir(run))
+                .map(|run| run.join("out"))
+                .filter(|out| plain_dir(out))
+                .collect();
+            outs.sort();
+            dirs.extend(outs);
+        }
+    }
+    dirs
+}
+
+/// The newest `*.mp4` directly in the render folders (see `render_dirs`), inside `folder`; on the same
+/// time the earlier folder wins. Empty files only with `empty`: a render that just started.
+fn newest_render(folder: &Path, empty: bool) -> Option<(PathBuf, std::fs::Metadata)> {
+    let mut best: Option<(std::time::SystemTime, PathBuf, std::fs::Metadata)> = None;
+    for dir in render_dirs(folder) {
+        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            // `symlink_metadata` describes the link itself: a link is never followed.
+            let Ok(meta) = std::fs::symlink_metadata(&path) else { continue };
+            if !meta.is_file() || !path.extension().is_some_and(|x| x.eq_ignore_ascii_case("mp4")) {
+                continue;
+            }
+            // An empty file is a render that never got written (killed halfway): not a video.
+            if meta.len() == 0 && !empty {
+                continue;
+            }
+            let Ok(m) = meta.modified() else { continue };
+            if best.as_ref().is_none_or(|b| m > b.0) && crate::projects::ensure_inside(folder, &path) {
+                best = Some((m, path, meta));
+            }
+        }
+    }
+    best.map(|(_, p, meta)| (p, meta))
+}
+
+/// The project's newest non-empty render: `renders/`, the root, `out/` or a pipeline's `runs/<run>/out/`.
 pub fn latest_render(folder: &Path) -> Option<PathBuf> {
-    newest_mp4(&folder.join("renders")).or_else(|| newest_mp4(folder))
+    newest_render(folder, false).map(|(p, _)| p)
 }
 
 /// What the UI knows about a file: its path, name, size and modification time.
@@ -231,20 +267,10 @@ pub fn recent_images(folder: &Path, since: chrono::DateTime<chrono::Utc>, limit:
         .collect()
 }
 
-/// The most recently written `*.mp4` anywhere in the project (same walk as `recent_images`), empty
-/// ones too: a render that just started. Lets the UI see a pipeline's render (`npm run make`) grow.
+/// `latest_render`, empty files too: a render that just started. Lets the UI see a pipeline's render
+/// (`npm run make`) being written.
 pub fn newest_video_info(folder: &Path) -> Option<FileInfo> {
-    let mut best: Option<(std::time::SystemTime, PathBuf, std::fs::Metadata)> = None;
-    walk_files(folder, |path, meta| {
-        if !path.extension().is_some_and(|x| x.eq_ignore_ascii_case("mp4")) {
-            return;
-        }
-        let Ok(m) = meta.modified() else { return };
-        if best.as_ref().is_none_or(|b| m > b.0) && crate::projects::ensure_inside(folder, &path) {
-            best = Some((m, path, meta));
-        }
-    });
-    best.and_then(|(_, p, meta)| info_from(&p, &meta))
+    newest_render(folder, true).and_then(|(p, meta)| info_from(&p, &meta))
 }
 
 fn parse_fps(s: &str) -> Option<f64> {
@@ -1314,42 +1340,109 @@ mod tests {
         assert_eq!(latest_render(tmp.path()), None);
     }
 
-    #[test]
-    fn newest_video_looks_through_the_project_and_counts_files_still_empty() {
+    /// A project folder for render lookups: `w(rel, bytes, secs)` writes a file with that modification time.
+    fn render_tree() -> (tempfile::TempDir, impl Fn(&str, &[u8], u64)) {
         let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path();
-        assert_eq!(newest_video_info(root), None);
-        let at = |secs: u64| std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_800_000_000 + secs);
-        let w = |rel: &str, bytes: &[u8], t: std::time::SystemTime| {
+        let root = tmp.path().to_path_buf();
+        let w = move |rel: &str, bytes: &[u8], secs: u64| {
             let p = root.join(rel);
             std::fs::create_dir_all(p.parent().unwrap()).unwrap();
             std::fs::write(&p, bytes).unwrap();
+            let t = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_800_000_000 + secs);
             std::fs::File::options().write(true).open(&p).unwrap().set_modified(t).unwrap();
         };
-        w("renders/old.mp4", b"x", at(0));
-        w("runs/jalur-rempah/out/final.MP4", b"", at(10));
-        // Never: dependencies, git, dot folders, other files, or too deep.
-        w("node_modules/pkg/demo.mp4", b"x", at(50));
-        w(".git/x.mp4", b"x", at(50));
-        w(".cache/y.mp4", b"x", at(50));
-        w("runs/notes.txt", b"x", at(50));
-        w("1/2/3/4/5/6/too-deep.mp4", b"x", at(50));
-        let info = newest_video_info(root).unwrap();
-        assert_eq!(info.name, "final.MP4");
-        assert_eq!(info.size, 0, "a render that just started is still empty");
-        w("1/2/3/4/5/deep.mp4", b"abc", at(20));
-        assert_eq!(newest_video_info(root).unwrap().name, "deep.mp4");
+        (tmp, w)
+    }
+
+    fn render_name(folder: &Path) -> Option<String> {
+        latest_render(folder).map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
+    }
+
+    #[test]
+    fn latest_render_finds_each_place_a_render_lands() {
+        for rel in ["renders/a.mp4", "a.mp4", "out/a.mp4", "runs/jalur-rempah/out/a.mp4"] {
+            let (tmp, w) = render_tree();
+            w(rel, b"x", 0);
+            assert_eq!(latest_render(tmp.path()), Some(tmp.path().join(rel)), "{rel}");
+        }
+    }
+
+    #[test]
+    fn latest_render_is_the_newest_across_every_place() {
+        let (tmp, w) = render_tree();
+        w("renders/a.mp4", b"x", 10);
+        w("b.mp4", b"x", 20);
+        assert_eq!(render_name(tmp.path()).as_deref(), Some("b.mp4"), "the root's is newer than renders/");
+        w("out/c.mp4", b"x", 30);
+        assert_eq!(render_name(tmp.path()).as_deref(), Some("c.mp4"));
+        w("runs/one/out/d.mp4", b"x", 40);
+        w("runs/two/out/video.mp4", b"x", 50);
+        assert_eq!(render_name(tmp.path()).as_deref(), Some("video.mp4"));
+        w("renders/e.mp4", b"x", 60);
+        assert_eq!(render_name(tmp.path()).as_deref(), Some("e.mp4"));
+        // The same time: renders/ comes first.
+        w("runs/two/out/video.mp4", b"x", 60);
+        assert_eq!(render_name(tmp.path()).as_deref(), Some("e.mp4"));
+    }
+
+    #[test]
+    fn latest_render_skips_other_folders_dependencies_dot_folders_and_deeper_files() {
+        let (tmp, w) = render_tree();
+        w("renders/kept.mp4", b"x", 0);
+        for rel in [
+            "public/clip.mp4",
+            "src/x.mp4",
+            "renders/sub/deeper.mp4",
+            "out/sub/deeper.mp4",
+            "runs/a/b/out/too-deep.mp4",
+            "runs/a/out/sub/too-deep.mp4",
+            "runs/a/video.mp4",
+            "runs/node_modules/out/dep.mp4",
+            "runs/.cache/out/dot.mp4",
+            "node_modules/out/dep.mp4",
+            ".git/out/x.mp4",
+            "runs/a/out/notes.txt",
+            "runs/a/out/empty.mp4",
+        ] {
+            w(rel, if rel.ends_with("empty.mp4") { b"" } else { b"x" }, 100);
+        }
+        assert_eq!(render_name(tmp.path()).as_deref(), Some("kept.mp4"));
     }
 
     #[cfg(unix)]
     #[test]
-    fn newest_video_never_follows_symlinks() {
-        let tmp = tempfile::tempdir().unwrap();
+    fn latest_render_never_follows_symlinks() {
+        let (tmp, _) = render_tree();
         let outside = tempfile::tempdir().unwrap();
-        std::fs::write(outside.path().join("v.mp4"), b"x").unwrap();
-        std::os::unix::fs::symlink(outside.path(), tmp.path().join("linked")).unwrap();
-        std::os::unix::fs::symlink(outside.path().join("v.mp4"), tmp.path().join("v.mp4")).unwrap();
-        assert_eq!(newest_video_info(tmp.path()), None);
+        let o = outside.path();
+        std::fs::create_dir_all(o.join("out")).unwrap();
+        std::fs::write(o.join("v.mp4"), b"x").unwrap();
+        std::fs::write(o.join("out/v.mp4"), b"x").unwrap();
+        let root = tmp.path();
+        std::fs::create_dir_all(root.join("runs/a")).unwrap();
+        std::os::unix::fs::symlink(o, root.join("renders")).unwrap();
+        std::os::unix::fs::symlink(o.join("out"), root.join("out")).unwrap();
+        std::os::unix::fs::symlink(o, root.join("runs/linked")).unwrap();
+        std::os::unix::fs::symlink(o.join("out"), root.join("runs/a/out")).unwrap();
+        std::os::unix::fs::symlink(o.join("v.mp4"), root.join("v.mp4")).unwrap();
+        assert_eq!(latest_render(root), None);
+        assert_eq!(newest_video_info(root), None);
+    }
+
+    #[test]
+    fn newest_video_looks_in_the_same_places_and_counts_files_still_empty() {
+        let (tmp, w) = render_tree();
+        let root = tmp.path();
+        assert_eq!(newest_video_info(root), None);
+        w("renders/old.mp4", b"x", 0);
+        w("runs/jalur-rempah/out/final.MP4", b"", 10);
+        w("public/clip.mp4", b"x", 50);
+        w("node_modules/pkg/demo.mp4", b"x", 50);
+        let info = newest_video_info(root).unwrap();
+        assert_eq!(info.name, "final.MP4");
+        assert_eq!(info.size, 0, "a render that just started is still empty");
+        // The finished-render lookup never takes an empty file.
+        assert_eq!(render_name(root).as_deref(), Some("old.mp4"));
     }
 
     #[test]
