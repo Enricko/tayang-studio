@@ -6,6 +6,7 @@ import { Composer } from '@/components/Composer';
 import { MessageList } from '@/components/MessageList';
 import { PermissionCard } from '@/components/PermissionCard';
 import { Preview } from '@/screens/preview/Preview';
+import { ScrollToBottom } from '@/components/ScrollToBottom';
 import { TurnRail } from '@/components/TurnRail';
 import { StepBar } from '@/components/StepBar';
 import { getChat, listProjects, mediaProbe, mediaRender, renderCommand, updateProject, type RenderCommand } from '@/lib/ipc';
@@ -165,7 +166,7 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
         <section aria-label="Conversation" className="flex min-w-0 flex-1 flex-col">
           <div className="relative min-h-0 flex-1">
           <div ref={scrollRef} className="no-scrollbar h-full overflow-y-auto px-6 py-6">
-            <MessageList messages={messages} streaming={streaming} sendOptions={sendOptions} agentId={agent} scrollRef={scrollRef}>
+            <MessageList messages={messages} streaming={streaming} sendOptions={sendOptions} scrollRef={scrollRef}>
               {permission && (
                 <PermissionCard
                   request={permission}
@@ -177,6 +178,7 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
             </MessageList>
           </div>
           <TurnRail messages={messages} scrollRef={scrollRef} />
+          <ScrollToBottom scrollRef={scrollRef} />
           </div>
           <div className="px-6 pb-6 pt-2">
             <Composer

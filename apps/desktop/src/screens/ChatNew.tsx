@@ -5,6 +5,7 @@ import { buildProjectBrief, buildTopicIdeasPrompt, topicIdeaFromAction } from '@
 import oyen from '@/assets/brand/oyen-expr-default.svg';
 import { Composer, type MentionRef } from '@/components/Composer';
 import { MessageList } from '@/components/MessageList';
+import { ScrollToBottom } from '@/components/ScrollToBottom';
 import { TurnRail } from '@/components/TurnRail';
 import { PermissionCard } from '@/components/PermissionCard';
 import { createChat, listProjects, listStyles } from '@/lib/ipc';
@@ -223,7 +224,6 @@ export function ChatNew() {
                 messages={messages}
                 streaming={streaming}
                 busy={busy}
-                agentId={agent}
                 scrollRef={scrollRef}
                 onA2uiAction={onA2uiAction}
                 sendOptions={() => ({ agentId: agent })}
@@ -264,6 +264,7 @@ export function ChatNew() {
           )}
         </div>
         <TurnRail messages={messages} scrollRef={scrollRef} className="-right-6" />
+        <ScrollToBottom scrollRef={scrollRef} />
         </div>
 
         <div className="w-full max-w-[720px] pb-6 pt-4">

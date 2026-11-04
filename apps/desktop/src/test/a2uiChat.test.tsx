@@ -272,14 +272,6 @@ describe('a surface while its message is stored', () => {
   });
 });
 
-describe('activity card', () => {
-  it("names the chat's agent, not the default one", () => {
-    const tool = { type: 'tool' as const, toolCallId: 't1', title: 'Write scene 1', status: 'done' as const };
-    render(<MessageList streaming={false} agentId="codex" messages={[msg('1', 'agent', [tool])]} />);
-    expect(screen.getByText('Codex finished')).toBeInTheDocument();
-  });
-});
-
 describe('skills preamble', () => {
   it('goes to user-facing sessions only, not setup or style studies', async () => {
     for (const id of ['setup', 'study-s1', 'ideas-2026-11-04']) {

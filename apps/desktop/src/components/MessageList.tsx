@@ -1,16 +1,14 @@
 import { createContext, useContext, useEffect, useMemo, useRef } from 'react';
-import { Check, File as FileIcon, Loader2, X } from 'lucide-react';
-import { formatTimecode, type AgentId, type ChatMessage, type MessagePart } from '@tayang/shared';
+import { File as FileIcon } from 'lucide-react';
+import { formatTimecode, type ChatMessage, type MessagePart } from '@tayang/shared';
 import { Oyen } from '@/components/Oyen';
-import { AGENT_NAMES } from '@/lib/agents';
+import { ActivityGroup, isHiddenTool, WorkingLine, type ActivityItem } from '@/components/Activity';
 import { useApp } from '@/state/app';
 import { messageKey, useChat, type SendOpts } from '@/state/chat';
 import { splitTopicJson } from '@tayang/skills';
 import { extractA2ui } from '@/a2ui/parse';
 import { A2uiSurface, type A2uiAction } from '@/a2ui/render';
 import { applyMessages, blockSurfaceId, emptySurfaces, type SurfaceSet } from '@/a2ui/surface';
-
-type Tool = Extract<MessagePart, { type: 'tool' }>;
 
 function Chip({ children }: { children: React.ReactNode }) {
   return (
@@ -44,45 +42,12 @@ interface Actions {
   /** Surfaces take no input while the agent replies: one gate with the composer and agent picker. */
   locked: boolean;
   sendOptions?: SendOptions;
-  /** The chat's own agent, for the activity card. */
-  agentId?: AgentId;
 }
 
 /** The screen's own send options for what the agent receives (its agent, build job, prompt prefix). */
 export type SendOptions = (promptParts: MessagePart[]) => SendOpts;
 
 const ActionsContext = createContext<Actions>({ locked: false });
-
-function ActivityCard({ tools, working }: { tools: Tool[]; working: boolean }) {
-  const fallback = useApp((s) => s.settings?.defaultAgent ?? 'claude');
-  const agent = useContext(ActionsContext).agentId ?? fallback;
-  const done = tools.filter((t) => t.status === 'done').length;
-  const pct = tools.length ? Math.round((done / tools.length) * 100) : 0;
-  return (
-    <div className="flex flex-col gap-3 rounded-lg border border-border bg-card p-3">
-      <span className="text-[13px] font-medium">
-        {working ? `${AGENT_NAMES[agent]} is working` : `${AGENT_NAMES[agent]} finished`}
-      </span>
-      <div className="h-1 overflow-hidden rounded-full bg-raised" aria-hidden="true">
-        <div className="h-full bg-primary transition-[width]" style={{ width: `${pct}%` }} />
-      </div>
-      <ul className="m-0 flex list-none flex-col gap-1 p-0">
-        {tools.map((t) => (
-          <li key={t.toolCallId} className="flex items-center gap-2 text-[13px] text-text-2">
-            {t.status === 'done' ? (
-              <Check size={14} strokeWidth={1.5} className="text-orange-light" aria-hidden="true" />
-            ) : t.status === 'failed' ? (
-              <X size={14} strokeWidth={1.5} aria-hidden="true" />
-            ) : (
-              <Loader2 size={14} strokeWidth={1.5} className="animate-spin" aria-hidden="true" />
-            )}
-            {t.title}
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
 
 /** What the chat's A2UI surfaces look like after every agent block, in order. */
 interface A2uiState {
@@ -187,27 +152,40 @@ function AgentText({ text, messageId, a2ui }: { text: string; messageId: string;
 
 function Parts({
   parts,
-  working,
+  live,
   messageId,
   a2ui,
 }: {
   parts: MessagePart[];
-  working: boolean;
+  /** This message is the one the agent is still writing. */
+  live: boolean;
   messageId: string;
   a2ui: A2uiState;
 }) {
-  const tools = parts.filter((p): p is Tool => p.type === 'tool');
-  return (
-    <>
-      {parts.map((p, i) => {
-        if (p.type === 'text') return <AgentText key={i} text={p.text} messageId={messageId} a2ui={a2ui} />;
-        if (p.type === 'mention') return <Chip key={i}>@{p.title}</Chip>;
-        if (p.type === 'frame') return <FrameChip key={i} part={p} />;
-        return null;
-      })}
-      {tools.length > 0 && <ActivityCard tools={tools} working={working} />}
-    </>
-  );
+  // Tool calls and thoughts that run together become one activity line, where they happened.
+  const out: React.ReactNode[] = [];
+  let run: ActivityItem[] = [];
+  const flush = (tail: boolean) => {
+    if (run.length) out.push(<ActivityGroup key={`g${out.length}`} items={run} live={live && tail} />);
+    run = [];
+  };
+  parts.forEach((p, i) => {
+    if (p.type === 'tool' || p.type === 'thought') {
+      if (p.type === 'thought' || !isHiddenTool(p)) run.push(p);
+      return;
+    }
+    flush(false);
+    if (p.type === 'text') out.push(<AgentText key={i} text={p.text} messageId={messageId} a2ui={a2ui} />);
+    else if (p.type === 'mention') out.push(<Chip key={i}>@{p.title}</Chip>);
+    else if (p.type === 'frame') out.push(<FrameChip key={i} part={p} />);
+  });
+  flush(true);
+  return <>{out}</>;
+}
+
+/** Whether a message has anything to draw once hidden tools are dropped. */
+function hasVisible(parts: MessagePart[]): boolean {
+  return parts.some((p) => (p.type === 'tool' ? !isHiddenTool(p) : p.type !== 'a2ui' && p.type !== 'a2ui-action'));
 }
 
 export function MessageList({
@@ -217,13 +195,10 @@ export function MessageList({
   onA2uiAction,
   sendOptions,
   busy = false,
-  agentId,
   scrollRef,
 }: {
   /** The scroll container the list lives in: it follows new messages only while the user is near the bottom. */
   scrollRef?: React.RefObject<HTMLElement | null>;
-  /** The chat's agent; the activity card names it. Defaults to the agent picked in Settings. */
-  agentId?: AgentId;
   messages: ChatMessage[];
   streaming: boolean;
   /** The screen is busy with an earlier action (setting up a topic): surfaces wait, like while streaming. */
@@ -259,8 +234,8 @@ export function MessageList({
 
   const a2ui = useMemo(() => deriveA2ui(messages), [messages]);
   const actions = useMemo(
-    () => ({ handle: onA2uiAction, locked: streaming || busy, sendOptions, agentId }),
-    [onA2uiAction, streaming, busy, sendOptions, agentId],
+    () => ({ handle: onA2uiAction, locked: streaming || busy, sendOptions }),
+    [onA2uiAction, streaming, busy, sendOptions],
   );
   const last = messages[messages.length - 1];
   return (
@@ -307,7 +282,8 @@ export function MessageList({
           <div key={messageKey(m)} data-testid="agent-message" className="flex items-start gap-3">
             <Oyen mood={working ? 'sleepy' : 'default'} size={28} />
             <div className="flex min-w-0 flex-1 flex-col gap-3">
-              <Parts parts={m.parts} working={working} messageId={m.id} a2ui={a2ui} />
+              <Parts parts={m.parts} live={working} messageId={m.id} a2ui={a2ui} />
+              {working && !hasVisible(m.parts) && <WorkingLine />}
             </div>
           </div>
         );
@@ -315,7 +291,7 @@ export function MessageList({
       {streaming && (!last || last.role !== 'agent') && (
         <div className="flex items-center gap-3">
           <Oyen mood="sleepy" size={28} />
-          <span className="text-[13px] text-text-3">Working on it</span>
+          <WorkingLine />
         </div>
       )}
       {children}
