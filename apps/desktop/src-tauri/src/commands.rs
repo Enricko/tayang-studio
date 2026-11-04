@@ -96,6 +96,7 @@ pub fn update_settings(
 ) -> CmdResult<Settings> {
     let settings = state.db.update_settings(patch).map_err(err)?;
     allow_asset_folders(&app, &state.db, &settings.working_folder);
+    crate::scheduler::sync_tray(&app, &settings);
     Ok(settings)
 }
 

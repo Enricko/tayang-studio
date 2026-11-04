@@ -3,6 +3,7 @@ pub mod commands;
 pub mod db;
 pub mod media;
 pub mod projects;
+pub mod scheduler;
 pub mod styles_sync;
 pub mod system;
 pub mod telemetry;
@@ -17,6 +18,16 @@ pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_notification::init())
+        // Launch at login is switched on and off from Settings (the JS plugin API), only while background mode is on.
+        .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None))
+        .on_window_event(|window, event| {
+            let app = window.app_handle();
+            if let Some(state) = app.try_state::<AppState>() {
+                let background = state.db.get_settings(&state.home).background_mode;
+                scheduler::on_window_event(window, event, background);
+            }
+        })
         .setup(|app| {
             let home = app.path().home_dir()?;
             let data = app.path().app_data_dir()?;
@@ -25,7 +36,8 @@ pub fn run() {
             // No agent survives a restart, so nothing can still be working.
             let _ = db.fail_stale_jobs("Tayang was closed while this was running");
             // Also records the real home so later settings updates resolve defaults against it.
-            let working = db.get_settings(&home).working_folder;
+            let settings = db.get_settings(&home);
+            let working = settings.working_folder.clone();
             commands::allow_asset_folders(app.handle(), &db, &working);
             commands::allow_style_media(app.handle());
             media::sweep_study_dirs(std::path::Path::new(&working));
@@ -37,6 +49,8 @@ pub fn run() {
                 home,
                 study_working: Default::default(),
             });
+            scheduler::build_tray(app.handle(), &settings)?;
+            scheduler::start_ticker(app.handle());
             // Anonymous install ping, in the background; never blocks the UI, failures are ignored.
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -98,6 +112,11 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building Tayang Studio");
     app.run(|handle, event| {
+        // Clicking the dock icon brings back a window hidden by background mode.
+        #[cfg(target_os = "macos")]
+        if matches!(event, tauri::RunEvent::Reopen { .. }) {
+            scheduler::show_main(handle);
+        }
         if matches!(event, tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit) {
             // Don't leave agent processes behind.
             if let Some(state) = handle.try_state::<AppState>() {
