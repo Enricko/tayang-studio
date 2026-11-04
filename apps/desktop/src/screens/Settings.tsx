@@ -13,7 +13,10 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AGENT_NAMES } from '@/lib/agents';
-import { detectAgents, getSystemInfo, pickFolder, updateSettings } from '@/lib/ipc';
+import { detectAgents, getSettings, getSystemInfo, pickFolder, updateSettings } from '@/lib/ipc';
+
+/** What Rust says when background mode can't make its tray (and turned it back off). */
+const TRAY_UNAVAILABLE = 'tray-unavailable';
 import { LANGUAGES, LANGUAGE_NAMES, uiLanguage } from '@/i18n';
 import { chooseLanguage } from '@/lib/language';
 import { sendTestNotification } from '@/lib/scheduler';
@@ -112,7 +115,14 @@ export function Settings() {
     try {
       setSettings(await updateSettings(patch));
     } catch (e) {
-      setError(t('settings.saveError', { message: e instanceof Error ? e.message : String(e) }));
+      const message = e instanceof Error ? e.message : String(e);
+      if (message === TRAY_UNAVAILABLE) {
+        // Rust turned background mode back off: show the saved settings and say why.
+        setError(t('settings.trayUnavailable'));
+        void getSettings().then(setSettings, () => {});
+        return;
+      }
+      setError(t('settings.saveError', { message }));
     }
   };
 

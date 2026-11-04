@@ -96,7 +96,11 @@ pub fn update_settings(
 ) -> CmdResult<Settings> {
     let settings = state.db.update_settings(patch).map_err(err)?;
     allow_asset_folders(&app, &state.db, &settings.working_folder);
-    crate::scheduler::sync_tray(&app, &settings);
+    if crate::scheduler::sync_tray(&app, &settings).is_err() {
+        // No tray here: background mode is turned back off and the user is told why.
+        crate::scheduler::background_off(&state.db)?;
+        return Err(crate::scheduler::TRAY_UNAVAILABLE.into());
+    }
     Ok(settings)
 }
 

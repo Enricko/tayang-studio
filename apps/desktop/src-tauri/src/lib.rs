@@ -50,7 +50,12 @@ pub fn run() {
                 home,
                 study_working: Default::default(),
             });
-            scheduler::sync_tray(app.handle(), &settings);
+            // A tray that can't be made never crashes the start: background mode goes off, the window stays.
+            if scheduler::sync_tray(app.handle(), &settings).is_err() {
+                if let Some(state) = app.try_state::<AppState>() {
+                    let _ = scheduler::background_off(&state.db);
+                }
+            }
             // A login launch starts in the tray, when there is one.
             let args: Vec<String> = std::env::args().collect();
             if scheduler::launched_hidden(&args) && scheduler::has_tray(app.handle()) {

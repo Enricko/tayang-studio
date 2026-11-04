@@ -120,19 +120,51 @@ pub fn build_tray<R: Runtime>(app: &AppHandle<R>, settings: &Settings) -> tauri:
         .build(app)
 }
 
+/// What `update_settings` returns when background mode can't make its tray; the UI says it in the
+/// user's language.
+pub const TRAY_UNAVAILABLE: &str = "tray-unavailable";
+
+/// Builds the tray without letting a crash in the platform tray library (Linux loads AppIndicator
+/// lazily and panics when it is missing) take the app down: a panic is an error like any other.
+pub fn try_build_tray<R: Runtime>(app: &AppHandle<R>, settings: &Settings) -> Result<(), String> {
+    guarded(|| build_tray(app, settings).map(|_| ()).map_err(|e| e.to_string()))
+}
+
+/// Runs `f`, turning a panic into an error.
+pub fn guarded(f: impl FnOnce() -> Result<(), String>) -> Result<(), String> {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
+        Ok(r) => r,
+        Err(p) => Err(p
+            .downcast_ref::<&str>()
+            .map(|s| s.to_string())
+            .or_else(|| p.downcast_ref::<String>().cloned())
+            .unwrap_or_else(|| "the tray library crashed".into())),
+    }
+}
+
 /// The tray exists only while background mode is on: made when it is turned on (and kept in the
-/// menu language), removed when it is turned off. A failure is logged, never fatal; without a tray
-/// the window just closes normally (see `close_action`).
-pub fn sync_tray<R: Runtime>(app: &AppHandle<R>, settings: &Settings) {
+/// menu language), removed when it is turned off. Errors when background mode is on and no tray
+/// can be made; the caller turns background mode back off, and the window then closes normally
+/// (see `close_action`) and is never hidden.
+pub fn sync_tray<R: Runtime>(app: &AppHandle<R>, settings: &Settings) -> Result<(), String> {
     if !settings.background_mode {
         let _ = app.remove_tray_by_id(TRAY_ID);
     } else if let Some(tray) = app.tray_by_id(TRAY_ID) {
         if let Ok(menu) = tray_menu(app, settings.ui_language) {
             let _ = tray.set_menu(Some(menu));
         }
-    } else if let Err(e) = build_tray(app, settings) {
-        eprintln!("Tayang: couldn't create the tray icon, closing the window will quit: {e}");
+    } else if let Err(e) = try_build_tray(app, settings) {
+        eprintln!("Tayang: couldn't create the tray icon, background mode is off: {e}");
+        return Err(e);
     }
+    Ok(())
+}
+
+/// Background mode without a tray would hide the window with no way back: turn it (and the login
+/// item that needs it) off in the database.
+pub fn background_off(db: &crate::db::Db) -> Result<Settings, String> {
+    db.update_settings(serde_json::json!({ "backgroundMode": false, "openAtLogin": false }))
+        .map_err(|e| e.to_string())
 }
 
 /// Window close: hides instead of closing while background mode is on and the tray exists. The
@@ -170,6 +202,29 @@ mod tests {
     }
 
     #[test]
+    fn a_crash_while_making_the_tray_is_an_error_not_a_crash() {
+        let hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {}));
+        let r = guarded(|| panic!("Failed to load ayatana-appindicator3 or appindicator3 dynamic library"));
+        let s = guarded(|| panic!("{}", String::from("owned message")));
+        std::panic::set_hook(hook);
+        assert_eq!(r.unwrap_err(), "Failed to load ayatana-appindicator3 or appindicator3 dynamic library");
+        assert_eq!(s.unwrap_err(), "owned message");
+        assert_eq!(guarded(|| Ok(())), Ok(()));
+        assert_eq!(guarded(|| Err("no tray".into())), Err("no tray".to_string()));
+    }
+
+    #[test]
+    fn background_off_turns_off_the_login_item_too() {
+        let db = crate::db::Db::open_in_memory().unwrap();
+        let home = std::path::PathBuf::from("/home/u");
+        let _ = db.get_settings(&home);
+        db.update_settings(serde_json::json!({ "backgroundMode": true, "openAtLogin": true })).unwrap();
+        let s = background_off(&db).unwrap();
+        assert!(!s.background_mode && !s.open_at_login);
+    }
+
+    #[test]
     fn closing_hides_only_in_background_mode() {
         assert_eq!(close_action(true, true), CloseAction::Hide);
         assert_eq!(close_action(false, true), CloseAction::Quit);
@@ -183,6 +238,8 @@ mod tests {
         let conf: serde_json::Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
         let depends = conf["bundle"]["linux"]["deb"]["depends"].as_array().unwrap();
         assert!(depends.iter().any(|d| d == "libayatana-appindicator3-1"));
+        let rpm = conf["bundle"]["linux"]["rpm"]["depends"].as_array().unwrap();
+        assert!(rpm.iter().any(|d| d == "libayatana-appindicator-gtk3"));
         let caps = include_str!("../capabilities/default.json");
         assert!(!caps.contains("allow-is-enabled"), "unused permission");
         assert_eq!(HIDDEN_ARG, "--hidden");

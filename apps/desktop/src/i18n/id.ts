@@ -186,6 +186,7 @@ export const id: Translations = {
     autoMode: 'Mode otomatis untuk chat',
     autoModeHint: 'Agenmu menjalankan perintah tanpa minta izin. Claude Code menilai langkah berisiko sendiri; permintaan agen lain disetujui satu per satu.',
     autoModeAutopilots: 'Autopilot selalu memakai mode otomatis.',
+    trayUnavailable: 'Mode latar belakang butuh system tray, yang tidak tersedia di sini',
     background: 'Tetap jalankan Tayang di latar belakang',
     backgroundHint: 'Menutup jendela menyembunyikan Tayang ke menu bar atau tray, jadi pengingat dan autopilot tetap jalan. Keluar lewat menunya',
     openAtLogin: 'Buka saat login',

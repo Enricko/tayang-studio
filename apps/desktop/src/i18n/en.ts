@@ -184,6 +184,7 @@ export const en = {
     autoMode: 'Auto mode for chats',
     autoModeHint: "Your agent runs commands without asking. Claude Code reviews risky steps itself; other agents' requests are approved one at a time.",
     autoModeAutopilots: 'Autopilots always use Auto mode.',
+    trayUnavailable: "Background mode needs a system tray, which isn't available here",
     background: 'Keep Tayang running in the background',
     backgroundHint: 'Closing the window hides Tayang to the menu bar or tray, so reminders and autopilots keep running. Quit from its menu',
     openAtLogin: 'Open at login',

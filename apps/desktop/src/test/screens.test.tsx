@@ -1531,6 +1531,17 @@ describe('Settings', () => {
     await waitFor(() => expect(ipc.updateSettings).toHaveBeenCalledWith({ backgroundMode: true }));
   });
 
+  it('says so, in the user language, when there is no system tray for background mode, and shows it off', async () => {
+    vi.mocked(ipc.updateSettings).mockRejectedValueOnce(new Error('tray-unavailable'));
+    vi.mocked(ipc.getSettings).mockResolvedValue({ ...settings, backgroundMode: false });
+    render(<SettingsScreen />);
+    await userEvent.click(await screen.findByRole('switch', { name: 'Keep Tayang running in the background' }));
+    expect(await screen.findByText("Background mode needs a system tray, which isn't available here")).toBeInTheDocument();
+    expect(screen.queryByText(/Couldn't save/)).toBeNull();
+    expect(screen.getByRole('switch', { name: 'Keep Tayang running in the background' })).not.toBeChecked();
+    expect(ipc.getSettings).toHaveBeenCalled();
+  });
+
   it('the test notification button sends one and explains what to check; a denial or error is said too', async () => {
     vi.mocked(sendTestNotification).mockResolvedValueOnce(true).mockResolvedValueOnce(false).mockRejectedValueOnce(new Error('no toast'));
     render(<SettingsScreen />);
