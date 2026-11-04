@@ -30,6 +30,15 @@ export const STORED_KEYS = [
   'autopilot.slot.noRender',
   'autopilot.slot.timedOut',
   'autopilot.slot.busy',
+  'schedule.agent.done',
+  'schedule.agent.failed',
+  'schedule.agent.count',
+  'schedule.agent.badTime',
+  'schedule.agent.past',
+  'schedule.agent.tooFar',
+  'schedule.agent.unknown',
+  'schedule.agent.twice',
+  'schedule.agent.title',
 ] as const;
 export type StoredKey = (typeof STORED_KEYS)[number];
 

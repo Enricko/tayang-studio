@@ -1,12 +1,14 @@
 import { createContext, useContext, useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { File as FileIcon } from 'lucide-react';
+import { CalendarDays, File as FileIcon } from 'lucide-react';
 import { formatTimecode, type ChatMessage, type MessagePart } from '@tayang/shared';
 import { Markdown } from '@/components/Markdown';
 import { Oyen } from '@/components/Oyen';
 import { STICK_EVENT } from '@/components/ScrollToBottom';
 import { ActivityGroup, isHiddenTool, WorkingLine, type ActivityItem } from '@/components/Activity';
 import { localized } from '@/lib/stored';
+import { isScheduleRecord, SCHEDULE_ACTION, scheduleFromAction } from '@/lib/scheduleVideos';
+import { useApp } from '@/state/app';
 import { messageKey, useChat, type SendOpts } from '@/state/chat';
 import { splitTopicJson, stripFramesToken } from '@tayang/skills';
 import { extractA2ui } from '@/a2ui/parse';
@@ -79,7 +81,8 @@ function deriveA2ui(messages: ChatMessage[]): A2uiState {
           st.answered[sid] = false;
         }
       }
-    } else if (m.role === 'user') {
+    } else {
+      // A user's answer, or the system line that records a schedule Tayang made from a card.
       for (const p of m.parts) {
         if (p.type !== 'a2ui-action') continue;
         const sid = (p.action as { action?: { surfaceId?: unknown } }).action?.surfaceId;
@@ -139,6 +142,11 @@ function AgentText({ text, messageId, a2ui }: { text: string; messageId: string;
           disabled={a2ui.answered[sid]}
           locked={locked}
           onAction={(a) => {
+            // Tayang schedules a confirmed schedule card itself, in every chat, and the agent gets no turn.
+            if (a.name === SCHEDULE_ACTION) {
+              void scheduleFromAction(a2ui.chatId, a);
+              return;
+            }
             if (!handle?.(a)) sendAction(a2ui.chatId, a, sendOptions);
           }}
         />
@@ -283,6 +291,16 @@ export function MessageList({
               <p className="m-0 text-[14px] text-text-2">
                 {localized(m.parts.map((p) => (p.type === 'text' ? p.text : '')).join(''))}
               </p>
+              {m.parts.some(isScheduleRecord) && (
+                <button
+                  type="button"
+                  onClick={() => useApp.getState().navigate({ name: 'calendar' })}
+                  className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-sm text-[13px] font-medium text-orange-light hover:underline"
+                >
+                  <CalendarDays size={14} strokeWidth={1.5} aria-hidden="true" />
+                  {t('schedule.agent.openCalendar')}
+                </button>
+              )}
             </div>
           );
         }

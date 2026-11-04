@@ -78,8 +78,11 @@ interface ChatState {
   retire(chatId: string): Promise<void>;
   /** Moves the chat to another agent; it starts fresh on the next send. */
   switchAgent(chatId: string, agent: AgentId): Promise<void>;
-  /** Adds a system line to the chat and stores it; resolves once it is stored (best effort). */
-  appendSystem(chatId: string, text: string): Promise<void>;
+  /**
+   * Adds a system line to the chat and stores it; resolves once it is stored (best effort). `extra` parts
+   * are stored with it but not drawn as text (the schedule line keeps the answer that it records).
+   */
+  appendSystem(chatId: string, text: string, extra?: MessagePart[]): Promise<void>;
   attach(chatId: string, part: MessagePart): void;
   detach(chatId: string, index: number): void;
   listen(): void;
@@ -142,7 +145,8 @@ export function buildRecap(messages: ChatMessage[]): string {
 }
 
 /** A system line that shows in the live chat and is stored with it. */
-export const appendSystem = (chatId: string, text: string) => useChat.getState().appendSystem(chatId, text);
+export const appendSystem = (chatId: string, text: string, extra?: MessagePart[]) =>
+  useChat.getState().appendSystem(chatId, text, extra);
 
 export const buildJobId = (chatId: string) => `build-${chatId}`;
 
@@ -486,8 +490,8 @@ export const useChat = create<ChatState>((set, get) => {
       void persist(chatId, sys);
     },
 
-    async appendSystem(chatId, text) {
-      const sys = localMessage(chatId, 'system', [{ type: 'text', text }]);
+    async appendSystem(chatId, text, extra = []) {
+      const sys = localMessage(chatId, 'system', [{ type: 'text', text }, ...extra]);
       append(chatId, sys);
       await persist(chatId, sys);
     },
