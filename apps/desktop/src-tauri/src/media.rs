@@ -129,7 +129,11 @@ pub fn latest_render(folder: &Path) -> Option<PathBuf> {
 
 /// What the UI knows about a file: its path, name, size and modification time.
 pub fn file_info(path: &Path) -> Option<FileInfo> {
-    let meta = path.metadata().ok()?;
+    info_from(path, &path.metadata().ok()?)
+}
+
+/// `file_info` from metadata already read.
+fn info_from(path: &Path, meta: &std::fs::Metadata) -> Option<FileInfo> {
     let modified: chrono::DateTime<chrono::Utc> = meta.modified().ok()?.into();
     Some(FileInfo {
         path: path.to_string_lossy().into_owned(),
@@ -155,8 +159,10 @@ pub const IMAGES_MAX_LIMIT: usize = 50;
 /// Images (png, jpg, jpeg, webp, gif) in `folder` modified after `since`, newest first, at most
 /// `limit` (≤ 50). Symlinks are never followed; dependency, git and dot folders are skipped; the walk
 /// stops 6 levels down and after 5 000 entries. Only non-empty files up to 20 MB inside `folder`.
+/// Known limits: past the 5 000-entry cap (a frames folder) the rest of the folder is not seen, and of
+/// more than 50 new images only the newest 50 are listed.
 pub fn recent_images(folder: &Path, since: chrono::DateTime<chrono::Utc>, limit: usize) -> Vec<FileInfo> {
-    let mut found: Vec<(std::time::SystemTime, PathBuf)> = Vec::new();
+    let mut found: Vec<(std::time::SystemTime, PathBuf, std::fs::Metadata)> = Vec::new();
     let mut stack = vec![(folder.to_path_buf(), 0usize)];
     let mut seen = 0usize;
     let since: std::time::SystemTime = since.into();
@@ -185,7 +191,7 @@ pub fn recent_images(folder: &Path, since: chrono::DateTime<chrono::Utc>, limit:
                 continue;
             }
             match meta.modified() {
-                Ok(m) if m > since && crate::projects::ensure_inside(folder, &path) => found.push((m, path)),
+                Ok(m) if m > since && crate::projects::ensure_inside(folder, &path) => found.push((m, path, meta)),
                 _ => {}
             }
         }
@@ -194,7 +200,8 @@ pub fn recent_images(folder: &Path, since: chrono::DateTime<chrono::Utc>, limit:
     found
         .into_iter()
         .take(limit.min(IMAGES_MAX_LIMIT))
-        .filter_map(|(_, p)| file_info(&p))
+        // From what the walk read: no second look that a swap for a symlink could change.
+        .filter_map(|(_, p, meta)| info_from(&p, &meta))
         .collect()
 }
 
@@ -1173,6 +1180,31 @@ mod tests {
         std::os::unix::fs::symlink(&outside, root.join("linked-dir")).unwrap();
         std::os::unix::fs::symlink(outside.join("secret.png"), root.join("linked.png")).unwrap();
         assert!(recent_images(&root, since_epoch(), 50).is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn recent_images_works_when_the_project_folder_is_a_symlink() {
+        let tmp = tempfile::tempdir().unwrap();
+        let real = tmp.path().join("real");
+        std::fs::create_dir_all(real.join("art")).unwrap();
+        std::fs::write(real.join("art/a.png"), b"x").unwrap();
+        let link = tmp.path().join("project");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        let got = recent_images(&link, since_epoch(), 50);
+        assert_eq!(got.len(), 1);
+        // The path keeps the folder's own spelling; the asset scope resolves it.
+        assert_eq!(PathBuf::from(&got[0].path), link.join("art/a.png"));
+        assert_eq!(got[0].size, 1);
+    }
+
+    #[test]
+    fn recent_images_takes_exactly_20_mb() {
+        let tmp = tempfile::tempdir().unwrap();
+        let f = std::fs::File::create(tmp.path().join("edge.png")).unwrap();
+        f.set_len(IMAGE_MAX_BYTES).unwrap();
+        let got = recent_images(tmp.path(), since_epoch(), 50);
+        assert_eq!(got.iter().map(|i| (i.name.as_str(), i.size)).collect::<Vec<_>>(), [("edge.png", IMAGE_MAX_BYTES)]);
     }
 
     #[test]

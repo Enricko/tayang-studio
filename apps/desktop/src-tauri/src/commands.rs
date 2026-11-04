@@ -1076,6 +1076,15 @@ pub fn media_latest_render(
     Ok(media::latest_render(&folder).map(|p| path_string(&p)))
 }
 
+/// Where `recent_images` looks and from when: None for a chat without a project folder (no project,
+/// an unknown chat, or a deleted project), an error for a time that is not RFC 3339.
+fn images_lookup(state: &AppState, chat_id: &str, since: &str) -> CmdResult<Option<(PathBuf, chrono::DateTime<chrono::Utc>)>> {
+    let since = chrono::DateTime::parse_from_rfc3339(since)
+        .map_err(|_| format!("Not an RFC 3339 time: {since}"))?
+        .with_timezone(&chrono::Utc);
+    Ok(project_folder_for_chat(state, chat_id).ok().flatten().map(|f| (f, since)))
+}
+
 /// Images the agent made in a project chat's folder since `since` (RFC 3339), newest first.
 /// A chat without a project folder has none.
 #[tauri::command]
@@ -1085,10 +1094,7 @@ pub async fn recent_images(
     since: String,
     limit: u32,
 ) -> CmdResult<Vec<crate::types::FileInfo>> {
-    let since = chrono::DateTime::parse_from_rfc3339(&since)
-        .map_err(|_| format!("Not an RFC 3339 time: {since}"))?
-        .with_timezone(&chrono::Utc);
-    let Ok(Some(folder)) = project_folder_for_chat(&state, &chat_id) else {
+    let Some((folder, since)) = images_lookup(&state, &chat_id, &since)? else {
         return Ok(Vec::new());
     };
     tauri::async_runtime::spawn_blocking(move || media::recent_images(&folder, since, limit as usize))
@@ -1386,6 +1392,30 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn recent_images_looks_only_in_a_video_chats_folder() {
+        let tmp = tempfile::tempdir().unwrap();
+        let state = AppState {
+            db: seeded(),
+            acp: AcpManager::new(),
+            media: MediaTools::from_env_or_path(),
+            home: tmp.path().to_path_buf(),
+            study_working: Default::default(),
+        };
+        let since = "2026-11-04T10:00:00+07:00";
+        let video = state.db.create_chat(Some("p"), AgentId::Claude, "Video").unwrap();
+        let loose = state.db.create_chat(None, AgentId::Claude, "Loose").unwrap();
+        let (folder, at) = images_lookup(&state, &video.id, since).unwrap().unwrap();
+        assert_eq!(folder, PathBuf::from("/w/p"));
+        assert_eq!(at.to_rfc3339(), "2026-11-04T03:00:00+00:00");
+        // No project, an unknown chat, or a project that was deleted: nothing to look in.
+        assert!(images_lookup(&state, &loose.id, since).unwrap().is_none());
+        assert!(images_lookup(&state, "nope", since).unwrap().is_none());
+        state.db.delete_project("p").unwrap();
+        assert!(images_lookup(&state, &video.id, since).unwrap().is_none());
+        assert!(images_lookup(&state, &loose.id, "yesterday").is_err());
+    }
 
     #[test]
     fn a_study_keeps_the_working_folder_it_started_in() {
