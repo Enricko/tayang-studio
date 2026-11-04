@@ -57,6 +57,7 @@ function NavItem({
 
 export function Sidebar({ active }: { active: SidebarKey }) {
   const navigate = useApp((s) => s.navigate);
+  const needsYou = useApp((s) => s.needsYouCount);
   const [recent, setRecent] = useState<Project[]>([]);
 
   useEffect(() => {
@@ -92,6 +93,7 @@ export function Sidebar({ active }: { active: SidebarKey }) {
             label={n.label}
             icon={n.icon}
             onClick={() => navigate(n.route)}
+            count={n.key === 'agents' && needsYou > 0 ? needsYou : undefined}
           />
         ))}
       </div>

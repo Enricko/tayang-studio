@@ -18,6 +18,7 @@ interface AppState {
   navigate(r: Route): void;
   settings: Settings | null;
   setSettings(s: Settings): void;
+  needsYouCount: number;
 }
 
 export const useApp = create<AppState>((set) => ({
@@ -25,4 +26,5 @@ export const useApp = create<AppState>((set) => ({
   navigate: (route) => set({ route }),
   settings: null,
   setSettings: (settings) => set({ settings }),
+  needsYouCount: 0,
 }));

@@ -8,6 +8,7 @@ vi.mock('@/lib/ipc', () => ({
 
 import { listProjects } from '@/lib/ipc';
 import { Sidebar } from '@/components/Sidebar';
+import { useApp } from '@/state/app';
 
 const mk = (id: string, title: string): Project => ({
   id,
@@ -43,5 +44,15 @@ describe('Sidebar', () => {
     expect(screen.getByText('3 cara hemat pajak UMKM')).toBeInTheDocument();
     expect(screen.getByText('Promo Kopi Senja')).toBeInTheDocument();
     expect(screen.getByText('Recent')).toBeInTheDocument();
+  });
+
+  it('shows the needs-you count on Agents only when above zero', () => {
+    useApp.setState({ needsYouCount: 2 });
+    const { unmount } = render(<Sidebar active="chat" />);
+    expect(screen.getByRole('link', { name: /^Agents/ })).toHaveTextContent('2');
+    unmount();
+    useApp.setState({ needsYouCount: 0 });
+    render(<Sidebar active="chat" />);
+    expect(screen.getByRole('link', { name: /^Agents/ })).not.toHaveTextContent(/\d/);
   });
 });
