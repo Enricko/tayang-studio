@@ -3,7 +3,7 @@ import { Calendar, LayoutPanelLeft, MessageCircle, Palette, Plus, Smartphone, Sl
 import type { Project } from '@tayang/shared';
 import logo from '@/assets/brand/tayang-horizontal-reversed-color.svg';
 import ditherCard from '@/assets/brand/dither-card.png';
-import { Oyen } from '@/components/Oyen';
+import { UsageBar } from '@/components/UsageBar';
 import { Button } from '@/components/Button';
 import { createChat, listChats, listProjects } from '@/lib/ipc';
 import { useApp, type Route } from '@/state/app';
@@ -146,14 +146,7 @@ export function Sidebar({ active }: { active: SidebarKey }) {
             className="pointer-events-none absolute right-0 top-0 h-12 w-[120px]"
             style={{ imageRendering: 'pixelated' }}
           />
-          <div className="relative flex items-center gap-2">
-            <Oyen mood="sleepy" size={28} />
-            <div className="flex min-w-0 flex-col">
-              <span className="text-[13px] font-medium">Claude Code</span>
-              <span className="text-xs text-text-2">Working · via ACP</span>
-            </div>
-          </div>
-          <span className="relative text-xs text-text-3">Free plan</span>
+          <UsageBar />
         </div>
       </div>
     </nav>
