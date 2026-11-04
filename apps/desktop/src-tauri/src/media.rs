@@ -148,6 +148,21 @@ pub fn latest_render_info(folder: &Path) -> Option<FileInfo> {
     file_info(&latest_render(folder)?)
 }
 
+/// When a file last changed in any way: the newest of its modification time, its status change time
+/// (unix) and its creation time (macOS, Windows). A download or copy that keeps an old modification
+/// time (`wget`, `curl -R`, `cp -p`, unzip) still changed or was created just now.
+fn changed_at(meta: &std::fs::Metadata) -> Option<std::time::SystemTime> {
+    let mut times = vec![meta.modified().ok(), meta.created().ok()];
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if let (Ok(s), Ok(ns)) = (u64::try_from(meta.ctime()), u32::try_from(meta.ctime_nsec())) {
+            times.push(std::time::SystemTime::UNIX_EPOCH.checked_add(std::time::Duration::new(s, ns)));
+        }
+    }
+    times.into_iter().flatten().max()
+}
+
 const IMAGE_EXTS: [&str; 5] = ["png", "jpg", "jpeg", "webp", "gif"];
 /// Folders never searched for images: dependencies, git, Tayang's own scratch, and every dot folder.
 const SKIP_DIRS: [&str; 3] = ["node_modules", ".git", ".tayang"];
@@ -156,7 +171,8 @@ const IMAGES_MAX_ENTRIES: usize = 5_000;
 const IMAGE_MAX_BYTES: u64 = 20 * 1024 * 1024;
 pub const IMAGES_MAX_LIMIT: usize = 50;
 
-/// Images (png, jpg, jpeg, webp, gif) in `folder` modified after `since`, newest first, at most
+/// Images (png, jpg, jpeg, webp, gif) in `folder` changed or created after `since` (see `changed_at`),
+/// newest first, at most
 /// `limit` (≤ 50). Symlinks are never followed; dependency, git and dot folders are skipped; the walk
 /// stops 6 levels down and after 5 000 entries. Only non-empty files up to 20 MB inside `folder`.
 /// Known limits: past the 5 000-entry cap (a frames folder) the rest of the folder is not seen, and of
@@ -190,8 +206,8 @@ pub fn recent_images(folder: &Path, since: chrono::DateTime<chrono::Utc>, limit:
             if !meta.is_file() || !IMAGE_EXTS.contains(&ext.as_str()) || meta.len() == 0 || meta.len() > IMAGE_MAX_BYTES {
                 continue;
             }
-            match meta.modified() {
-                Ok(m) if m > since && crate::projects::ensure_inside(folder, &path) => found.push((m, path, meta)),
+            match changed_at(&meta) {
+                Some(m) if m > since && crate::projects::ensure_inside(folder, &path) => found.push((m, path, meta)),
                 _ => {}
             }
         }
@@ -1196,6 +1212,22 @@ mod tests {
         // The path keeps the folder's own spelling; the asset scope resolves it.
         assert_eq!(PathBuf::from(&got[0].path), link.join("art/a.png"));
         assert_eq!(got[0].size, 1);
+    }
+
+    #[test]
+    fn recent_images_counts_a_new_file_with_an_old_mtime() {
+        // `wget`, `curl -R`, `cp -p` and unzip keep a file's old modification time.
+        let tmp = tempfile::tempdir().unwrap();
+        let since = chrono::Utc::now() - chrono::Duration::seconds(5);
+        let p = tmp.path().join("downloaded.png");
+        std::fs::write(&p, b"x").unwrap();
+        let old = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(946_684_800);
+        std::fs::File::options().write(true).open(&p).unwrap().set_modified(old).unwrap();
+        assert_eq!(p.metadata().unwrap().modified().unwrap(), old);
+        let got = recent_images(tmp.path(), since, 50);
+        assert_eq!(got.iter().map(|i| i.name.as_str()).collect::<Vec<_>>(), ["downloaded.png"]);
+        // Its reported time is still the file's own (it is what reloads the picture).
+        assert!(got[0].modified_at.starts_with("2000-01-01"));
     }
 
     #[test]
