@@ -324,6 +324,16 @@ impl Db {
         }
     }
 
+    /// Points a chat at another agent. `None` when the chat doesn't exist.
+    pub fn set_chat_agent(&self, chat_id: &str, agent: AgentId) -> Result<Option<Chat>> {
+        let v = serde_json::to_value(agent)?;
+        self.conn().execute(
+            "UPDATE chats SET agent_id = ?1 WHERE id = ?2",
+            rusqlite::params![v.as_str().unwrap_or_default(), chat_id],
+        )?;
+        self.get_chat(chat_id)
+    }
+
     pub fn get_chat(&self, id: &str) -> Result<Option<Chat>> {
         let sql = format!("{CHAT_SELECT} WHERE id = ?1");
         Ok(query_as::<Chat>(&self.conn(), &sql, &[&id])?.into_iter().next())
@@ -639,6 +649,17 @@ mod tests {
         assert!(db.update_project("a", json!({"status": "bogus"})).is_err());
         assert!(db.update_project("missing", json!({"title": "x"})).is_err());
         assert_eq!(db.get_project("a").unwrap().unwrap().title, "New");
+    }
+
+    #[test]
+    fn set_chat_agent_persists_and_misses_unknown_chats() {
+        let db = Db::open_in_memory().unwrap();
+        let chat = db.create_chat(Some("a"), AgentId::Claude, "Fix intro").unwrap();
+        let updated = db.set_chat_agent(&chat.id, AgentId::Codex).unwrap().unwrap();
+        assert_eq!(updated.agent_id, AgentId::Codex);
+        assert_eq!(updated.title, "Fix intro");
+        assert_eq!(db.get_chat(&chat.id).unwrap().unwrap().agent_id, AgentId::Codex);
+        assert_eq!(db.set_chat_agent("nope", AgentId::Gemini).unwrap(), None);
     }
 
     #[test]

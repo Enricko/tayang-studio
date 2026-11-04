@@ -41,6 +41,8 @@ export const listChats = (projectId?: string) =>
 export const getChat = (chatId: string) => invoke<Chat | null>('get_chat', { chatId });
 export const createChat = (projectId: string | null, agentId: AgentId, title: string) =>
   invoke<Chat>('create_chat', { projectId, agentId, title });
+export const updateChatAgent = (chatId: string, agentId: AgentId) =>
+  invoke<Chat>('update_chat_agent', { chatId, agentId });
 export const listMessages = (chatId: string) => invoke<ChatMessage[]>('list_messages', { chatId });
 export const addMessage = (chatId: string, role: ChatMessage['role'], parts: MessagePart[]) =>
   invoke<ChatMessage>('add_message', { chatId, role, parts });

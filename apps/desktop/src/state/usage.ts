@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { AgentUsage } from '@tayang/shared';
+import type { AgentId, AgentUsage } from '@tayang/shared';
 import { getAgentUsage } from '@/lib/ipc';
 
 export const POLL_MS = 5 * 60 * 1000;
@@ -8,6 +8,9 @@ interface UsageState {
   usage: AgentUsage[];
   loading: boolean;
   loaded: boolean;
+  /** The agent of the chat on screen; the bar shows it instead of the default agent. */
+  chatAgent: AgentId | null;
+  setChatAgent(agent: AgentId | null): void;
   /** Loads now and every five minutes. Safe to call again. */
   start(): void;
   refresh(force?: boolean): Promise<void>;
@@ -28,6 +31,8 @@ export const useUsage = create<UsageState>((set, get) => ({
   usage: [],
   loading: false,
   loaded: false,
+  chatAgent: null,
+  setChatAgent: (agent) => set({ chatAgent: agent }),
   start: () => {
     if (timer) return;
     void get().refresh(false);

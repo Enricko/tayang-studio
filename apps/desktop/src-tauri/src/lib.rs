@@ -48,6 +48,7 @@ pub fn run() {
             commands::list_chats,
             commands::get_chat,
             commands::create_chat,
+            commands::update_chat_agent,
             commands::list_messages,
             commands::add_message,
             commands::list_styles,

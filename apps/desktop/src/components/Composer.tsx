@@ -1,15 +1,22 @@
 import { useEffect, useRef, useState } from 'react';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
-import { ArrowUp, ChevronDown, File as FileIcon, Paperclip, Square, X } from 'lucide-react';
-import type { AgentId, MessagePart, Project } from '@tayang/shared';
+import { ArrowUp, Check, ChevronDown, File as FileIcon, Paperclip, Square, X } from 'lucide-react';
+import type { AgentId, AgentInfo, MessagePart, Project } from '@tayang/shared';
 import { AgentLogo } from '@/components/AgentLogo';
 import { FrameChip } from '@/components/MessageList';
 import { filterProjects, MentionMenu } from '@/components/MentionMenu';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover';
 import { Textarea } from '@/components/ui/textarea';
 import { AGENT_NAMES } from '@/lib/agents';
-import { assetUrl, attachFile } from '@/lib/ipc';
+import { assetUrl, attachFile, detectAgents } from '@/lib/ipc';
 import { useApp } from '@/state/app';
 import { useChat } from '@/state/chat';
 
@@ -56,6 +63,65 @@ function FileChip({ part, onRemove }: { part: FilePart; onRemove(): void }) {
   );
 }
 
+const AGENT_ORDER: AgentId[] = ['claude', 'opencode', 'codex', 'gemini'];
+
+const TRIGGER =
+  'inline-flex h-7 cursor-pointer items-center gap-1 rounded-sm border border-hairline bg-transparent px-2 text-xs font-medium text-[#D9D9D9] hover:bg-raised disabled:cursor-default disabled:opacity-50';
+
+function AgentPicker({
+  agent,
+  disabled,
+  onChange,
+}: {
+  agent: AgentId;
+  disabled?: boolean;
+  onChange(id: AgentId): void;
+}) {
+  const [agents, setAgents] = useState<AgentInfo[]>([]);
+  const load = (open: boolean) => {
+    if (!open) return;
+    detectAgents()
+      .then(setAgents)
+      .catch(() => {});
+  };
+  const listed = AGENT_ORDER.map((id) => agents.find((a) => a.id === id)).filter((a): a is AgentInfo => !!a);
+  return (
+    <DropdownMenu onOpenChange={load}>
+      <DropdownMenuTrigger asChild disabled={disabled}>
+        <button type="button" disabled={disabled} className={TRIGGER}>
+          <AgentLogo id={agent} size={14} />
+          {AGENT_NAMES[agent]}
+          <ChevronDown size={12} strokeWidth={1.5} aria-hidden="true" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent side="top" align="start" className="w-64 border-hairline bg-card">
+        {listed.map((a) => (
+          <DropdownMenuItem
+            key={a.id}
+            disabled={!a.installed}
+            onSelect={() => onChange(a.id)}
+            className="h-9 gap-2 text-[13px]"
+          >
+            <AgentLogo id={a.id} size={16} />
+            <span className="font-medium">{AGENT_NAMES[a.id]}</span>
+            <span className="ml-auto font-mono text-[11px] text-text-3">
+              {a.installed ? (a.version ?? '') : 'Not installed'}
+            </span>
+            {a.id === agent && <Check data-testid="agent-check" size={14} strokeWidth={1.5} aria-hidden="true" />}
+          </DropdownMenuItem>
+        ))}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          onSelect={() => useApp.getState().navigate({ name: 'settings' })}
+          className="h-9 text-[13px]"
+        >
+          Set up agents
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 export function Composer({
   chatId,
   onSend,
@@ -69,6 +135,7 @@ export function Composer({
   mentionSignal = 0,
   onStop,
   agentId,
+  onAgentChange,
   ensureChat,
 }: {
   chatId: string | null;
@@ -89,6 +156,8 @@ export function Composer({
   onStop?(): void;
   /** The agent this chat talks to; defaults to the one picked in Settings. */
   agentId?: AgentId;
+  /** Turns the agent button into a picker. Disabled while a turn runs. */
+  onAgentChange?(id: AgentId): void;
   /** A new chat has no id until its first send: attaching creates it. */
   ensureChat?(): Promise<string>;
 }) {
@@ -324,14 +393,15 @@ export function Composer({
               >
                 <Paperclip size={16} strokeWidth={1.5} aria-hidden="true" />
               </button>
-              <button
-                type="button"
-                className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-sm border border-hairline bg-transparent px-2 text-xs font-medium text-[#D9D9D9] hover:bg-raised"
-              >
-                <AgentLogo id={agent} size={14} />
-                {AGENT_NAMES[agent]}
-                <ChevronDown size={12} strokeWidth={1.5} aria-hidden="true" />
-              </button>
+              {onAgentChange ? (
+                <AgentPicker agent={agent} disabled={disabled} onChange={onAgentChange} />
+              ) : (
+                <button type="button" className={TRIGGER}>
+                  <AgentLogo id={agent} size={14} />
+                  {AGENT_NAMES[agent]}
+                  <ChevronDown size={12} strokeWidth={1.5} aria-hidden="true" />
+                </button>
+              )}
               {projects && (
                 <button
                   type="button"
