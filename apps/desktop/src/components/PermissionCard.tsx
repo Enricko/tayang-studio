@@ -3,12 +3,9 @@ import { AgentLogo } from '@/components/AgentLogo';
 import { Button } from '@/components/Button';
 import { AGENT_NAMES } from '@/lib/agents';
 
-/** Picks the option the "Allow" button maps to: first allow-once, else first allow-*. Never allow-always when avoidable. */
+/** The option the "Allow" button maps to: only allow-once. Never allow-always. */
 export function allowOption(request: PermissionRequest) {
-  return (
-    request.options.find((o) => o.kind === 'allow-once') ??
-    request.options.find((o) => o.kind.startsWith('allow'))
-  );
+  return request.options.find((o) => o.kind === 'allow-once');
 }
 
 export function PermissionCard({
@@ -44,18 +41,21 @@ export function PermissionCard({
         </pre>
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <Button
-          variant="light"
-          className="h-9 px-3 text-[13px] font-semibold"
-          disabled={!allow}
-          onClick={() => allow && onRespond(allow.id)}
-        >
-          {allowLabel}
-        </Button>
+        {allow && (
+          <Button
+            variant="light"
+            className="h-9 px-3 text-[13px] font-semibold"
+            onClick={() => onRespond(allow.id)}
+          >
+            {allowLabel}
+          </Button>
+        )}
         <Button variant="ghost" className="h-9 px-2 text-[13px]" onClick={() => onRespond(null)}>
           Cancel
         </Button>
-        <span className="ml-auto text-xs text-text-3">Runs with your user account. It may ask for your password</span>
+        <span className="ml-auto text-xs text-text-3">
+          {allow ? 'Runs with your user account. It may ask for your password' : "This request can't be allowed once"}
+        </span>
       </div>
     </div>
   );

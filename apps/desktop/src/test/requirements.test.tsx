@@ -153,3 +153,20 @@ describe('Requirements', () => {
     expect(screen.getByRole('button', { name: 'Install yt-dlp' })).toBeDisabled();
   });
 });
+
+describe('PermissionCard options', () => {
+  it('offers only Cancel when there is no allow-once option', async () => {
+    const { PermissionCard } = await import('@/components/PermissionCard');
+    const onRespond = vi.fn();
+    render(
+      <PermissionCard
+        request={{ ...request, options: [{ id: 'always', label: 'Always', kind: 'allow-always' }] }}
+        onRespond={onRespond}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: 'Allow and install' })).not.toBeInTheDocument();
+    expect(screen.getByText("This request can't be allowed once")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(onRespond).toHaveBeenCalledWith(null);
+  });
+});
