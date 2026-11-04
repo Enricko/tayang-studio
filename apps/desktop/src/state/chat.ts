@@ -31,6 +31,13 @@ interface ChatState {
 }
 
 const isLocal = (m: ChatMessage) => m.id.startsWith('local-');
+
+/** Agent chats that have no chat row: the setup installs, style studies and calendar ideas. */
+export const isScratchChat = (chatId: string) =>
+  chatId === 'setup' || chatId.startsWith('study-') || chatId.startsWith('ideas-');
+
+/** Chats this store loaded or sent to; updates for any other chat id are not ours. */
+const tracked = new Set<string>();
 let seq = 0;
 const localMessage = (chatId: string, role: ChatMessage['role'], parts: MessagePart[]): ChatMessage => ({
   id: `local-${++seq}`,
@@ -60,6 +67,7 @@ export const useChat = create<ChatState>((set, get) => {
 
   /** Persist a local message and swap in the stored one. Best effort. */
   const persist = async (chatId: string, m: ChatMessage) => {
+    if (isScratchChat(chatId)) return;
     try {
       const saved = await addMessage(chatId, m.role, m.parts);
       if (!saved) return;
@@ -85,7 +93,7 @@ export const useChat = create<ChatState>((set, get) => {
   };
 
   const onUpdate = (chatId: string, u: AgentUpdate) => {
-    if (u.kind === 'thought') return;
+    if (!tracked.has(chatId) || u.kind === 'thought') return;
     if (u.kind === 'text' || u.kind === 'tool') {
       const list = get().messages[chatId] ?? [];
       const last = list[list.length - 1];
@@ -130,6 +138,7 @@ export const useChat = create<ChatState>((set, get) => {
     started: {},
 
     async load(chatId) {
+      if (!isScratchChat(chatId)) tracked.add(chatId);
       try {
         const list = await listMessages(chatId);
         // Never clobber a conversation that is already live in memory.
@@ -140,6 +149,7 @@ export const useChat = create<ChatState>((set, get) => {
     },
 
     async send(chatId, parts, opts) {
+      tracked.add(chatId);
       const attached = get().attachments[chatId] ?? [];
       const visible = [...attached, ...parts];
       set((s) => ({
@@ -181,17 +191,19 @@ export const useChat = create<ChatState>((set, get) => {
       if (unlisten.length) return;
       unlisten = [
         onAgentUpdate(({ chatId, update }) => onUpdate(chatId, update)),
-        onPermission((req) =>
+        onPermission((req) => {
+          if (!tracked.has(req.chatId)) return;
           set((s) => ({
             permissions: { ...s.permissions, [req.chatId]: [...(s.permissions[req.chatId] ?? []), req] },
-          })),
-        ),
+          }));
+        }),
       ];
     },
 
     reset() {
       unlisten.forEach((p) => void p.then((fn) => fn()));
       unlisten = [];
+      tracked.clear();
       set({ messages: {}, streaming: {}, permissions: {}, attachments: {}, started: {} });
     },
   };

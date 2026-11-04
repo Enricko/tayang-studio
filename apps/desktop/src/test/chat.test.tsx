@@ -289,6 +289,35 @@ describe('ChatProject', () => {
   });
 });
 
+describe('chat persistence scope', () => {
+  it.each(['setup', 'study-abc', 'ideas-2026-11-02'])('never stores %s updates', async (id) => {
+    useChat.getState().listen();
+    await emit(id, { kind: 'tool', toolCallId: 't1', title: 'claude mcp add -s user elevenlabs -e ELEVENLABS_API_KEY=sk_real', status: 'done' });
+    await emit(id, { kind: 'text', text: 'done' });
+    await emit(id, { kind: 'done', stopReason: 'end_turn' });
+    await emit(id, { kind: 'error', message: 'x' });
+    expect(ipc.addMessage).not.toHaveBeenCalled();
+    expect(useChat.getState().messages[id]).toBeUndefined();
+  });
+
+  it('keeps an ideas chat in memory but never stores it', async () => {
+    useChat.getState().listen();
+    await act(async () => {
+      await useChat.getState().send('ideas-2026-11-02', [{ type: 'text', text: 'ideas' }]);
+    });
+    await emit('ideas-2026-11-02', { kind: 'text', text: 'here' });
+    await emit('ideas-2026-11-02', { kind: 'done', stopReason: 'end_turn' });
+    expect(useChat.getState().messages['ideas-2026-11-02']).toHaveLength(2);
+    expect(ipc.addMessage).not.toHaveBeenCalled();
+  });
+
+  it('ignores updates for chats it never loaded or started', async () => {
+    useChat.getState().listen();
+    await emit('someone-else', { kind: 'text', text: 'hi' });
+    expect(useChat.getState().messages['someone-else']).toBeUndefined();
+  });
+});
+
 describe('chat failure handling', () => {
   const permission: PermissionRequest = {
     chatId: 'c1',
