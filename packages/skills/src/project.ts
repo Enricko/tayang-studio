@@ -12,6 +12,7 @@ export function buildProjectBrief(
   style: Style | null,
   settings: Pick<Settings, 'fps' | 'frameCheck'>,
 ): string {
+  const template = !!style?.template;
   const lines = [
     `# ${p.title}`,
     '',
@@ -23,10 +24,20 @@ export function buildProjectBrief(
     '## How to work',
     '- Use HyperFrames (`npx hyperframes`) to build and render the video.',
     '- Keep all files in this folder. Do not write outside it.',
-    `- When a version is ready, render it with \`npx -y hyperframes@0.9.10 render --output renders/${p.slug || slugify(p.title)}-<n>.mp4\` so Tayang can show it.`,
+    ...(template
+      ? ['- When a version is ready, render it with the command in tayang.json so Tayang can show it.']
+      : [
+          `- When a version is ready, render it with \`npx -y hyperframes@0.9.10 render --output renders/${p.slug || slugify(p.title)}-<n>.mp4\` so Tayang can show it.`,
+        ]),
     '',
     '## Style',
     style ? `Style: ${style.name}\n${style.prompt}` : 'No style selected. Choose a clean, readable look and keep it consistent.',
+    ...(style?.template
+      ? [
+          '',
+          `This project starts from the ${style.name} template. Read STYLE.md first, then run the install command in tayang.json once. Render with the command in tayang.json.`,
+        ]
+      : []),
     '',
     ...(settings.frameCheck ? ['## Quality loop', FRAME_CHECK_PROMPT, ''] : []),
   ];
