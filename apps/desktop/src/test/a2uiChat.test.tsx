@@ -28,6 +28,7 @@ vi.mock('@tauri-apps/plugin-opener', () => ({ openUrl: vi.fn() }));
 import { addMessage, agentPrompt, agentRespondPermission, agentStart, agentStop, getChat, upsertJob } from '@/lib/ipc';
 import { MessageList } from '@/components/MessageList';
 import { BUSY_NOTE, failChatJob, useChat } from '@/state/chat';
+import { needsYou } from '@/state/jobs';
 import { setUiLanguage } from '@/i18n';
 
 const V = 'v0.9';
@@ -316,11 +317,12 @@ describe('build jobs when a turn does not finish well', () => {
   const emitTo = (chatId: string, update: AgentUpdate) => act(async () => updates.forEach((cb) => cb({ chatId, update })));
   const lastJob = () => vi.mocked(upsertJob).mock.calls.at(-1)![0];
 
-  it('a cancelled turn marks the job failed with the stored Cancelled note', async () => {
+  it("a user's Stop ends the job done with the stored Cancelled note, so it never needs them", async () => {
     useChat.getState().listen();
     await useChat.getState().send('j1', [{ type: 'text', text: 'go' }], { agentId: 'claude', job: { projectId: 'p1', title: 'Video' } });
     await emitTo('j1', { kind: 'done', stopReason: 'cancelled' });
-    await waitFor(() => expect(lastJob()).toMatchObject({ id: 'build-j1', status: 'failed', note: 'Cancelled' }));
+    await waitFor(() => expect(lastJob()).toMatchObject({ id: 'build-j1', status: 'done', note: 'Cancelled' }));
+    expect(needsYou([lastJob()])).toBe(0);
     await emitTo('j1', { kind: 'done', stopReason: 'end_turn' });
     expect(lastJob()).toMatchObject({ status: 'done', note: null });
   });

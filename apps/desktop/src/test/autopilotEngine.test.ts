@@ -592,6 +592,14 @@ describe('review fixes', () => {
     expect(jobFor(`chat-${p.id}`)).toMatchObject({ status: 'failed', note: 'Stopped' });
   });
 
+  it("the user's Stop inside an autopilot chat fails the slot and its job (not done)", async () => {
+    respond = (chatId) => (chatId.startsWith('autopilot-') ? { text: topicJson('User stop') } : { stopReason: 'cancelled' });
+    await runOnce();
+    const p = db.projects[0]!;
+    expect(slotAt(at(4, 9))).toMatchObject({ status: 'failed', error: 'Stopped' });
+    await settle(() => expect(jobFor(`chat-${p.id}`)).toMatchObject({ status: 'failed', note: 'Stopped' }));
+  });
+
   it('a tick past 45 minutes times the turn out even when the timer never fired, after the cancel finished', async () => {
     let finishCancel: () => void = () => {};
     vi.mocked(ipc.agentCancel).mockImplementation(() => new Promise<void>((r) => (finishCancel = r)));

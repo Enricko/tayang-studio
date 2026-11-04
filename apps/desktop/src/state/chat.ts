@@ -298,8 +298,9 @@ export const useChat = create<ChatState>((set, get) => {
       return;
     }
     if (u.kind === 'done') {
-      if (u.stopReason === 'cancelled') writeJob(chatId, 'failed', stored('agents.cancelled'));
-      else writeJob(chatId, 'done');
+      // A Stop is the user's choice, not a failure: done, with a note saying so (never "needs you").
+      // The autopilot's own failures go through failChatJob, which has already dropped the job by now.
+      writeJob(chatId, 'done', u.stopReason === 'cancelled' ? stored('agents.cancelled') : null);
       settleTools(chatId, u.stopReason === 'cancelled' ? 'failed' : 'done');
       finish(chatId);
       const last = (get().messages[chatId] ?? []).at(-1);
