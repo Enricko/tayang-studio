@@ -412,7 +412,7 @@ export const en = {
     scheduleVideo: 'Schedule a video',
     cantUpdate: "Couldn't update the video. Try again",
     plans: 'See plans',
-    autopilotsTitle: 'Autopilots',
+    manageAutopilots: 'Manage autopilots',
     ghost: {
       planned: 'Planned · {{name}}',
       making: 'Making · {{name}}',
@@ -441,8 +441,6 @@ export const en = {
     tryAgain: 'Try again',
     tryAgainAria: 'Try again: {{time}}',
     gone: 'This autopilot no longer exists',
-    hint: 'Set a niche, a style and how often. Tayang plans the slots on your calendar and makes the videos.',
-    empty: 'No autopilots yet. Make one and your calendar fills itself',
     add: 'New autopilot',
     active: 'Active',
     paused: 'Paused',
@@ -492,10 +490,7 @@ export const en = {
       discard: 'Discard',
       keepEditing: 'Keep editing',
     },
-    dialog: {
-      titleNew: 'New autopilot',
-      titleEdit: 'Edit autopilot',
-      description: 'Your agent makes one video per slot, in the style you pick.',
+    form: {
       name: 'Name',
       namePlaceholder: 'Coffee tips',
       niche: 'Niche',
@@ -526,8 +521,6 @@ export const en = {
       manualHint: 'Tayang reminds you when it is time to post',
       automatic: 'Automatic',
       comingSoon: 'Coming soon',
-      save: 'Save autopilot',
-      saving: 'Saving…',
       errors: {
         name: 'Give it a name',
         niche: 'Say what the videos are about',

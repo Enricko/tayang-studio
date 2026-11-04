@@ -407,7 +407,7 @@ export const id: Translations = {
     scheduleVideo: 'Jadwalkan video',
     cantUpdate: 'Video belum bisa diperbarui. Coba lagi',
     plans: 'Lihat paket',
-    autopilotsTitle: 'Autopilot',
+    manageAutopilots: 'Kelola autopilot',
     ghost: {
       planned: 'Direncanakan · {{name}}',
       making: 'Sedang dibuat · {{name}}',
@@ -436,8 +436,6 @@ export const id: Translations = {
     tryAgain: 'Coba lagi',
     tryAgainAria: 'Coba lagi: {{time}}',
     gone: 'Autopilot ini sudah tidak ada',
-    hint: 'Tentukan niche, gaya, dan seberapa sering. Tayang menyusun slot di kalendermu dan membuatkan videonya.',
-    empty: 'Belum ada autopilot. Buat satu, dan kalendermu terisi sendiri',
     add: 'Autopilot baru',
     active: 'Aktif',
     paused: 'Dijeda',
@@ -487,10 +485,7 @@ export const id: Translations = {
       discard: 'Buang',
       keepEditing: 'Lanjut mengisi',
     },
-    dialog: {
-      titleNew: 'Autopilot baru',
-      titleEdit: 'Ubah autopilot',
-      description: 'Agenmu membuat satu video per slot, dengan gaya yang kamu pilih.',
+    form: {
       name: 'Nama',
       namePlaceholder: 'Tips kopi',
       niche: 'Niche',
@@ -521,8 +516,6 @@ export const id: Translations = {
       manualHint: 'Tayang mengingatkan kamu saat waktunya posting',
       automatic: 'Otomatis',
       comingSoon: 'Segera hadir',
-      save: 'Simpan autopilot',
-      saving: 'Menyimpan…',
       errors: {
         name: 'Beri nama dulu',
         niche: 'Ceritakan video-videonya tentang apa',

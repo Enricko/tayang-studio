@@ -143,19 +143,19 @@ export function AutopilotWizard({ id, now = new Date() }: { id?: string; now?: D
   }, [step]);
 
   const problems: Record<StepKey, string | null> = {
-    niche: !form.name.trim() ? t('autopilot.dialog.errors.name') : !form.niche.trim() ? t('autopilot.dialog.errors.niche') : null,
-    style: styles.some((s) => s.id === form.styleId) ? null : t('autopilot.dialog.errors.style'),
+    niche: !form.name.trim() ? t('autopilot.form.errors.name') : !form.niche.trim() ? t('autopilot.form.errors.niche') : null,
+    style: styles.some((s) => s.id === form.styleId) ? null : t('autopilot.form.errors.style'),
     schedule:
       form.mode === 'daily'
         ? validTimes(form.times)
           ? null
-          : t('autopilot.dialog.errors.times')
+          : t('autopilot.form.errors.times')
         : !form.days.length
-          ? t('autopilot.dialog.errors.days')
+          ? t('autopilot.form.errors.days')
           : isTime(form.time)
             ? null
-            : t('autopilot.dialog.errors.times'),
-    agent: installed.some((a) => a.id === form.agentId) ? null : t('autopilot.dialog.errors.agent'),
+            : t('autopilot.form.errors.times'),
+    agent: installed.some((a) => a.id === form.agentId) ? null : t('autopilot.form.errors.agent'),
     summary: null,
   };
   const key = STEP_KEYS[step]!;
@@ -185,7 +185,7 @@ export function AutopilotWizard({ id, now = new Date() }: { id?: string; now?: D
       notifyAutopilotChanged();
       useApp.getState().navigate({ name: 'autopilot', id: saved.id });
     } catch {
-      setSaveError(t('autopilot.dialog.errors.cantSave'));
+      setSaveError(t('autopilot.form.errors.cantSave'));
       setBusy(false);
     }
   };
@@ -204,27 +204,27 @@ export function AutopilotWizard({ id, now = new Date() }: { id?: string; now?: D
     niche: () => (
       <div className="flex flex-col gap-4">
         <label className={label}>
-          {t('autopilot.dialog.name')}
-          <Input value={form.name} placeholder={t('autopilot.dialog.namePlaceholder')} onChange={(e) => change({ name: e.target.value })} />
+          {t('autopilot.form.name')}
+          <Input value={form.name} placeholder={t('autopilot.form.namePlaceholder')} onChange={(e) => change({ name: e.target.value })} />
         </label>
         <label className={label}>
-          {t('autopilot.dialog.niche')}
-          <Textarea value={form.niche} rows={3} placeholder={t('autopilot.dialog.nichePlaceholder')} onChange={(e) => change({ niche: e.target.value })} />
+          {t('autopilot.form.niche')}
+          <Textarea value={form.niche} rows={3} placeholder={t('autopilot.form.nichePlaceholder')} onChange={(e) => change({ niche: e.target.value })} />
         </label>
-        <div role="group" aria-label={t('autopilot.dialog.examples')} className="flex flex-wrap gap-2">
+        <div role="group" aria-label={t('autopilot.form.examples')} className="flex flex-wrap gap-2">
           {(['example1', 'example2', 'example3'] as const).map((k) => (
             <button
               key={k}
               type="button"
-              onClick={() => change({ niche: t(`autopilot.dialog.${k}`) })}
+              onClick={() => change({ niche: t(`autopilot.form.${k}`) })}
               className="cursor-pointer rounded-full border border-border bg-card px-3 py-1 text-xs text-text-2 hover:text-foreground"
             >
-              {t(`autopilot.dialog.${k}`)}
+              {t(`autopilot.form.${k}`)}
             </button>
           ))}
         </div>
         <label className={cn(label, 'max-w-[240px]')}>
-          {t('autopilot.dialog.language')}
+          {t('autopilot.form.language')}
           <select
             value={form.language}
             onChange={(e) => change({ language: e.target.value as VideoLanguage })}
@@ -238,8 +238,8 @@ export function AutopilotWizard({ id, now = new Date() }: { id?: string; now?: D
     ),
     style: () => (
       <div className="flex flex-col gap-3">
-        {!styles.length && <p className="m-0 text-xs text-text-2">{t('autopilot.dialog.noStyles')}</p>}
-        <div role="radiogroup" aria-label={t('autopilot.dialog.style')} className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(112px, 1fr))' }}>
+        {!styles.length && <p className="m-0 text-xs text-text-2">{t('autopilot.form.noStyles')}</p>}
+        <div role="radiogroup" aria-label={t('autopilot.form.style')} className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(112px, 1fr))' }}>
           {styles.map((s) => {
             const on = s.id === form.styleId;
             return (
@@ -284,19 +284,19 @@ export function AutopilotWizard({ id, now = new Date() }: { id?: string; now?: D
         <div className="flex gap-2">
           {(['daily', 'weekly'] as const).map((m) => (
             <button key={m} type="button" aria-pressed={form.mode === m} className={chip(form.mode === m)} onClick={() => change({ mode: m })}>
-              {m === 'daily' ? t('autopilot.dialog.modeDaily') : t('autopilot.dialog.modeWeekly')}
+              {m === 'daily' ? t('autopilot.form.modeDaily') : t('autopilot.form.modeWeekly')}
             </button>
           ))}
         </div>
         {form.mode === 'daily' ? (
           <div className="flex flex-col gap-2">
-            <span className="text-xs text-text-2">{t('autopilot.dialog.times')}</span>
+            <span className="text-xs text-text-2">{t('autopilot.form.times')}</span>
             <div className="flex flex-wrap items-center gap-2">
               {form.times.map((v, i) => (
                 <span key={i} className="inline-flex items-center gap-1">
                   <Input
                     type="time"
-                    aria-label={t('autopilot.dialog.timeN', { n: i + 1 })}
+                    aria-label={t('autopilot.form.timeN', { n: i + 1 })}
                     value={v}
                     className="h-9 w-[110px]"
                     onChange={(e) => change({ times: form.times.map((x, j) => (j === i ? e.target.value : x)) })}
@@ -305,7 +305,7 @@ export function AutopilotWizard({ id, now = new Date() }: { id?: string; now?: D
                     <Button
                       type="button"
                       variant="ghost"
-                      aria-label={t('autopilot.dialog.removeTime', { time: v || String(i + 1) })}
+                      aria-label={t('autopilot.form.removeTime', { time: v || String(i + 1) })}
                       className="size-8 px-0"
                       onClick={() => change({ times: form.times.filter((_, j) => j !== i) })}
                     >
@@ -317,14 +317,14 @@ export function AutopilotWizard({ id, now = new Date() }: { id?: string; now?: D
               {form.times.length < MAX_TIMES && (
                 <Button type="button" variant="secondary" className="h-8 px-3 text-[13px]" onClick={() => change({ times: [...form.times, '18:00'] })}>
                   <Plus size={14} strokeWidth={1.5} aria-hidden="true" />
-                  {t('autopilot.dialog.addTime')}
+                  {t('autopilot.form.addTime')}
                 </Button>
               )}
             </div>
           </div>
         ) : (
           <div className="flex flex-col gap-3">
-            <div role="group" aria-label={t('autopilot.dialog.days')} className="flex flex-wrap gap-2">
+            <div role="group" aria-label={t('autopilot.form.days')} className="flex flex-wrap gap-2">
               {WEEK.map((d) => {
                 const on = form.days.includes(d);
                 return (
@@ -341,13 +341,13 @@ export function AutopilotWizard({ id, now = new Date() }: { id?: string; now?: D
               })}
             </div>
             <label className={label}>
-              {t('autopilot.dialog.time')}
+              {t('autopilot.form.time')}
               <Input type="time" value={form.time} className="h-9 w-[110px]" onChange={(e) => change({ time: e.target.value })} />
             </label>
           </div>
         )}
-        <div role="radiogroup" aria-label={t('autopilot.dialog.length')} className="flex flex-col gap-2">
-          <span className="text-xs text-text-2">{t('autopilot.dialog.length')}</span>
+        <div role="radiogroup" aria-label={t('autopilot.form.length')} className="flex flex-col gap-2">
+          <span className="text-xs text-text-2">{t('autopilot.form.length')}</span>
           <div className="flex flex-wrap gap-2">
             {(LENGTHS.includes(form.lengthSec) ? LENGTHS : [...LENGTHS, form.lengthSec].sort((a, b) => a - b)).map((n) => (
               <button key={n} type="button" role="radio" aria-checked={form.lengthSec === n} className={chip(form.lengthSec === n)} onClick={() => change({ lengthSec: n })}>
@@ -365,8 +365,8 @@ export function AutopilotWizard({ id, now = new Date() }: { id?: string; now?: D
     ),
     agent: () => (
       <div className="flex flex-col gap-5">
-        {!installed.length && <p className="m-0 text-xs text-text-2">{t('autopilot.dialog.noAgents')}</p>}
-        <div role="radiogroup" aria-label={t('autopilot.dialog.agent')} className="flex flex-wrap gap-2">
+        {!installed.length && <p className="m-0 text-xs text-text-2">{t('autopilot.form.noAgents')}</p>}
+        <div role="radiogroup" aria-label={t('autopilot.form.agent')} className="flex flex-wrap gap-2">
           {installed.map((a) => {
             const on = a.id === form.agentId;
             return (
@@ -390,25 +390,25 @@ export function AutopilotWizard({ id, now = new Date() }: { id?: string; now?: D
         <div className="flex items-start justify-between gap-4 rounded-xl border border-border bg-card p-4">
           <div className="flex flex-col gap-1">
             <label htmlFor="autopilot-review" className="text-sm">
-              {t('autopilot.dialog.review')}
+              {t('autopilot.form.review')}
             </label>
             <span className="text-xs text-text-3">{form.review ? t('autopilot.wizard.reviewOn') : t('autopilot.wizard.reviewOff')}</span>
           </div>
           <Switch id="autopilot-review" checked={form.review} onCheckedChange={(review) => change({ review })} />
         </div>
         <fieldset className="m-0 flex flex-col gap-2 border-0 p-0">
-          <legend className="mb-1 p-0 text-xs text-text-2">{t('autopilot.dialog.posting')}</legend>
+          <legend className="mb-1 p-0 text-xs text-text-2">{t('autopilot.form.posting')}</legend>
           <label className="flex items-start gap-2 text-sm">
             <input type="radio" name="posting" checked readOnly className="mt-1 accent-[var(--color-primary)]" />
             <span className="flex flex-col">
-              {t('autopilot.dialog.manual')}
-              <span className="text-xs text-text-3">{t('autopilot.dialog.manualHint')}</span>
+              {t('autopilot.form.manual')}
+              <span className="text-xs text-text-3">{t('autopilot.form.manualHint')}</span>
             </span>
           </label>
           <label className="flex items-start gap-2 text-sm text-text-3">
             <input type="radio" name="posting" disabled className="mt-1" />
             <span>
-              {t('autopilot.dialog.automatic')} · {t('autopilot.dialog.comingSoon')}
+              {t('autopilot.form.automatic')} · {t('autopilot.form.comingSoon')}
             </span>
           </label>
         </fieldset>
@@ -416,15 +416,15 @@ export function AutopilotWizard({ id, now = new Date() }: { id?: string; now?: D
     ),
     summary: () => {
       const rows: [StepKey, string, string][] = [
-        ['niche', t('autopilot.dialog.name'), form.name.trim()],
-        ['niche', t('autopilot.dialog.niche'), form.niche.trim()],
-        ['niche', t('autopilot.dialog.language'), form.language === 'id' ? 'Bahasa Indonesia' : 'English'],
-        ['style', t('autopilot.dialog.style'), style?.name ?? ''],
-        ['schedule', t('autopilot.dialog.frequency'), validTimes(form.times) || form.mode === 'weekly' ? frequencyLabel({ frequency: frequencyOf(form) }) : ''],
-        ['schedule', t('autopilot.dialog.length'), t('chat.seconds', { n: form.lengthSec })],
-        ['agent', t('autopilot.dialog.agent'), form.agentId ? AGENT_NAMES[form.agentId] : ''],
-        ['agent', t('autopilot.dialog.review'), form.review ? t('autopilot.wizard.reviewValueOn') : t('autopilot.wizard.reviewValueOff')],
-        ['agent', t('autopilot.dialog.posting'), t('autopilot.dialog.manual')],
+        ['niche', t('autopilot.form.name'), form.name.trim()],
+        ['niche', t('autopilot.form.niche'), form.niche.trim()],
+        ['niche', t('autopilot.form.language'), form.language === 'id' ? 'Bahasa Indonesia' : 'English'],
+        ['style', t('autopilot.form.style'), style?.name ?? ''],
+        ['schedule', t('autopilot.form.frequency'), validTimes(form.times) || form.mode === 'weekly' ? frequencyLabel({ frequency: frequencyOf(form) }) : ''],
+        ['schedule', t('autopilot.form.length'), t('chat.seconds', { n: form.lengthSec })],
+        ['agent', t('autopilot.form.agent'), form.agentId ? AGENT_NAMES[form.agentId] : ''],
+        ['agent', t('autopilot.form.review'), form.review ? t('autopilot.wizard.reviewValueOn') : t('autopilot.wizard.reviewValueOff')],
+        ['agent', t('autopilot.form.posting'), t('autopilot.form.manual')],
       ];
       return (
         <div className="flex flex-col divide-y divide-border rounded-xl border border-border bg-card">

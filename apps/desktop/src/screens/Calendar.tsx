@@ -1,32 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import type { AgentInfo, Autopilot, AutopilotInput, AutopilotSlot, MessagePart, Project, Style, VideoKind } from '@tayang/shared';
+import type { Autopilot, AutopilotSlot, MessagePart, Project, VideoKind } from '@tayang/shared';
 import { buildTopicIdeasPrompt } from '@tayang/skills';
 import { Button } from '@/components/Button';
-import { AutopilotDialog } from '@/components/AutopilotDialog';
-import { AutopilotPanel } from '@/components/AutopilotPanel';
 import { ScheduleDialog } from '@/components/ScheduleDialog';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { PermissionCard } from '@/components/PermissionCard';
 import { locale } from '@/i18n';
 import { calendarState, type CalendarState } from '@/lib/calendarState';
-import {
-  approveProject,
-  deleteAutopilot,
-  detectAgents,
-  listAutopilots,
-  listProjects,
-  listSlots,
-  listStyles,
-  saveAutopilot,
-  setAutopilotStatus,
-  setPosted,
-  setSchedule,
-  updateSlot,
-} from '@/lib/ipc';
+import { approveProject, listAutopilots, listProjects, listSlots, listStyles, setPosted, setSchedule, updateSlot } from '@/lib/ipc';
 import { localized } from '@/lib/stored';
-import { canStopNow, notifyAutopilotChanged, onAutopilotChanged, stopNow } from '@/lib/autopilotHooks';
+import { notifyAutopilotChanged, onAutopilotChanged } from '@/lib/autopilotHooks';
 import { openProjectChat } from '@/lib/openProject';
 import { ideasFromReply, startTopic, type TopicIdea } from '@/lib/topics';
 import { cn } from '@/lib/utils';
@@ -125,9 +110,6 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
   const [gridError, setGridError] = useState<string | null>(null);
   const [autopilots, setAutopilots] = useState<Autopilot[]>([]);
   const [slots, setSlots] = useState<AutopilotSlot[]>([]);
-  const [styles, setStyles] = useState<Style[]>([]);
-  const [agents, setAgents] = useState<AgentInfo[]>([]);
-  const [editing, setEditing] = useState<Autopilot | 'new' | null>(null);
   const [panelError, setPanelError] = useState<string | null>(null);
 
   const messages = useChat((s) => (chatId ? s.messages[chatId] : undefined)) ?? NO_MESSAGES;
@@ -155,20 +137,18 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
       .catch(() => setPanelError(t('autopilot.cantLoad')));
   }, [reloadTick]);
 
-  // Slots for the visible grid, and a day either side of today so a video being made shows on the panel.
+  // Slots for the visible grid.
   const gridFrom = new Date(cursor.y, cursor.m, 1 - ((new Date(cursor.y, cursor.m, 1).getDay() + 6) % 7));
   const gridKey = dateKey(gridFrom);
   useEffect(() => {
-    const from = new Date(Math.min(gridFrom.getTime(), today.getTime() - DAY_MS));
-    const to = new Date(Math.max(gridFrom.getTime() + 43 * DAY_MS, today.getTime() + 2 * DAY_MS));
     let alive = true;
-    listSlots(from.toISOString(), to.toISOString())
+    listSlots(gridFrom.toISOString(), new Date(gridFrom.getTime() + 43 * DAY_MS).toISOString())
       .then((l) => alive && setSlots(l))
       .catch(() => {});
     return () => {
       alive = false;
     };
-  }, [gridKey, dateKey(today), reloadTick]);
+  }, [gridKey, reloadTick]);
 
   // When the agent's turn ends, turn its JSON into idea cards and cache them for the week.
   useEffect(() => {
@@ -251,35 +231,16 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
     return map;
   }, [projects, slots, autopilots]);
 
-  const panelJob = async (job: () => Promise<unknown>) => {
+  const tryAgain = async (slot: AutopilotSlot) => {
     setPanelError(null);
     try {
-      await job();
+      const next = await updateSlot(slot.id, { status: 'planned', error: null, projectId: null });
+      setSlots((l) => l.map((x) => (x.id === next.id ? next : x)));
       notifyAutopilotChanged();
     } catch {
       setPanelError(t('autopilot.cantUpdate'));
     }
   };
-  const openDialog = (target: Autopilot | 'new') => {
-    setEditing(target);
-    listStyles()
-      .then(setStyles)
-      .catch(() => {});
-    detectAgents()
-      .then(setAgents)
-      .catch(() => {});
-  };
-  const saveFromDialog = async (input: AutopilotInput) => {
-    // The saved row is what the dialog's success rests on; a failed refresh must not make it look unsaved.
-    const saved = await saveAutopilot(input);
-    setAutopilots((l) => (l.some((x) => x.id === saved.id) ? l.map((x) => (x.id === saved.id ? saved : x)) : [...l, saved]));
-    notifyAutopilotChanged();
-  };
-  const tryAgain = (slot: AutopilotSlot) =>
-    void panelJob(async () => {
-      const next = await updateSlot(slot.id, { status: 'planned', error: null, projectId: null });
-      setSlots((l) => l.map((x) => (x.id === next.id ? next : x)));
-    });
 
   const replace = (p: Project) => setProjects((list) => list.map((x) => (x.id === p.id ? p : x)));
   const update = async (job: Promise<Project>) => {
@@ -326,6 +287,18 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
             <ChevronRight size={16} strokeWidth={1.5} aria-hidden="true" />
           </Button>
         </div>
+        <button
+          type="button"
+          onClick={() => useApp.getState().navigate({ name: 'autopilot' })}
+          className="cursor-pointer self-start border-0 bg-transparent p-0 text-xs text-orange-light underline"
+        >
+          {t('calendar.manageAutopilots')}
+        </button>
+        {panelError && (
+          <p role="alert" className="m-0 text-xs text-orange-light">
+            {panelError}
+          </p>
+        )}
         {blocked && (
           <p role="status" className="m-0 rounded-xl border border-border bg-card px-4 py-3 text-xs text-text-2">
             {t('reminders.blocked')}
@@ -415,7 +388,7 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
                                   type="button"
                                   aria-label={t('calendar.ghost.tryAgainAria', { name })}
                                   className="cursor-pointer self-start border-0 bg-transparent p-0 text-[10px] text-orange-light underline"
-                                  onClick={() => tryAgain(slot)}
+                                  onClick={() => void tryAgain(slot)}
                                 >
                                   {t('calendar.ghost.tryAgain')}
                                 </button>
@@ -548,44 +521,7 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
           </Button>
         </div>
 
-        <AutopilotPanel
-          autopilots={autopilots}
-          slots={slots}
-          now={today}
-          onNew={() => openDialog('new')}
-          onEdit={openDialog}
-          onToggle={(a) =>
-            panelJob(async () => {
-              const next = await setAutopilotStatus(a.id, a.status === 'active' ? 'paused' : 'active');
-              setAutopilots((l) => l.map((x) => (x.id === next.id ? next : x)));
-            })
-          }
-          onStop={(slot) => panelJob(() => stopNow(slot))}
-          onDelete={(a) =>
-            panelJob(async () => {
-              // A video being made for it would otherwise go on with no row or button left to stop it.
-              const making = slots.find((x) => x.autopilotId === a.id && x.status === 'making');
-              if (making && canStopNow()) await stopNow(making);
-              await deleteAutopilot(a.id);
-              setAutopilots((l) => l.filter((x) => x.id !== a.id));
-            })
-          }
-        />
-        {panelError && (
-          <p role="alert" className="m-0 text-xs text-orange-light">
-            {panelError}
-          </p>
-        )}
       </aside>
-      <AutopilotDialog
-        open={editing !== null}
-        onOpenChange={(o) => !o && setEditing(null)}
-        autopilot={editing === 'new' ? null : editing}
-        styles={styles}
-        agents={agents}
-        defaults={{ language: settings?.language ?? 'id', agentId: settings?.defaultAgent ?? 'claude' }}
-        onSave={saveFromDialog}
-      />
       <ScheduleDialog
         open={scheduleFor !== null || picking}
         onOpenChange={(o) => {

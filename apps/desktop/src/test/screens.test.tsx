@@ -1485,7 +1485,6 @@ describe('Calendar scheduling', () => {
   it('no longer claims Tayang reminds you', async () => {
     render(<Calendar today={today} />);
     expect(screen.queryByText(/reminds you/i)).not.toBeInTheDocument();
-    expect(screen.getByText(/tayang\.app plan/)).toBeInTheDocument();
   });
 });
 
