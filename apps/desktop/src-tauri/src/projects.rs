@@ -93,17 +93,39 @@ fn normalize(p: &Path) -> PathBuf {
 }
 
 /// True when `p` (relative paths resolve against `working`) stays inside `working`.
-/// Resolves `..` lexically, then follows symlinks for paths that already exist.
+/// Resolves `..` lexically, then canonicalizes the deepest existing ancestor of the target
+/// (following symlinks) and appends the not-yet-existing remainder.
 pub fn ensure_inside(working: &Path, p: &Path) -> bool {
+    let Ok(cw) = fs::canonicalize(working) else {
+        return false;
+    };
     let w = normalize(working);
     let target = normalize(&if p.is_absolute() { p.to_path_buf() } else { w.join(p) });
     if !target.starts_with(&w) {
         return false;
     }
-    match (fs::canonicalize(&w), fs::canonicalize(&target)) {
-        (Ok(cw), Ok(ct)) => ct.starts_with(cw),
-        _ => true,
+    let mut existing = target.as_path();
+    let mut rest: Vec<&std::ffi::OsStr> = Vec::new();
+    let canon = loop {
+        if let Ok(c) = fs::canonicalize(existing) {
+            break c;
+        }
+        match (existing.parent(), existing.file_name()) {
+            (Some(parent), Some(name)) => {
+                rest.push(name);
+                existing = parent;
+            }
+            _ => return false,
+        }
+    };
+    let mut resolved = canon;
+    for name in rest.into_iter().rev() {
+        if name == ".." || name == "." {
+            return false;
+        }
+        resolved.push(name);
     }
+    resolved.starts_with(cw)
 }
 
 #[cfg(test)]
@@ -164,5 +186,22 @@ mod tests {
         assert!(!ensure_inside(&w, &w.join("..").join("x")));
         assert!(!ensure_inside(&w, tmp.path()));
         assert!(!ensure_inside(&w, &tmp.path().join("work2")));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ensure_inside_follows_symlinks_for_new_paths() {
+        let tmp = tempfile::tempdir().unwrap();
+        let w = tmp.path().join("work");
+        let outside = tmp.path().join("outside");
+        std::fs::create_dir_all(w.join("sub")).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::os::unix::fs::symlink(&outside, w.join("link")).unwrap();
+        assert!(!ensure_inside(&w, &w.join("link").join("new.txt")));
+        assert!(!ensure_inside(&w, &w.join("link").join("a").join("b.txt")));
+        assert!(!ensure_inside(&w, Path::new("link/new.txt")));
+        assert!(ensure_inside(&w, &w.join("sub").join("new.txt")));
+        assert!(ensure_inside(&w, &w.join("sub").join("x").join("new.txt")));
+        assert!(!ensure_inside(&tmp.path().join("missing"), &tmp.path().join("missing").join("a")));
     }
 }
