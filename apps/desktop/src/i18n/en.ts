@@ -701,6 +701,7 @@ export const en = {
     style: 'Style',
     build: 'Build',
     render: 'Render',
+    renderingNow: 'Rendering now',
   },
 } as const;
 

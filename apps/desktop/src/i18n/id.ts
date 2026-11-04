@@ -696,5 +696,6 @@ export const id: Translations = {
     style: 'Gaya',
     build: 'Buat',
     render: 'Render',
+    renderingNow: 'Sedang merender',
   },
 };
