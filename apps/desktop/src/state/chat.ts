@@ -111,6 +111,8 @@ const pendingRecap = new Map<string, { text: string; switched: boolean }>();
 
 /** What `agent_prompt` says when a turn is still running; that turn goes on untouched. */
 const BUSY = /still working/i;
+/** Whether an error from `send` is the agent refusing a prompt because it is still working. */
+export const isBusyRefusal = (message: string) => BUSY.test(message);
 export const BUSY_NOTE = stored('chat.busyNote');
 
 const RECAP_MESSAGES = 6;
@@ -422,6 +424,7 @@ export const useChat = create<ChatState>((set, get) => {
         if (recap?.text) {
           // i18n-ignore: this goes to the agent, not the user
           const intro = recap.switched ? 'Earlier in this chat, with another agent:' : 'Earlier in this chat:';
+          // i18n-ignore: this goes to the agent, not the user
           lead.push({ type: 'text', text: `${intro}\n${recap.text}\n\nContinue from here.` });
         }
         await agentPrompt(chatId, [...lead, ...sent]);
