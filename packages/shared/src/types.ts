@@ -274,3 +274,47 @@ export interface AgentUsage {
   updatedAt: string;
   message: string | null;
 }
+
+// ---- autopilot ----
+
+/** How often an autopilot makes a video. Times are "HH:MM" in local time; days are 0 (Sunday) to 6 (Saturday). */
+export type AutopilotFrequency =
+  | { kind: 'daily'; times: string[] }
+  | { kind: 'weekly'; days: number[]; time: string };
+
+export interface Autopilot {
+  id: string;
+  name: string;
+  niche: string;
+  language: VideoLanguage;
+  styleId: string;
+  agentId: AgentId;
+  frequency: AutopilotFrequency;
+  lengthSec: number;
+  /** Finished videos wait for Approve (reviewState 'pending') instead of going straight to Ready. */
+  review: boolean;
+  /** Only manual for now: a reminder at post time. */
+  posting: 'manual';
+  status: 'active' | 'paused';
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** What the UI sends to create (no id) or edit (with id) an autopilot; the status is kept on edit, active when new. */
+export type AutopilotInput = Omit<Autopilot, 'id' | 'status' | 'createdAt' | 'updatedAt'> & { id?: string };
+
+export type SlotStatus = 'planned' | 'making' | 'done' | 'failed' | 'skipped';
+
+/** One video an autopilot is due to make; unique per (autopilotId, dueAt). */
+export interface AutopilotSlot {
+  id: string;
+  autopilotId: string;
+  /** RFC 3339, stored in UTC. */
+  dueAt: string;
+  status: SlotStatus;
+  projectId: string | null;
+  error: string | null;
+}
+
+/** The fields `update_slot` may change. */
+export type SlotPatch = Partial<Pick<AutopilotSlot, 'status' | 'projectId' | 'error'>>;

@@ -472,6 +472,86 @@ pub struct MediaInfo {
     pub height: u32,
 }
 
+// ---- autopilot ----
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum AutopilotFrequency {
+    /// `times` are "HH:MM" in local time, 1 to 6 of them.
+    Daily { times: Vec<String> },
+    /// `days` are 0 (Sunday) to 6 (Saturday).
+    Weekly { days: Vec<u8>, time: String },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum AutopilotStatus {
+    Active,
+    Paused,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Posting {
+    Manual,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Autopilot {
+    pub id: String,
+    pub name: String,
+    pub niche: String,
+    pub language: VideoLanguage,
+    pub style_id: String,
+    pub agent_id: AgentId,
+    pub frequency: AutopilotFrequency,
+    pub length_sec: u32,
+    pub review: bool,
+    pub posting: Posting,
+    pub status: AutopilotStatus,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// What the UI sends to create (no id) or edit (with id) an autopilot.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutopilotInput {
+    #[serde(default)]
+    pub id: Option<String>,
+    pub name: String,
+    pub niche: String,
+    pub language: VideoLanguage,
+    pub style_id: String,
+    pub agent_id: AgentId,
+    pub frequency: AutopilotFrequency,
+    pub length_sec: u32,
+    pub review: bool,
+    pub posting: Posting,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SlotStatus {
+    Planned,
+    Making,
+    Done,
+    Failed,
+    Skipped,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutopilotSlot {
+    pub id: String,
+    pub autopilot_id: String,
+    pub due_at: String,
+    pub status: SlotStatus,
+    pub project_id: Option<String>,
+    pub error: Option<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
