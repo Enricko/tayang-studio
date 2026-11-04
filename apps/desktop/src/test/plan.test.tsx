@@ -36,17 +36,27 @@ describe('plan card', () => {
     expect(useApp.getState().route).toEqual({ name: 'plans', from: 'settings', plan: undefined });
   });
 
-  it('a paid Lite shows Lite and until when, with Renew and Change plan (B2 bug)', async () => {
+  it('a paid Lite shows Lite and until when, with Renew and Upgrade (B2 bug, B3)', async () => {
     vi.mocked(billing.billingStatus).mockResolvedValue(lite);
     render(<PlanCard />);
     expect(await screen.findByText('Lite')).toBeInTheDocument();
     expect(screen.getByText('Active until Dec 4, 2026')).toBeInTheDocument();
     expect(screen.queryByText('Free')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Upgrade' })).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Renew' }));
     expect(useApp.getState().route).toEqual({ name: 'plans', from: 'settings', plan: 'lite' });
-    await userEvent.click(screen.getByRole('button', { name: 'Change plan' }));
+    // B3: no lower or equal plan while one runs, so "Change plan" became Upgrade.
+    expect(screen.queryByRole('button', { name: 'Change plan' })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Upgrade' }));
     expect(useApp.getState().route).toEqual({ name: 'plans', from: 'settings', plan: undefined });
+  });
+
+  it('on Pro there is nothing to upgrade to: Renew only (B3)', async () => {
+    vi.mocked(billing.billingStatus).mockResolvedValue({ ...creator, plan: 'pro', lastPlan: 'pro' });
+    render(<PlanCard />);
+    expect(await screen.findByText('Pro')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Renew' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Upgrade' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Change plan' })).not.toBeInTheDocument();
   });
 
   it('ended: the lapsed plan, Ended, and Renew', async () => {
@@ -63,7 +73,7 @@ describe('plan card', () => {
     render(<PlanCard />);
     expect(await screen.findByText('Aktif sampai 4 Des 2026')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Perpanjang' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Ganti paket' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Upgrade' })).toBeInTheDocument();
   });
 
   it('a payment still waiting: Continue payment opens the plans screen (which resumes it)', async () => {

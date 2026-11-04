@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ArrowLeft, Loader2, QrCode } from 'lucide-react';
 import { openUrl } from '@tauri-apps/plugin-opener';
-import { PLANS, PLAN_PERIOD_DAYS, findPlan, type PaidPlanId, type Plan } from '@tayang/shared';
+import { PLANS, findPlan, isLowerPlan, nextPeriod, type PaidPlanId, type Plan } from '@tayang/shared';
 import logo from '@/assets/brand/tayang-horizontal-reversed-color.svg';
 import { SignInDialog } from '@/components/Account';
 import { Button } from '@/components/Button';
@@ -22,6 +22,8 @@ import { useBilling, stepOf, type PayFlow } from '@/state/billing';
 
 const POPULAR: PaidPlanId = 'creator';
 const DAY_MS = 86_400_000;
+/** How long a payment link stays open (the API's CHECKOUT_TTL_HOURS). */
+const LINK_HOURS = 1;
 
 /** "4:05" / "1:02:03". */
 export function clock(ms: number): string {
@@ -66,6 +68,8 @@ function StaticCelebration() {
 }
 
 function PlanCards({ chosen, onChoose, current }: { chosen: PaidPlanId; onChoose(p: PaidPlanId): void; current: PaidPlanId | null }) {
+  // While a plan runs, a lower one can't be bought (the API refuses it too).
+  const locked = (p: PaidPlanId) => !!current && isLowerPlan(p, current);
   const { t } = useTranslation();
   const lang = uiLanguage();
   return (
@@ -80,12 +84,13 @@ function PlanCards({ chosen, onChoose, current }: { chosen: PaidPlanId; onChoose
           key={p.id}
           htmlFor={`plans-${p.id}`}
           className={cn(
-            'relative flex cursor-pointer flex-col gap-4 rounded-xl border bg-card p-5 transition-colors',
+            'relative flex flex-col gap-4 rounded-xl border bg-card p-5 transition-colors',
+            locked(p.id) ? 'cursor-not-allowed opacity-50' : 'cursor-pointer',
             chosen === p.id ? 'border-primary bg-tint' : p.id === POPULAR ? 'border-deep-orange' : 'border-border hover:border-hairline',
           )}
         >
           <div className="flex items-center gap-2">
-            <RadioGroupItem value={p.id} id={`plans-${p.id}`} aria-labelledby={`plans-${p.id}-name`} />
+            <RadioGroupItem value={p.id} id={`plans-${p.id}`} aria-labelledby={`plans-${p.id}-name`} disabled={locked(p.id)} />
             <span id={`plans-${p.id}-name`} className="text-base font-semibold">
               {p.name}
             </span>
@@ -100,6 +105,9 @@ function PlanCards({ chosen, onChoose, current }: { chosen: PaidPlanId; onChoose
             <span className="font-mono text-[28px] font-medium tracking-[-0.02em]">{formatIdr(p.price, lang)}</span>
             <span className="text-[13px] text-text-3">{t('plans.pick.perMonth')}</span>
           </div>
+          {locked(p.id) && current && (
+            <span className="-mt-2 text-xs text-text-3">{t('plans.pick.lockedNote', { current: findPlan(current)?.name ?? '' })}</span>
+          )}
           <span className="text-[13px] leading-normal text-text-2">{t(`plans.pick.for.${p.id}`)}</span>
           <Quotas plan={p} />
         </label>
@@ -108,19 +116,36 @@ function PlanCards({ chosen, onChoose, current }: { chosen: PaidPlanId; onChoose
   );
 }
 
-/** Step 2's summary: what is being paid for and until when it will run. */
+/** Step 2's summary: what is being paid for and until when it will run, as the API will compute it. */
 function Summary({ plan }: { plan: Plan }) {
   const { t } = useTranslation();
   const lang = uiLanguage();
   const status = useBilling((s) => s.status);
-  const renewing = status?.active && status.plan === plan.id && status.currentPeriodEnd;
-  const newEnd = renewing ? new Date(Date.parse(status.currentPeriodEnd!) + PLAN_PERIOD_DAYS * DAY_MS).toISOString() : null;
+  const running = status?.active && status.plan !== 'free' && status.currentPeriodEnd ? { plan: status.plan, end: status.currentPeriodEnd } : null;
+  const now = new Date();
+  const next = nextPeriod(running, plan.id, now);
+  // Paying later shrinks the days left; if the credit could drop a day while the link is open, say "≈".
+  const later = nextPeriod(running, plan.id, new Date(now.getTime() + LINK_HOURS * 3_600_000));
+  const approx = next.kind === 'upgrade' && later.extraDays !== next.extraDays ? '≈ ' : '';
+  const line =
+    next.kind === 'renew'
+      ? t('plans.pay.renewUntil', { date: formatDay(next.end, lang) })
+      : next.kind === 'upgrade' && running
+        ? approx +
+          t('plans.pay.upgradeCredit', {
+            days: Math.floor((Date.parse(running.end) - now.getTime()) / DAY_MS),
+            old: findPlan(running.plan)?.name ?? '',
+            extra: next.extraDays,
+            plan: plan.name,
+            date: formatDay(next.end, lang),
+          })
+        : null;
   return (
     <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-border bg-card p-5">
       <div className="flex flex-col gap-1">
         <span className="text-base font-semibold">{t('plans.pay.summary', { plan: plan.name })}</span>
         <span className="text-[13px] text-text-2">{t('plans.pay.activeFor')}</span>
-        {newEnd && <span className="text-[13px] text-orange-light">{t('plans.pay.newEnd', { date: formatDay(newEnd, lang) })}</span>}
+        {line && <span className="text-[13px] text-orange-light">{line}</span>}
       </div>
       <div className="flex items-baseline gap-1">
         <span className="font-mono text-2xl font-medium">{formatIdr(plan.price, lang)}</span>
@@ -134,6 +159,7 @@ function PayStep({ flow, onLeave }: { flow: Exclude<PayFlow, { phase: 'closed' |
   const { t } = useTranslation();
   const pay = useBilling((s) => s.pay);
   const back = useBilling((s) => s.back);
+  const status = useBilling((s) => s.status);
   const [linkError, setLinkError] = useState(false);
   const plan = findPlan(flow.plan)!;
   const now = useNow(flow.phase === 'waiting');
@@ -141,7 +167,9 @@ function PayStep({ flow, onLeave }: { flow: Exclude<PayFlow, { phase: 'closed' |
     linkError
       ? t(BILLING_ERROR_KEYS.bad_link)
       : flow.phase === 'failed'
-        ? typeof flow.error === 'string'
+        ? flow.error === 'downgrade_not_allowed'
+          ? t('plans.pick.lockedNote', { current: findPlan(status?.plan)?.name ?? '' })
+          : typeof flow.error === 'string'
           ? t(BILLING_ERROR_KEYS[flow.error])
           : t('billing.errors.unexpected', { message: flow.error.message })
         : null;
@@ -262,7 +290,7 @@ export function Plans({ from, plan: initialPlan }: { from?: 'settings' | 'autopi
   }, []);
   // The current plan is picked first, unless the way in picked one.
   useEffect(() => {
-    if (!initialPlan && current) setChosen(current);
+    if (current && (!initialPlan || isLowerPlan(initialPlan, current))) setChosen(current);
   }, [initialPlan, current]);
   // Focus follows the step, so a screen reader hears where it is.
   useEffect(() => {
@@ -358,7 +386,13 @@ export function Plans({ from, plan: initialPlan }: { from?: 'settings' | 'autopi
               </p>
               <div className="flex flex-col items-end gap-1">
                 <Button onClick={next}>
-                  {!signedIn ? t('plans.pick.signInFirst') : chosen === current ? t('plans.pick.renew') : t('plans.pick.continue')}
+                  {!signedIn
+                    ? t('plans.pick.signInFirst')
+                    : chosen === current
+                      ? t('plans.pick.renew')
+                      : current
+                        ? t('plans.pick.upgrade')
+                        : t('plans.pick.continue')}
                 </Button>
                 {!signedIn && <span className="text-xs text-text-3">{t('plans.pick.signInNote')}</span>}
               </div>

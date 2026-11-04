@@ -20,6 +20,7 @@ export const BILLING_ERROR_KEYS = {
   unavailable: 'billing.errors.unavailable',
   'rate-limited': 'billing.errors.rateLimited',
   bad_link: 'billing.errors.badLink',
+  downgrade_not_allowed: 'billing.errors.downgrade',
 } as const satisfies Record<BillingErrorCode, string>;
 
 export const planName = (id: PlanId, free: string) => findPlan(id)?.name ?? free;
@@ -118,7 +119,13 @@ export function PlanCard() {
             {t('billing.resume')}
           </Button>
         )}
-        {paidPlan && (
+        {/* While a plan runs only a higher one can be bought: Upgrade (none above Pro). After it ends, any. */}
+        {paidPlan && state === 'active' && paidPlan !== 'pro' && (
+          <Button variant="secondary" onClick={() => choose()}>
+            {t('billing.upgrade')}
+          </Button>
+        )}
+        {paidPlan && state === 'ended' && (
           <Button variant="secondary" onClick={() => choose()}>
             {t('billing.changePlan')}
           </Button>

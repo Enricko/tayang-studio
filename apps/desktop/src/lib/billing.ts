@@ -17,8 +17,19 @@ export type BillingErrorCode =
   | 'payment-provider'
   | 'unavailable'
   | 'rate-limited'
-  | 'bad_link';
-const CODES: readonly string[] = ['signed-out', 'invalid-plan', 'network', 'server', 'payment-provider', 'unavailable', 'rate-limited', 'bad_link'];
+  | 'bad_link'
+  | 'downgrade_not_allowed';
+const CODES: readonly string[] = [
+  'signed-out',
+  'invalid-plan',
+  'network',
+  'server',
+  'payment-provider',
+  'unavailable',
+  'rate-limited',
+  'bad_link',
+  'downgrade_not_allowed',
+];
 
 /** The code in a `billing:<code>` rejection, or null for anything else. */
 export function billingErrorCode(e: unknown): BillingErrorCode | null {

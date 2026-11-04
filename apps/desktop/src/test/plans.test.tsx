@@ -111,6 +111,53 @@ describe('plans screen: choose', () => {
     expect(screen.getByRole('button', { name: 'Renew' })).toBeInTheDocument();
   });
 
+  it('while a plan runs, lower plans are disabled with a note, and arrow keys skip them (B3)', async () => {
+    vi.mocked(billing.billingStatus).mockResolvedValue(creator);
+    const u = user();
+    render(<Plans from="settings" />);
+    await screen.findByText('Your plan');
+    const lite = screen.getByRole('radio', { name: 'Lite' });
+    expect(lite).toBeDisabled();
+    expect(screen.getByText('Available after your Creator plan ends')).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'Creator' })).toBeChecked();
+    await u.click(lite);
+    expect(screen.getByRole('radio', { name: 'Creator' })).toBeChecked();
+    screen.getByRole('radio', { name: 'Pro' }).focus();
+    await u.keyboard('{ArrowRight}');
+    expect(screen.getByRole('radio', { name: 'Creator' })).toHaveFocus();
+    await u.keyboard('{ArrowRight}');
+    expect(screen.getByRole('radio', { name: 'Pro' })).toHaveFocus();
+    await u.keyboard(' ');
+    expect(screen.getByRole('button', { name: 'Upgrade' })).toBeInTheDocument();
+  });
+
+  it('a lower plan asked for from outside starts on the current one', async () => {
+    vi.mocked(billing.billingStatus).mockResolvedValue(creator);
+    render(<Plans from="settings" plan="lite" />);
+    await screen.findByText('Your plan');
+    expect(screen.getByRole('radio', { name: 'Creator' })).toBeChecked();
+  });
+
+  it('the API refusing a downgrade shows the same note (B3)', async () => {
+    vi.mocked(billing.billingStatus).mockResolvedValue(creator);
+    vi.mocked(billing.billingCheckout).mockRejectedValueOnce('billing:downgrade_not_allowed');
+    const u = user();
+    render(<Plans from="settings" />);
+    await screen.findByText('Your plan');
+    await u.click(screen.getByRole('button', { name: 'Renew' }));
+    await u.click(await screen.findByRole('button', { name: 'Open the QRIS page' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Available after your Creator plan ends');
+  });
+
+  it('Indonesian notes for a running plan', async () => {
+    setUiLanguage('id');
+    vi.mocked(billing.billingStatus).mockResolvedValue(creator);
+    render(<Plans from="settings" />);
+    expect(await screen.findByText('Bisa dipilih setelah paket Creator berakhir')).toBeInTheDocument();
+    expect(screen.getByText('Paket kamu')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Perpanjang' })).toBeInTheDocument();
+  });
+
   it('in Indonesian', async () => {
     setUiLanguage('id');
     render(<Plans from="settings" />);
@@ -158,7 +205,29 @@ describe('plans screen: pay', () => {
     render(<Plans from="settings" />);
     await screen.findByText('Your plan');
     await u.click(screen.getByRole('button', { name: 'Renew' }));
-    expect(await screen.findByText('Your plan then runs until Jan 3, 2027')).toBeInTheDocument();
+    expect(await screen.findByText('Extended until Jan 3, 2027')).toBeInTheDocument();
+  });
+
+  it('upgrading shows the credit for the days left, as the API computes it (B3)', async () => {
+    // 10.5 days of Lite left → Creator: floor(10.5 × 15000 / 50000) = 3 extra days (still 3 in an hour), so 33 days from now.
+    vi.mocked(billing.billingStatus).mockResolvedValue({ ...creator, plan: 'lite', lastPlan: 'lite', currentPeriodEnd: '2026-11-15T00:00:00.000Z' });
+    const u = user();
+    render(<Plans from="settings" />);
+    await screen.findByText('Your plan');
+    await u.click(screen.getByRole('radio', { name: 'Creator' }));
+    await u.click(screen.getByRole('button', { name: 'Upgrade' }));
+    expect(await screen.findByText('10 days left of Lite become +3 days on Creator. Active until Dec 7, 2026.')).toBeInTheDocument();
+  });
+
+  it('marks the upgrade summary ≈ when an hour of waiting could change the credit', async () => {
+    // 10 days and 10 minutes of Lite → Creator: 3.002 extra days now, 2.99 an hour later: the credit may be a day less.
+    vi.mocked(billing.billingStatus).mockResolvedValue({ ...creator, plan: 'lite', lastPlan: 'lite', currentPeriodEnd: '2026-11-14T12:10:00.000Z' });
+    const u = user();
+    render(<Plans from="settings" />);
+    await screen.findByText('Your plan');
+    await u.click(screen.getByRole('radio', { name: 'Creator' }));
+    await u.click(screen.getByRole('button', { name: 'Upgrade' }));
+    expect(await screen.findByText(/^≈ 10 days left of Lite become \+3 days on Creator/)).toBeInTheDocument();
   });
 
   it('Change plan goes back to step 1', async () => {
