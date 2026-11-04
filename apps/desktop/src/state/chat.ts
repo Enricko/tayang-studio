@@ -28,6 +28,8 @@ export interface SendOpts {
   promptParts?: MessagePart[];
   /** Track this chat's turns as a `build` job. */
   job?: ChatJob;
+  /** The chat's own agent; defaults to the agent picked in Settings. */
+  agentId?: AgentId;
 }
 
 interface ChatState {
@@ -212,7 +214,7 @@ export const useChat = create<ChatState>((set, get) => {
       append(chatId, user);
       void persist(chatId, user);
       try {
-        const agent = useApp.getState().settings?.defaultAgent ?? 'claude';
+        const agent = opts?.agentId ?? useApp.getState().settings?.defaultAgent ?? 'claude';
         chatAgent.set(chatId, agent);
         if (opts?.job) chatJobs.set(chatId, opts.job);
         writeJob(chatId, 'working');

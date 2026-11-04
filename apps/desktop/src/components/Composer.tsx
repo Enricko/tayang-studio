@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowUp, ChevronDown, Square, X } from 'lucide-react';
-import type { MessagePart, Project } from '@tayang/shared';
+import type { AgentId, MessagePart, Project } from '@tayang/shared';
 import { AgentLogo } from '@/components/AgentLogo';
 import { FrameChip } from '@/components/MessageList';
 import { filterProjects, MentionMenu } from '@/components/MentionMenu';
@@ -32,6 +32,7 @@ export function Composer({
   placeholder = 'Say what to change. Bahasa Indonesia is fine',
   mentionSignal = 0,
   onStop,
+  agentId,
 }: {
   chatId: string | null;
   /** Resolve to false when sending failed: the draft is then kept. */
@@ -49,8 +50,11 @@ export function Composer({
   mentionSignal?: number;
   /** While the agent is working (`disabled`), show a Stop button that calls this. */
   onStop?(): void;
+  /** The agent this chat talks to; defaults to the one picked in Settings. */
+  agentId?: AgentId;
 }) {
-  const agent = useApp((s) => s.settings?.defaultAgent ?? 'claude');
+  const defaultAgent = useApp((s) => s.settings?.defaultAgent ?? 'claude');
+  const agent = agentId ?? defaultAgent;
   const attachments = useChat((s) => (chatId ? s.attachments[chatId] : undefined)) ?? NONE;
   const [text, setText] = useState('');
   const [dismissed, setDismissed] = useState<string | null>(null);

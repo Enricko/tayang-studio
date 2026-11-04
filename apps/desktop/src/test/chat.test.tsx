@@ -204,6 +204,17 @@ describe('ChatProject', () => {
     expect(screen.getAllByTestId('agent-message')).toHaveLength(1);
   });
 
+  it("talks to the chat's own agent, not the default one", async () => {
+    const user = userEvent.setup();
+    vi.mocked(ipc.getChat).mockResolvedValue({ ...chat('c1', 'p1'), agentId: 'gemini' });
+    render(<ChatProject chatId="c1" />);
+    await screen.findByText('Kenapa rupiah melemah?', { selector: 'span' });
+    expect(screen.getByText('Gemini CLI')).toBeInTheDocument();
+    await user.type(screen.getByRole('textbox', { name: 'Message' }), 'go');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(ipc.agentStart).toHaveBeenCalledWith('c1', 'gemini'));
+  });
+
   it('shows an error message and re-enables the composer', async () => {
     const user = userEvent.setup();
     render(<ChatProject chatId="c1" />);

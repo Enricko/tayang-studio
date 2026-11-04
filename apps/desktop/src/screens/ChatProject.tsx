@@ -23,7 +23,9 @@ const KIND: Record<VideoKind, string> = {
 };
 
 export function ChatProject({ chatId }: { chatId: string }) {
-  const agent = useApp((s) => s.settings?.defaultAgent ?? 'claude');
+  const defaultAgent = useApp((s) => s.settings?.defaultAgent ?? 'claude');
+  const [chat, setChat] = useState<Chat | null>(null);
+  const agent = chat?.agentId ?? defaultAgent;
   const [project, setProject] = useState<Project | null>(null);
   const [rendering, setRendering] = useState(false);
   const [renderError, setRenderError] = useState<string | null>(null);
@@ -37,8 +39,10 @@ export function ChatProject({ chatId }: { chatId: string }) {
     void useChat.getState().load(chatId);
     let alive = true;
     Promise.all([getChat(chatId), listProjects()])
-      .then(([chat, projects]: [Chat | null, Project[]]) => {
-        if (alive) setProject(projects.find((p) => p.id === chat?.projectId) ?? null);
+      .then(([found, projects]: [Chat | null, Project[]]) => {
+        if (!alive) return;
+        setChat(found);
+        setProject(projects.find((p) => p.id === found?.projectId) ?? null);
       })
       .catch(() => {});
     return () => {
@@ -59,6 +63,7 @@ export function ChatProject({ chatId }: { chatId: string }) {
     const job = project ? { projectId: project.id, title: project.title } : undefined;
     void useChat.getState().send(chatId, parts, {
       job,
+      agentId: agent,
       ...(skip ? { promptParts: [{ type: 'text', text: SKIP_FRAME_CHECK }, ...parts] } : {}),
     });
   };
@@ -131,6 +136,7 @@ export function ChatProject({ chatId }: { chatId: string }) {
               onSend={send}
               disabled={streaming}
               onStop={() => void useChat.getState().cancel(chatId)}
+              agentId={agent}
               quickChips
               sees={project?.title}
             />
