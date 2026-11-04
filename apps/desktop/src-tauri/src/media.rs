@@ -214,6 +214,29 @@ pub struct RenderPlan {
     pub output: PathBuf,
 }
 
+const ALLOWED_PROGRAMS: [&str; 6] = ["npx", "npm", "node", "pnpm", "bun", "yarn"];
+
+/// Templates may only run JavaScript tooling: a bare allow-listed program name.
+fn check_allowed_program(argv: &[String]) -> Result<()> {
+    let name = argv.first().map(String::as_str).unwrap_or("");
+    let base = if cfg!(windows) {
+        let lower = name.to_ascii_lowercase();
+        if lower.ends_with(".cmd") || lower.ends_with(".exe") {
+            name[..name.len() - 4].to_string()
+        } else {
+            name.to_string()
+        }
+    } else {
+        name.to_string()
+    };
+    let bare = !name.contains('/') && !name.contains('\\') && !name.contains("..");
+    if bare && ALLOWED_PROGRAMS.contains(&base.as_str()) {
+        Ok(())
+    } else {
+        Err(format!("This template asks to run {name}, which Tayang doesn't allow"))
+    }
+}
+
 /// `Ok(None)` when the folder has no `tayang.json` (use the HyperFrames default).
 pub fn render_plan(folder: &Path, unix_secs: u64) -> Result<Option<RenderPlan>> {
     let path = folder.join("tayang.json");
@@ -224,8 +247,12 @@ pub fn render_plan(folder: &Path, unix_secs: u64) -> Result<Option<RenderPlan>> 
     };
     let m: RenderManifest =
         serde_json::from_str(&raw).map_err(|e| format!("tayang.json is not valid: {e}"))?;
-    if m.render.first().is_none_or(|p| p.trim().is_empty()) {
+    if m.render.is_empty() {
         return Err("tayang.json has an empty render command".into());
+    }
+    check_allowed_program(&m.render)?;
+    if let Some(install) = &m.install {
+        check_allowed_program(install)?;
     }
     let slug = folder.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let slug = if slug.is_empty() { "render".to_string() } else { slug };
@@ -440,19 +467,41 @@ mod tests {
         assert!(render_plan(tmp.path(), 1).is_err());
     }
 
-    #[cfg(unix)]
     #[test]
     fn render_runs_tayang_json_without_a_shell() {
+        if crate::system::Exec::which(&crate::system::RealExec, "node").is_none() {
+            eprintln!("skipping: node not found");
+            return;
+        }
         let tmp = tempfile::tempdir().unwrap();
         let folder = tmp.path().join("p q");
         std::fs::create_dir_all(&folder).unwrap();
         std::fs::write(
             folder.join("tayang.json"),
-            r#"{"render":["sh","-c","printf x > \"$0\"","{output}"]}"#,
+            r#"{"render":["node","-e","require('fs').writeFileSync(process.argv[1],'x')","{output}"]}"#,
         )
         .unwrap();
         let out = render(&folder).unwrap();
         assert!(out.exists());
         assert!(out.starts_with(folder.join("renders")));
+    }
+
+    #[test]
+    fn render_plan_rejects_programs_outside_the_allow_list() {
+        let tmp = tempfile::tempdir().unwrap();
+        for bad in ["sh", "./x", "/bin/sh", "curl", "../npx", "node/../sh", ""] {
+            let m = format!(r#"{{"render":["{bad}","{{output}}"]}}"#);
+            std::fs::write(tmp.path().join("tayang.json"), m).unwrap();
+            let e = render_plan(tmp.path(), 1).unwrap_err();
+            assert!(e.contains("which Tayang doesn't allow"), "{bad}: {e}");
+        }
+        std::fs::write(tmp.path().join("tayang.json"), r#"{"render":["npx","x"],"install":["sh","-c","x"]}"#).unwrap();
+        assert!(render_plan(tmp.path(), 1).unwrap_err().contains("asks to run sh"));
+        std::fs::write(tmp.path().join("tayang.json"), r#"{"render":["npx","x"],"install":[]}"#).unwrap();
+        assert!(render_plan(tmp.path(), 1).is_err(), "empty install argv");
+        for ok in ["npx", "npm", "node", "pnpm", "bun", "yarn"] {
+            std::fs::write(tmp.path().join("tayang.json"), format!(r#"{{"render":["{ok}"]}}"#)).unwrap();
+            assert!(render_plan(tmp.path(), 1).unwrap().is_some(), "{ok}");
+        }
     }
 }
