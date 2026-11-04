@@ -11,16 +11,32 @@ export function currentStep(status: ProjectStatus): number {
   return 4;
 }
 
-export function StepBar({ status }: { status: ProjectStatus }) {
+type Props =
+  | { status: ProjectStatus }
+  | {
+      /** Visible step names, in order. */
+      steps: string[];
+      current: number;
+      /** The list's accessible name. */
+      label: string;
+      /** When given, every step is a button that jumps to it. */
+      onPick?: (index: number) => void;
+    };
+
+/** A project's progress (`status`), or any numbered steps (`steps`), such as the autopilot wizard's. */
+export function StepBar(props: Props) {
   const { t } = useTranslation();
-  const cur = currentStep(status);
+  const own = 'steps' in props;
+  const names = own ? props.steps : STEPS.map((s) => t(`stepBar.${s}`));
+  const cur = own ? props.current : currentStep(props.status);
+  const onPick = own ? props.onPick : undefined;
   return (
-    <ol aria-label={t('stepBar.aria')} className="m-0 flex list-none items-center gap-2 p-0">
-      {STEPS.map((name, i) => {
+    <ol aria-label={own ? props.label : t('stepBar.aria')} className="m-0 flex list-none flex-wrap items-center gap-2 p-0">
+      {names.map((name, i) => {
         const done = i < cur;
         const active = i === cur;
-        return (
-          <li key={name} aria-current={active ? 'step' : undefined} className="flex items-center gap-2">
+        const body = (
+          <>
             <span
               aria-hidden="true"
               className={cn(
@@ -32,8 +48,24 @@ export function StepBar({ status }: { status: ProjectStatus }) {
             >
               {done ? '✓' : i + 1}
             </span>
-            <span className={cn('text-[13px]', active ? 'font-medium text-foreground' : 'text-text-2')}>{t(`stepBar.${name}`)}</span>
-            {i < STEPS.length - 1 && <span aria-hidden="true" className="h-px w-4 bg-hairline" />}
+            <span className={cn('text-[13px]', active ? 'font-medium text-foreground' : 'text-text-2')}>{name}</span>
+          </>
+        );
+        return (
+          <li key={name} aria-current={!onPick && active ? 'step' : undefined} className="flex items-center gap-2">
+            {onPick ? (
+              <button
+                type="button"
+                aria-current={active ? 'step' : undefined}
+                onClick={() => onPick(i)}
+                className="inline-flex cursor-pointer items-center gap-2 rounded-md border-0 bg-transparent p-0 focus-visible:outline-2 focus-visible:outline-primary"
+              >
+                {body}
+              </button>
+            ) : (
+              body
+            )}
+            {i < names.length - 1 && <span aria-hidden="true" className="h-px w-4 bg-hairline" />}
           </li>
         );
       })}
