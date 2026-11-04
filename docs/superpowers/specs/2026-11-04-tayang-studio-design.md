@@ -238,3 +238,37 @@ Paid, through tayang.app and checked by the Hono backend **(my call)**:
 ## Next
 
 Before planning, this document gets a builder check: a fresh reader looks for gaps. After that comes an implementation plan.
+
+## Autopilot and Calendar
+
+
+### Owner decisions (2026-11-04)
+- Autopilot = niche + style + frequency ("2 videos a day or etc"); the user can have **many autopilots**, each can be **paused/resumed**.
+- Each autopilot chooses **automatic** (finished videos go straight to "Ready") or **review first** (finished videos wait for Approve).
+- Posting has two modes, **manual** and **automatic**; automatic comes later. Now: manual = a reminder at post time.
+- A Settings switch decides whether Tayang Studio **keeps running in the background**.
+- **No usage guard**; the user pauses autopilots themselves.
+
+### Calendar becomes real (prerequisite)
+- A video (project) can be scheduled: "Schedule" (date + time) on Videos, Preview and the Calendar day; drag a video to another day to move it; "Mark as posted".
+- Calendar cells show each video with its state: Planned (autopilot slot, no video yet) · Making · Needs review · Ready · Posted · Failed.
+- Reminder at post time (system notification): "Time to post <title>"; a not-yet-approved video instead says "Review <title> before it's due". Missed reminders while the app was closed show once on next launch.
+- The Autopilot promo card's false "Tayang reminds you" claim goes away (the panel below replaces it).
+
+### Autopilot
+- Fields: name, niche (free text + example chips), language, style (from the Style library), agent, frequency (N per day at set times, or N per week on chosen days + time), length (short form), review first on/off, posting = Manual (Automatic shown disabled "Coming soon"), active/paused.
+- Calendar gets an **Autopilots** panel (replacing the promo card): each autopilot with status, next slot, Pause/Resume, Edit, Delete; "+ New autopilot" opens a dialog.
+- Engine (runs in the app while it is open, including hidden in the tray):
+  - Keeps the next 7 days of slots planned on the Calendar per active autopilot.
+  - Production starts for the next slot due within 24 h; **one video at a time across all autopilots** (a queue), so they don't fight over the agent.
+  - For a slot: ask the agent for ONE motion-design topic for the niche + style that isn't a repeat of the autopilot's earlier titles → create the project from the style's template (existing topic flow) → build and render in a dedicated autopilot chat in **auto mode** (no permission cards) → when a render exists the video becomes Needs review (review first) or Ready.
+  - Failure → the slot shows Failed with Try again; the autopilot moves on to the next slot.
+  - Pause stops new work (the current video finishes; "Stop now" cancels it). Missed slots while the app was closed are produced on next launch if still in the future, else marked Skipped.
+  - Every autopilot video and chat is visible like any other (Videos, Agents board, chat history) so the user can step in.
+
+### Background mode (Settings › General)
+- "Keep Tayang running in the background" (default off): closing the window hides it to the tray/menu bar instead of quitting; tray menu: Open Tayang · Pause all autopilots · Quit. Plus "Open at login" (only enabled when background is on).
+
+### Not now
+- Automatic posting to TikTok/Reels/Shorts (later, likely tayang.app).
+- Asking the agent in chat to schedule videos; .ics export.
