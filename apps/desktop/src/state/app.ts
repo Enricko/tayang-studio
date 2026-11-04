@@ -22,6 +22,9 @@ interface AppState {
   /** Bumped when a project is created so the sidebar's Recent list refreshes. */
   projectsVersion: number;
   bumpProjects(): void;
+  /** Set when a reminder was due but the system denied notifications; the Calendar explains it. */
+  notificationsBlocked: boolean;
+  setNotificationsBlocked(blocked: boolean): void;
 }
 
 export const useApp = create<AppState>((set) => ({
@@ -32,4 +35,6 @@ export const useApp = create<AppState>((set) => ({
   needsYouCount: 0,
   projectsVersion: 0,
   bumpProjects: () => set((s) => ({ projectsVersion: s.projectsVersion + 1 })),
+  notificationsBlocked: false,
+  setNotificationsBlocked: (notificationsBlocked) => set({ notificationsBlocked }),
 }));
