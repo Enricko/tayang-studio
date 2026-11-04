@@ -101,7 +101,7 @@ const card = [
     },
     { id: 'b', component: 'Button', child: 'b-t', action: { event: { name: 'pick_topic', context: { topic: 'kpr' } } } },
   ]),
-  data('/chosen', 'x'),
+  data('/chosen', 'Rupiah melemah'),
 ];
 
 describe('A2uiSurface', () => {
@@ -122,9 +122,9 @@ describe('A2uiSurface', () => {
       name: 'pick_topic',
       surfaceId: 's1',
       sourceComponentId: 'a',
-      context: { topic: 'rupiah', title: 'x' },
+      context: { topic: 'rupiah', title: 'Rupiah melemah' },
     });
-    expect(a.summary).toBe('Picked: Kenapa rupiah melemah?');
+    expect(a.summary).toBe('Picked: Rupiah melemah');
     expect(Number.isNaN(Date.parse(a.timestamp))).toBe(false);
   });
 

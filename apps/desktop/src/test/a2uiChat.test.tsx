@@ -109,6 +109,32 @@ describe('A2UI in the chat', () => {
     expect(JSON.stringify(act)).toContain('"version":"v0.9"');
   });
 
+  it("sums up an action by its context title when it has one", async () => {
+    const text =
+      '```a2ui\n' +
+      [
+        { version: V, createSurface: { surfaceId: 's2', catalogId: 'basic' } },
+        {
+          version: V,
+          updateComponents: {
+            surfaceId: 's2',
+            components: [
+              { id: 'root', component: 'Column', children: ['b'] },
+              { id: 't', component: 'Text', text: 'Make this' },
+              { id: 'b', component: 'Button', child: 't', action: { event: { name: 'pick_topic', context: { title: 'Selat Malaka', kind: 'data', lengthSec: 45 } } } },
+            ],
+          },
+        },
+      ]
+        .map((m) => JSON.stringify(m))
+        .join('\n') +
+      '\n```';
+    render(<MessageList streaming={false} messages={[msg('1', 'agent', [{ type: 'text', text }])]} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Make this' }));
+    await waitFor(() => expect(agentPrompt).toHaveBeenCalled());
+    expect(vi.mocked(agentPrompt).mock.calls[0]![1].at(-1)).toMatchObject({ summary: 'Picked: Selat Malaka' });
+  });
+
   it('shows the surface as answered until the agent updates it', () => {
     const answered = msg('2', 'user', [
       { type: 'text', text: 'Picked: Pick me' },

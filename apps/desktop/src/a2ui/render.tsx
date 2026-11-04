@@ -349,8 +349,10 @@ function renderNode(id: string, base: string, ctx: Ctx, anc: string[]): ReactNod
   }
 }
 
-/** The readable line for an action: the chosen option labels, else the button's own label. */
-function summarize(ctx: Ctx, button: A2uiComponent, base: string): string {
+/** The readable line for an action: its `title` (a picked topic), the chosen option labels, else the button's label. */
+function summarize(ctx: Ctx, button: A2uiComponent, base: string, context: Record<string, unknown>): string {
+  const title = typeof context.title === 'string' ? context.title.trim() : '';
+  if (title) return `Picked: ${title}`;
   const labels: string[] = [];
   // Only pickers the button's own context reads count as its choice.
   const ev = (button.action as { event?: { context?: unknown } } | undefined)?.event;
@@ -411,7 +413,7 @@ export function A2uiSurface({
         sourceComponentId: c.id,
         timestamp: new Date().toISOString(),
         context,
-        summary: summarize(ctx, c, base),
+        summary: summarize(ctx, c, base, context),
       });
     },
   };
