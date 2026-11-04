@@ -11,6 +11,8 @@ export interface HealthResponse {
 export interface Entitlements {
   plan: PlanId;
   features: Feature[];
+  /** AI credits a month that come with the plan (one pool for images and voice). */
+  credits: number;
 }
 
 /** GET /v1/styles */

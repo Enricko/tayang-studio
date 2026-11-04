@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PAID_PLAN_IDS, PLANS, PLAN_PERIOD_DAYS, findPlan, isPaidPlanId, planFeatures } from '../src/index';
+import { CREDIT_COSTS, PAID_PLAN_IDS, PLANS, PLAN_PERIOD_DAYS, creditReach, findPlan, isPaidPlanId, planCredits, planFeatures } from '../src/index';
 
 describe('plans', () => {
   it('has the three monthly plans from docs/monetization.md, in IDR', () => {
@@ -13,9 +13,21 @@ describe('plans', () => {
   });
 
   it('carries the quotas per month', () => {
-    expect(findPlan('lite')?.quotas).toEqual({ socialAccounts: 'unlimited', autoPosts: 30, images: 0, voiceMinutes: 0 });
-    expect(findPlan('creator')?.quotas).toEqual({ socialAccounts: 'unlimited', autoPosts: 90, images: 60, voiceMinutes: 15 });
-    expect(findPlan('pro')?.quotas).toEqual({ socialAccounts: 'unlimited', autoPosts: 150, images: 100, voiceMinutes: 30 });
+    expect(findPlan('lite')?.quotas).toEqual({ socialAccounts: 'unlimited', autoPosts: 30, credits: 0 });
+    expect(findPlan('creator')?.quotas).toEqual({ socialAccounts: 'unlimited', autoPosts: 90, credits: 165 });
+    expect(findPlan('pro')?.quotas).toEqual({ socialAccounts: 'unlimited', autoPosts: 150, credits: 310 });
+  });
+
+  it('credits are one pool for images and voice (docs/monetization.md)', () => {
+    expect(CREDIT_COSTS).toEqual({ image: 1, voiceMinute: 7 });
+    // Creator = 60 images + 15 min × 7; Pro = 100 + 30 × 7.
+    expect(findPlan('creator')?.quotas.credits).toBe(60 * CREDIT_COSTS.image + 15 * CREDIT_COSTS.voiceMinute);
+    expect(findPlan('pro')?.quotas.credits).toBe(100 * CREDIT_COSTS.image + 30 * CREDIT_COSTS.voiceMinute);
+    expect(creditReach(165)).toEqual({ images: 165, voiceMinutes: 23 });
+    expect(creditReach(310)).toEqual({ images: 310, voiceMinutes: 44 });
+    expect(creditReach(0)).toEqual({ images: 0, voiceMinutes: 0 });
+    expect(planCredits('free')).toBe(0);
+    expect(planCredits('creator')).toBe(165);
   });
 
   it('finds paid plans only', () => {

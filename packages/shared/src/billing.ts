@@ -10,10 +10,20 @@ export type PlanId = 'free' | PaidPlanId;
 /** Per month. Display and entitlement data only for now: nothing counts usage yet. */
 export interface PlanQuotas {
   socialAccounts: 'unlimited';
+  /** Posting isn't paid with credits. */
   autoPosts: number;
-  images: number;
-  voiceMinutes: number;
+  /** One pool for AI images and AI voice (CREDIT_COSTS), refilled every month. */
+  credits: number;
 }
+
+/** What one thing costs in AI credits. */
+export const CREDIT_COSTS = { image: 1, voiceMinute: 7 } as const;
+
+/** How far `credits` go when spent on one kind only: up to N images, or up to N minutes of voice. */
+export const creditReach = (credits: number) => ({
+  images: Math.floor(credits / CREDIT_COSTS.image),
+  voiceMinutes: Math.floor(credits / CREDIT_COSTS.voiceMinute),
+});
 
 export interface Plan {
   id: PaidPlanId;
@@ -36,7 +46,7 @@ export const PLANS: readonly Plan[] = [
     price: 15000,
     currency: 'IDR',
     interval: 'month',
-    quotas: { socialAccounts: 'unlimited', autoPosts: 30, images: 0, voiceMinutes: 0 },
+    quotas: { socialAccounts: 'unlimited', autoPosts: 30, credits: 0 },
     features: ['autopilot'],
   },
   {
@@ -45,7 +55,7 @@ export const PLANS: readonly Plan[] = [
     price: 50000,
     currency: 'IDR',
     interval: 'month',
-    quotas: { socialAccounts: 'unlimited', autoPosts: 90, images: 60, voiceMinutes: 15 },
+    quotas: { socialAccounts: 'unlimited', autoPosts: 90, credits: 165 },
     features: ['autopilot', 'voiceover'],
   },
   {
@@ -54,7 +64,7 @@ export const PLANS: readonly Plan[] = [
     price: 90000,
     currency: 'IDR',
     interval: 'month',
-    quotas: { socialAccounts: 'unlimited', autoPosts: 150, images: 100, voiceMinutes: 30 },
+    quotas: { socialAccounts: 'unlimited', autoPosts: 150, credits: 310 },
     features: ['autopilot', 'voiceover'],
   },
 ];
@@ -63,6 +73,9 @@ export const isPaidPlanId = (v: unknown): v is PaidPlanId =>
   typeof v === 'string' && (PAID_PLAN_IDS as readonly string[]).includes(v);
 
 export const findPlan = (id: unknown): Plan | null => (isPaidPlanId(id) ? (PLANS.find((p) => p.id === id) ?? null) : null);
+
+/** AI credits a month for a plan; free has none. */
+export const planCredits = (plan: PlanId): number => findPlan(plan)?.quotas.credits ?? 0;
 
 /** What a plan unlocks; free unlocks nothing. */
 export const planFeatures = (plan: PlanId): Feature[] => [...(findPlan(plan)?.features ?? [])];
