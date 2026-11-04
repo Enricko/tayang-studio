@@ -153,7 +153,7 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
       <ScheduleDialog open={scheduling} onOpenChange={setScheduling} project={project} onSaved={setProject} />
       {runs && runs.render.length > 0 && (
         <p className="m-0 border-b border-border px-6 py-2 font-mono text-xs break-words text-text-3">
-          {t('chat.runs', { commands: [...(runs.install?.length ? [runs.install] : []), runs.render].map(shellDisplay).join(' && ') })}
+          {t('chat.renderCommand', { commands: [...(runs.install?.length ? [runs.install] : []), runs.render].map(shellDisplay).join(' && ') })}
         </p>
       )}
       {renderError && (

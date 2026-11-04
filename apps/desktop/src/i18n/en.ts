@@ -278,7 +278,7 @@ export const en = {
     render: 'Render video',
     rendering: 'Rendering…',
     couldntRender: "Couldn't render: {{message}}",
-    runs: 'Runs: {{commands}}',
+    renderCommand: 'Render command: {{commands}}',
     conversation: 'Conversation',
     preview: 'Preview',
     loadingOptions: 'Loading options…',

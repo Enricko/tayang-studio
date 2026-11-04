@@ -279,7 +279,7 @@ export const id: Translations = {
     render: 'Render video',
     rendering: 'Merender…',
     couldntRender: 'Belum bisa merender: {{message}}',
-    runs: 'Menjalankan: {{commands}}',
+    renderCommand: 'Perintah render: {{commands}}',
     conversation: 'Percakapan',
     preview: 'Pratinjau',
     loadingOptions: 'Memuat pilihan…',

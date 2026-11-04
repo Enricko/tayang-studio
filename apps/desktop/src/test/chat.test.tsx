@@ -892,7 +892,7 @@ describe('ChatProject render and jobs', () => {
     });
     render(<ChatProject chatId="c1" />);
     expect(
-      await screen.findByText('Runs: npx remotion render src/index.ts Geo renders/p1-1.mp4'),
+      await screen.findByText('Render command: npx remotion render src/index.ts Geo renders/p1-1.mp4'),
     ).toBeInTheDocument();
   });
 
@@ -905,16 +905,24 @@ describe('ChatProject render and jobs', () => {
     vi.mocked(ipc.updateProject).mockImplementation(async (id, patch) => ({ ...projects[0]!, id, ...patch }));
     render(<ChatProject chatId="c1" />);
     expect(
-      await screen.findByText('Runs: npm install && npx remotion render "My Comp" renders/a.mp4'),
+      await screen.findByText('Render command: npm install && npx remotion render "My Comp" renders/a.mp4'),
     ).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Render video' }));
-    expect(await screen.findByText('Runs: npx remotion render "My Comp" renders/a.mp4')).toBeInTheDocument();
+    expect(await screen.findByText('Render command: npx remotion render "My Comp" renders/a.mp4')).toBeInTheDocument();
+  });
+
+  it('names the command line as the render command, in Indonesian too', async () => {
+    setUiLanguage('id');
+    vi.mocked(ipc.renderCommand).mockResolvedValueOnce({ install: null, render: ['npx', 'remotion', 'render', 'Geo'] });
+    render(<ChatProject chatId="c1" />);
+    expect(await screen.findByText('Perintah render: npx remotion render Geo')).toBeInTheDocument();
+    expect(screen.queryByText(/Menjalankan/)).not.toBeInTheDocument();
   });
 
   it('shows no command line without a tayang.json', async () => {
     render(<ChatProject chatId="c1" />);
     await screen.findByText('Kenapa rupiah melemah?', { selector: 'span' });
-    expect(screen.queryByText(/^Runs:/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Render command:/)).not.toBeInTheDocument();
   });
 
   it('shows an inline error when the render fails', async () => {
