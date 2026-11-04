@@ -25,12 +25,12 @@ export function swatch(id: string) {
 export function NoPreview({
   swatchId,
   className,
-  testId = 'no-preview',
+  'data-testid': testId = 'no-preview',
   children,
 }: {
   swatchId?: string;
   className?: string;
-  testId?: string;
+  'data-testid'?: string;
   children?: ReactNode;
 }) {
   return (

@@ -134,6 +134,14 @@ export const recentImages = (chatId: string, since: string, limit: number) =>
 export const latestRenderInfo = (projectId: string) => invoke<FileInfo | null>('latest_render_info', { projectId });
 /** The newest mp4 where renders land (renders/, the root, out/, runs/<run>/out/), still-empty ones too (a render being written); null when there is none. */
 export const newestVideoInfo = (projectId: string) => invoke<FileInfo | null>('newest_video_info', { projectId });
+/** One frame of a project's newest render, cached by the render's time; `modifiedAt` busts the image cache. */
+export interface VideoThumb {
+  path: string;
+  modifiedAt: string;
+  durationSec: number | null;
+}
+/** The Videos card's frame of the newest render; null without a render or ffmpeg. */
+export const videoThumbnail = (projectId: string) => invoke<VideoThumb | null>('video_thumbnail', { projectId });
 export const mediaProbe = (projectId: string) =>
   invoke<MediaInfo | null>('media_probe', { projectId });
 export const mediaExtractFrame = (projectId: string, timeSec: number) =>

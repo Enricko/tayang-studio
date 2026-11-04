@@ -405,6 +405,8 @@ export const en = {
   },
   videos: {
     rendering: 'Rendering',
+    noPreview: 'No preview yet',
+    renderingNow: 'Rendering…',
     title: 'Videos',
     subtitle: "Everything you've made, saved on this computer",
     searchAria: 'Search videos',

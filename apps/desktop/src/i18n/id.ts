@@ -400,6 +400,8 @@ export const id: Translations = {
   },
   videos: {
     rendering: 'Merender',
+    noPreview: 'Belum ada preview',
+    renderingNow: 'Sedang merender…',
     title: 'Video',
     subtitle: 'Semua yang sudah kamu buat, tersimpan di komputer ini',
     searchAria: 'Cari video',

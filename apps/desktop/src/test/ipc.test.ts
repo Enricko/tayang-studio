@@ -42,10 +42,12 @@ describe('ipc', () => {
     await ipc.setProjectStatus('p1', 'building');
     await ipc.setProjectStatus('p1', 'draft', true);
     await ipc.newestVideoInfo('p1');
+    await ipc.videoThumbnail('p1');
     expect(calls).toEqual([
       { cmd: 'set_project_status', args: { projectId: 'p1', status: 'building', reset: false } },
       { cmd: 'set_project_status', args: { projectId: 'p1', status: 'draft', reset: true } },
       { cmd: 'newest_video_info', args: { projectId: 'p1' } },
+      { cmd: 'video_thumbnail', args: { projectId: 'p1' } },
     ]);
   });
 

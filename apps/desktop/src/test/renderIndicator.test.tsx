@@ -74,13 +74,13 @@ describe('Preview while a render runs', () => {
 });
 
 describe('Videos while a render runs', () => {
-  it('marks the rendering video with a Rendering chip', async () => {
+  it('shows the rendering video as rendering on its card', async () => {
     vi.mocked(listProjects).mockResolvedValue([proj('p1', 'Jalur Rempah'), proj('p2', 'Kopi')]);
     useRender.getState().start('p1', { source: 'agent' });
     render(<Videos />);
     await screen.findAllByText('Kopi');
-    expect(screen.getAllByText('Rendering')).toHaveLength(1);
+    expect(screen.getAllByText('Rendering…')).toHaveLength(1);
     act(() => useRender.getState().end('p1'));
-    expect(screen.queryByText('Rendering')).toBeNull();
+    expect(screen.queryByText('Rendering…')).toBeNull();
   });
 });

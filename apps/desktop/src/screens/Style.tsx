@@ -64,7 +64,7 @@ export const posterOf = (s: StyleT): string | null => s.previewUrl || (s.source 
 function StyleNoPreview({ id, text, className }: { id: string; text?: boolean; className?: string }) {
   const { t } = useTranslation();
   return (
-    <NoPreview swatchId={id} testId="style-swatch" className={className}>
+    <NoPreview swatchId={id} data-testid="style-swatch" className={className}>
       {text ? t('style.noPreview') : null}
     </NoPreview>
   );
