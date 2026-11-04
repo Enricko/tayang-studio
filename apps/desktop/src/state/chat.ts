@@ -23,6 +23,7 @@ import { stored } from '@/lib/stored';
 import { finishedRender } from '@/lib/renderCheck';
 import { isRenderTool } from '@/lib/renderTool';
 import { advanceProject, isWorkTool, resetProjectStatus } from '@/lib/projectStatus';
+import { endCommand, stopAllWatches, stopWatching, watchCommand } from '@/lib/renderWatch';
 import { localClock } from '@/lib/time';
 import { useApp } from '@/state/app';
 import { refreshJobs, useJobs } from '@/state/jobs';
@@ -380,6 +381,7 @@ export const useChat = create<ChatState>((set, get) => {
       turnStartedAt: turns,
     }));
     // Whatever the turn was rendering is over with it.
+    stopWatching(chatId);
     useRender.getState().endChat(chatId);
     for (const req of open) void agentRespondPermission(req.requestId, null).catch(() => {});
   };
@@ -409,6 +411,32 @@ export const useChat = create<ChatState>((set, get) => {
       render.end(projectId, toolCallId);
       writeJob(chatId, 'working');
     }
+  };
+
+  /**
+   * A command in a video's chat may render without saying so (a template's `npm run make` renders at the
+   * end of its pipeline): while it runs, the project's newest mp4 tells (lib/renderWatch).
+   */
+  const watchRenderFile = (chatId: string, toolCallId: string, status: string, toolKind: string | undefined) => {
+    const projectId = chatJobs.get(chatId)?.projectId;
+    if (!projectId || toolKind !== 'execute') return;
+    if (status !== 'pending' && status !== 'running') return endCommand(chatId, toolCallId);
+    if (!get().streaming[chatId]) return;
+    // A command the render check already knows shows as a render by itself.
+    if (useRender.getState().runs[projectId]?.toolCallId === toolCallId) return;
+    watchCommand(chatId, projectId, toolCallId, get().turnStartedAt[chatId] ?? Date.now(), {
+      rendering(id) {
+        const render = useRender.getState();
+        if (render.runs[projectId] || !get().streaming[chatId]) return;
+        render.start(projectId, { source: 'agent', chatId, toolCallId: id });
+        writeJob(chatId, 'working', stored('agents.rendering'));
+      },
+      idle(id) {
+        if (useRender.getState().runs[projectId]?.toolCallId !== id) return;
+        useRender.getState().end(projectId, id);
+        writeJob(chatId, 'working');
+      },
+    });
   };
 
   /** Adds the images made since `since` to the agent message `targetId`, wherever it is by then. */
@@ -532,6 +560,7 @@ export const useChat = create<ChatState>((set, get) => {
       });
       if (u.kind === 'tool') {
         trackRender(chatId, u.toolCallId, u.title, u.status);
+        watchRenderFile(chatId, u.toolCallId, u.status, u.toolKind);
         if (u.status === 'done') queueImages(chatId);
         // The first edit or command that finishes in a video's chat: it is being built.
         const projectId = chatJobs.get(chatId)?.projectId;
@@ -800,6 +829,7 @@ export const useChat = create<ChatState>((set, get) => {
       pendingSaves.clear();
       baselines.clear();
       resetProjectStatus();
+      stopAllWatches();
       useRender.setState({ runs: {} });
       set({ messages: {}, streaming: {}, turnStartedAt: {}, permissions: {}, attachments: {}, started: {}, auto: {}, pendingAuto: null, autoBusy: {} });
     },
