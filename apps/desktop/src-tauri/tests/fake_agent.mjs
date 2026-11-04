@@ -9,7 +9,7 @@
 //   crash      -> one text chunk, then exit code 1 mid-turn
 //   wait       -> waits for session/cancel, then stopReason "cancelled"
 //   fs-outside -> fs/write_text_file to a path outside cwd, reports "fs-ok" or "fs-error: <message>"
-//   fs-inside  -> writes then reads notes/inside.txt inside cwd, reports "read: <content>"
+//   fs-inside  -> writes then reads line 2 of notes/inside.txt, reports "read: <JSON content>"
 //   any prompt with an image block -> text "image <mimeType> <data>"
 import { createInterface } from "node:readline";
 import path from "node:path";
@@ -114,7 +114,7 @@ async function runPrompt(params) {
         return "end_turn";
       }
       const r = await request("fs/read_text_file", { sessionId, path: target, line: 2, limit: 1 });
-      text(r.error ? `fs-error: ${r.error.message}` : `read: ${r.result.content}`);
+      text(r.error ? `fs-error: ${r.error.message}` : `read: ${JSON.stringify(r.result.content)}`);
       return "end_turn";
     }
     default:

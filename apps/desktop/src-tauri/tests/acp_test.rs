@@ -249,7 +249,7 @@ async fn fs_inside_cwd_writes_and_reads_lines() {
     let (manager, sink) = started("c1", &ws).await;
     manager.prompt("c1", vec![PromptPart::Text("fs-inside".into())]).await.unwrap();
     sink.wait_finished().await;
-    assert_eq!(sink.texts(), vec!["read: two".to_string()]);
+    assert_eq!(sink.texts(), vec!["read: \"two\\n\"".to_string()]);
     let written = std::fs::read_to_string(ws.cwd.join("notes").join("inside.txt")).unwrap();
     assert_eq!(written, "one\ntwo\nthree");
     manager.stop("c1").await.unwrap();
