@@ -8,6 +8,7 @@ import {
   agentPrompt,
   agentStart,
   agentStop,
+  getChat,
   listMessages,
   updateChatAgent,
   upsertJob,
@@ -230,7 +231,17 @@ export const useChat = create<ChatState>((set, get) => {
     started: {},
 
     async load(chatId) {
-      if (!isScratchChat(chatId)) tracked.add(chatId);
+      if (isScratchChat(chatId)) return;
+      tracked.add(chatId);
+      const agent = (async () => {
+        try {
+          // After a restart the chat row is the only record of the chat's agent.
+          const row = await getChat(chatId);
+          if (row && !chatAgent.has(chatId)) chatAgent.set(chatId, row.agentId);
+        } catch {
+          /* the next send falls back to the default agent */
+        }
+      })();
       try {
         const list = await listMessages(chatId);
         // Never clobber a conversation that is already live in memory.
@@ -238,6 +249,7 @@ export const useChat = create<ChatState>((set, get) => {
       } catch {
         /* an empty chat is fine */
       }
+      await agent;
     },
 
     async send(chatId, parts, opts) {

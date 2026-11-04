@@ -4,7 +4,8 @@ import { vi } from 'vitest';
 import type { ChatMessage } from '@tayang/shared';
 
 vi.mock('@/lib/ipc', () => ({
-  listMessages: vi.fn(),
+  getChat: vi.fn().mockResolvedValue(null),
+  listMessages: vi.fn().mockResolvedValue([]),
   addMessage: vi.fn().mockResolvedValue(null),
   agentStart: vi.fn().mockResolvedValue(undefined),
   agentPrompt: vi.fn().mockResolvedValue(undefined),
@@ -17,7 +18,7 @@ vi.mock('@/lib/ipc', () => ({
 }));
 vi.mock('@/lib/events', () => ({ onAgentUpdate: vi.fn(async () => () => {}), onPermission: vi.fn(async () => () => {}) }));
 vi.mock('@tauri-apps/plugin-opener', () => ({ openUrl: vi.fn() }));
-import { agentPrompt, agentRespondPermission, agentStart, upsertJob } from '@/lib/ipc';
+import { agentPrompt, agentRespondPermission, agentStart, getChat, upsertJob } from '@/lib/ipc';
 import { MessageList } from '@/components/MessageList';
 import { BUSY_NOTE, useChat } from '@/state/chat';
 
@@ -155,6 +156,40 @@ describe('one gate while the agent replies', () => {
     expect(vi.mocked(upsertJob).mock.calls.map((c) => c[0].status)).not.toContain('failed');
     expect(s.messages.c1!.at(-1)).toMatchObject({ role: 'system', parts: [{ type: 'text', text: BUSY_NOTE }] });
     expect(agentStart).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('answering a surface after a restart', () => {
+  it("starts the chat's own agent from the chat row, not the default", async () => {
+    vi.mocked(agentStart).mockClear();
+    vi.mocked(getChat).mockResolvedValueOnce({ id: 'c1', projectId: 'p1', agentId: 'codex', title: 't', createdAt: '' });
+    await useChat.getState().load('c1');
+    render(<MessageList streaming={false} messages={[msg('1', 'agent', [{ type: 'text', text: block('s1', 'Pick me') }])]} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Pick me' }));
+    await waitFor(() => expect(agentStart).toHaveBeenCalledWith('c1', 'codex'));
+  });
+
+  it("sends with the screen's options: its agent, job and prompt prefix", async () => {
+    vi.mocked(agentStart).mockClear();
+    vi.mocked(upsertJob).mockClear();
+    render(
+      <MessageList
+        streaming={false}
+        sendOptions={(prompt) => ({
+          agentId: 'gemini',
+          job: { projectId: 'p1', title: 'Video' },
+          promptParts: [{ type: 'text', text: 'SKIP' }, ...prompt],
+        })}
+        messages={[msg('1', 'agent', [{ type: 'text', text: block('s1', 'Pick me') }])]}
+      />,
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Pick me' }));
+    await waitFor(() => expect(agentPrompt).toHaveBeenCalled());
+    expect(agentStart).toHaveBeenCalledWith('c1', 'gemini');
+    const parts = vi.mocked(agentPrompt).mock.calls[0]![1];
+    expect(parts.at(-2)).toEqual({ type: 'text', text: 'SKIP' });
+    expect(parts.at(-1)).toMatchObject({ type: 'a2ui-action', summary: 'Picked: Pick me' });
+    expect(upsertJob).toHaveBeenCalledWith(expect.objectContaining({ kind: 'build', projectId: 'p1' }));
   });
 });
 

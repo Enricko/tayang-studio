@@ -9,7 +9,7 @@ import { Preview } from '@/screens/preview/Preview';
 import { StepBar } from '@/components/StepBar';
 import { getChat, listProjects, mediaProbe, mediaRender, renderCommand, updateProject, type RenderCommand } from '@/lib/ipc';
 import { useApp } from '@/state/app';
-import { headPermission, useChat } from '@/state/chat';
+import { headPermission, useChat, type SendOpts } from '@/state/chat';
 import { useUsage } from '@/state/usage';
 
 const NO_MESSAGES: never[] = [];
@@ -90,15 +90,20 @@ export function ChatProject({ chatId }: { chatId: string }) {
     wasStreaming.current = streaming;
   }, [streaming, messages]);
 
-  const send = (parts: MessagePart[]) => {
+  /** What every send from this screen carries: the composer's and an answered A2UI surface's alike. */
+  const sendOptions = (prompt: MessagePart[]): SendOpts => {
     // The brief's frame check applies to projects made while it was on; this covers turning it off later.
     const skip = useApp.getState().settings?.frameCheck === false;
     const job = project ? { projectId: project.id, title: project.title } : undefined;
-    void useChat.getState().send(chatId, parts, {
+    return {
       job,
       agentId: agent,
-      ...(skip ? { promptParts: [{ type: 'text', text: SKIP_FRAME_CHECK }, ...parts] } : {}),
-    });
+      ...(skip ? { promptParts: [{ type: 'text', text: SKIP_FRAME_CHECK }, ...prompt] } : {}),
+    };
+  };
+
+  const send = (parts: MessagePart[]) => {
+    void useChat.getState().send(chatId, parts, sendOptions(parts));
   };
 
   const renderVideo = async () => {
@@ -157,7 +162,7 @@ export function ChatProject({ chatId }: { chatId: string }) {
       <div className="flex min-h-0 flex-1">
         <section aria-label="Conversation" className="flex min-w-0 flex-1 flex-col">
           <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
-            <MessageList messages={messages} streaming={streaming}>
+            <MessageList messages={messages} streaming={streaming} sendOptions={sendOptions}>
               {permission && (
                 <PermissionCard
                   request={permission}

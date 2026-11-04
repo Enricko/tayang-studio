@@ -206,7 +206,12 @@ export function ChatNew() {
             </>
           ) : (
             <div className="my-auto">
-              <MessageList messages={messages} streaming={streaming} onA2uiAction={onA2uiAction}>
+              <MessageList
+                messages={messages}
+                streaming={streaming}
+                onA2uiAction={onA2uiAction}
+                sendOptions={() => ({ agentId: agent })}
+              >
                 {permission && chatId && (
                   <PermissionCard
                     request={permission}

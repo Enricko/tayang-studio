@@ -4,7 +4,7 @@ import { formatTimecode, type ChatMessage, type MessagePart } from '@tayang/shar
 import { Oyen } from '@/components/Oyen';
 import { AGENT_NAMES } from '@/lib/agents';
 import { useApp } from '@/state/app';
-import { useChat } from '@/state/chat';
+import { useChat, type SendOpts } from '@/state/chat';
 import { splitTopicJson } from '@tayang/skills';
 import { extractA2ui } from '@/a2ui/parse';
 import { A2uiSurface, type A2uiAction } from '@/a2ui/render';
@@ -119,20 +119,25 @@ interface Actions {
   handle?: (a: A2uiAction) => boolean;
   /** Surfaces take no input while the agent replies: one gate with the composer and agent picker. */
   locked: boolean;
+  sendOptions?: SendOptions;
 }
+
+/** The screen's own send options for what the agent receives (its agent, build job, prompt prefix). */
+export type SendOptions = (promptParts: MessagePart[]) => SendOpts;
 const ActionsContext = createContext<Actions>({ locked: false });
 
-function sendAction(chatId: string, a: A2uiAction) {
+function sendAction(chatId: string, a: A2uiAction, sendOptions?: SendOptions) {
   const { summary, ...rest } = a;
   const action: MessagePart = { type: 'a2ui-action', summary, action: { version: 'v0.9', action: rest } };
   // The agent gets the summary and the action JSON from the one a2ui-action part.
-  void useChat.getState().send(chatId, [{ type: 'text', text: summary }, action], { promptParts: [action] });
+  const opts = { promptParts: [action], ...sendOptions?.([action]) };
+  void useChat.getState().send(chatId, [{ type: 'text', text: summary }, action], opts);
 }
 
 /** An agent text part: prose, the surfaces it owns, and a placeholder for a block still streaming. */
 function AgentText({ text, messageId, a2ui }: { text: string; messageId: string; a2ui: A2uiState }) {
   const { text: rawProse, blocks, pending: a2uiPending } = useMemo(() => extractA2ui(text), [text]);
-  const { handle, locked } = useContext(ActionsContext);
+  const { handle, locked, sendOptions } = useContext(ActionsContext);
   // Older agents answer topics with a ```json block. Where a screen shows topic cards (it provides the
   // handler), hide that block, also while it is still streaming; other chats keep it as written.
   const { prose, pending: jsonPending } = useMemo(() => {
@@ -160,7 +165,7 @@ function AgentText({ text, messageId, a2ui }: { text: string; messageId: string;
           disabled={a2ui.answered[sid]}
           locked={locked}
           onAction={(a) => {
-            if (!handle?.(a)) sendAction(a2ui.chatId, a);
+            if (!handle?.(a)) sendAction(a2ui.chatId, a, sendOptions);
           }}
         />
       ))}
@@ -202,11 +207,14 @@ export function MessageList({
   streaming,
   children,
   onA2uiAction,
+  sendOptions,
 }: {
   messages: ChatMessage[];
   streaming: boolean;
   /** Return true when the screen handled the action itself. */
   onA2uiAction?: (a: A2uiAction) => boolean;
+  /** How an answered surface is sent: the same options as the screen's composer. */
+  sendOptions?: SendOptions;
   /** Extra blocks under the conversation (permission card, idea cards). */
   children?: React.ReactNode;
 }) {
@@ -216,7 +224,10 @@ export function MessageList({
   }, [messages, streaming]);
 
   const a2ui = useMemo(() => deriveA2ui(messages), [messages]);
-  const actions = useMemo(() => ({ handle: onA2uiAction, locked: streaming }), [onA2uiAction, streaming]);
+  const actions = useMemo(
+    () => ({ handle: onA2uiAction, locked: streaming, sendOptions }),
+    [onA2uiAction, streaming, sendOptions],
+  );
   const last = messages[messages.length - 1];
   return (
     <ActionsContext.Provider value={actions}>
