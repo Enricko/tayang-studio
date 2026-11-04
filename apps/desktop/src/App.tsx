@@ -5,7 +5,8 @@ import { Sidebar, type SidebarKey } from '@/components/Sidebar';
 import { setUiLanguage } from '@/i18n';
 import { systemLanguage } from '@/lib/language';
 import { getSettings, syncStyles, updateSettings } from '@/lib/ipc';
-import { startScheduler } from '@/lib/scheduler';
+import { onTick, startScheduler } from '@/lib/scheduler';
+import { settleLateRenders } from '@/lib/buildJobs';
 import { startAutopilot } from '@/state/autopilot';
 import { useWindowDrag } from '@/lib/windowDrag';
 import { Agents } from '@/screens/Agents';
@@ -92,6 +93,8 @@ export default function App() {
     let off: (() => void) | undefined;
     let gone = false;
     const stopEngine = startAutopilot();
+    // Startup and every tick: build jobs whose video arrived late become done.
+    const stopLate = onTick(() => settleLateRenders());
     startScheduler()
       .then((un) => (gone ? un() : (off = un)))
       .catch(() => {});
@@ -99,6 +102,7 @@ export default function App() {
       gone = true;
       off?.();
       stopEngine();
+      stopLate();
     };
   }, [onboarded]);
 

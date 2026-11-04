@@ -39,17 +39,29 @@ export async function askAgentToSchedule(p: Project, onOpen?: () => void): Promi
   const chat = await projectChat(p);
   onOpen?.();
   useApp.getState().navigate({ name: 'chat', chatId: chat.id });
+  const { timeZone, offset } = localClock();
+  const text = i18n.t('schedule.agentPrompt', { now: slotTime(new Date()), zone: `${timeZone}, UTC${offset}` });
+  await sendInProjectChat(chat.id, p, chat.agentId, text);
+}
+
+/**
+ * Sends `text` as the user's message in a project chat, through the normal send path with that chat's
+ * options. While a turn is running there it only adds the busy note.
+ */
+export async function sendInProjectChat(
+  chatId: string,
+  project: Pick<Project, 'id' | 'title'>,
+  agentId: AgentId,
+  text: string,
+): Promise<void> {
   const store = useChat.getState();
   store.listen();
   // The conversation must be in memory before anything is added to it, or the chat would open without its history.
-  await store.load(chat.id);
-  if (useChat.getState().streaming[chat.id]) {
-    await appendSystem(chat.id, BUSY_NOTE);
+  await store.load(chatId);
+  if (useChat.getState().streaming[chatId]) {
+    await appendSystem(chatId, BUSY_NOTE);
     return;
   }
-  const { timeZone, offset } = localClock();
-  const ask: MessagePart[] = [
-    { type: 'text', text: i18n.t('schedule.agentPrompt', { now: slotTime(new Date()), zone: `${timeZone}, UTC${offset}` }) },
-  ];
-  await useChat.getState().send(chat.id, ask, projectSendOptions(p, chat.agentId, ask));
+  const ask: MessagePart[] = [{ type: 'text', text }];
+  await useChat.getState().send(chatId, ask, projectSendOptions(project, agentId, ask));
 }

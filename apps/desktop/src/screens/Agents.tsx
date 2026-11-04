@@ -7,7 +7,9 @@ import { Oyen, type OyenMood } from '@/components/Oyen';
 import { AGENT_NAMES, CLOSED_NOTE } from '@/lib/agents';
 import { onAgentUpdate } from '@/lib/events';
 import { deleteJob, detectAgents, listProjects } from '@/lib/ipc';
-import { localized } from '@/lib/stored';
+import { settleLateRenders } from '@/lib/buildJobs';
+import { sendInProjectChat } from '@/lib/openProject';
+import { localized, stored } from '@/lib/stored';
 import { ago } from '@/lib/time';
 import { cn } from '@/lib/utils';
 import { useApp } from '@/state/app';
@@ -21,6 +23,9 @@ const COLUMNS: { key: 'queued' | 'working' | 'needsYou' | 'done'; mood: OyenMood
   { key: 'done', mood: 'happy', match: (s) => s === 'done' },
 ];
 
+/** The notes of a build job whose turn ended without a video: its card offers Continue. */
+const isStoppedNote = (note: string) => note === stored('agents.noVideo') || note === stored('agents.waitingAnswer');
+
 function JobCard({ job, project, onDismiss }: { job: Job; project: string; onDismiss(): void }) {
   const navigate = useApp((s) => s.navigate);
   const { t } = useTranslation();
@@ -30,6 +35,18 @@ function JobCard({ job, project, onDismiss }: { job: Job; project: string; onDis
   const working = job.status === 'working';
   const tryDisabled = job.kind === 'study-style' && !!job.sourceUrl && (starting || studyRunning);
   const needs = failed || job.status === 'needs-you';
+  // A build turn that ended without a video: open its chat, or tell the agent to go on and render.
+  const stopped = job.kind === 'build' && job.status === 'needs-you' && !!job.chatId && !!job.note && isStoppedNote(job.note);
+  const [continuing, setContinuing] = useState(false);
+  const goOn = async () => {
+    if (!job.chatId || !job.projectId || continuing) return;
+    setContinuing(true);
+    try {
+      await sendInProjectChat(job.chatId, { id: job.projectId, title: job.title }, job.agentId, t('agents.continuePrompt'));
+    } finally {
+      setContinuing(false);
+    }
+  };
   const open = () => {
     if (job.kind === 'study-style') {
       if (!job.sourceUrl) {
@@ -89,8 +106,13 @@ function JobCard({ job, project, onDismiss }: { job: Job; project: string; onDis
               title={tryDisabled && studyRunning ? t('agents.anotherStudy') : undefined}
               onClick={open}
             >
-              {failed ? (job.kind === 'study-style' ? t('agents.tryAgain') : t('agents.fixIt')) : t('agents.review')}
+              {failed ? (job.kind === 'study-style' ? t('agents.tryAgain') : t('agents.fixIt')) : stopped ? t('agents.openChat') : t('agents.review')}
             </Button>
+            {stopped && job.projectId && (
+              <Button variant="ghost" className="h-8 rounded-sm px-3 text-[13px]" disabled={continuing} onClick={() => void goOn()}>
+                {t('agents.continue')}
+              </Button>
+            )}
             {failed && (
               <Button variant="ghost" className="h-8 rounded-sm px-2 text-[13px]" onClick={onDismiss}>
                 {t('agents.dismiss')}
@@ -120,7 +142,10 @@ export function Agents() {
   const [projects, setProjects] = useState<Project[]>([]);
 
   const load = useCallback(() => {
-    refreshJobs().catch(() => {});
+    // A render that finished after its turn ended makes that job done.
+    refreshJobs()
+      .then((jobs) => settleLateRenders(Date.now(), jobs))
+      .catch(() => {});
   }, []);
 
   useEffect(() => {

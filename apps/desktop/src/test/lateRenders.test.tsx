@@ -1,0 +1,119 @@
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { vi } from 'vitest';
+import type { FileInfo, Job } from '@tayang/shared';
+
+vi.mock('@/lib/ipc', () => ({
+  listJobs: vi.fn(),
+  upsertJob: vi.fn().mockResolvedValue(undefined),
+  deleteJob: vi.fn().mockResolvedValue(undefined),
+  detectAgents: vi.fn().mockResolvedValue([]),
+  listProjects: vi.fn().mockResolvedValue([]),
+  latestRenderInfo: vi.fn().mockResolvedValue(null),
+  getChat: vi.fn().mockResolvedValue(null),
+  listMessages: vi.fn().mockResolvedValue([]),
+  addMessage: vi.fn().mockResolvedValue(null),
+  agentStart: vi.fn().mockResolvedValue(undefined),
+  agentPrompt: vi.fn().mockResolvedValue(undefined),
+  agentCancel: vi.fn(),
+  agentStop: vi.fn().mockResolvedValue(undefined),
+  agentRespondPermission: vi.fn(),
+  assetUrl: (p: string) => p,
+}));
+vi.mock('@/lib/events', () => ({ onAgentUpdate: vi.fn(async () => () => {}), onPermission: vi.fn(async () => () => {}) }));
+
+import { agentPrompt, latestRenderInfo, listJobs, upsertJob } from '@/lib/ipc';
+import { resetLateRenders, settleLateRenders } from '@/lib/buildJobs';
+import { Agents } from '@/screens/Agents';
+import { setUiLanguage } from '@/i18n';
+import { useApp } from '@/state/app';
+import { useChat } from '@/state/chat';
+
+const T = Date.parse('2026-11-04T10:00:00Z');
+const job = (extra: Partial<Job> = {}): Job => ({
+  id: 'build-c1', kind: 'build', title: 'Jalur Rempah', projectId: 'p1', chatId: 'c1', agentId: 'claude', status: 'needs-you',
+  progress: null, note: 'No video yet. The agent stopped before rendering', sourceUrl: null, updatedAt: new Date(T).toISOString(), ...extra,
+});
+const file = (at: number): FileInfo => ({ path: '/w/p1/renders/v-2.mp4', name: 'v-2.mp4', size: 5, modifiedAt: new Date(at).toISOString() });
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  resetLateRenders();
+  useChat.getState().reset();
+  useApp.setState({ route: { name: 'agents' } });
+});
+
+describe('late renders', () => {
+  it('a needs-you build job becomes done once a video appears after it, named in the note', async () => {
+    vi.mocked(latestRenderInfo).mockResolvedValue(file(T + 120_000));
+    vi.mocked(listJobs).mockResolvedValue([job()]);
+    await settleLateRenders(T + 180_000);
+    expect(upsertJob).toHaveBeenCalledWith(expect.objectContaining({ id: 'build-c1', status: 'done', note: 'v-2.mp4' }));
+  });
+
+  it('leaves it alone without a newer video, looks at most once a minute, and skips other jobs', async () => {
+    vi.mocked(latestRenderInfo).mockResolvedValue(file(T - 600_000));
+    const jobs = [
+      job(),
+      job({ id: 'build-c2', chatId: 'c2', status: 'done' }),
+      job({ id: 'study-1', kind: 'study-style', projectId: null }),
+      job({ id: 'build-c3', chatId: 'c3', projectId: null }),
+    ];
+    await settleLateRenders(T + 60_000, jobs);
+    expect(latestRenderInfo).toHaveBeenCalledTimes(1);
+    expect(upsertJob).not.toHaveBeenCalled();
+    await settleLateRenders(T + 90_000, jobs);
+    expect(latestRenderInfo).toHaveBeenCalledTimes(1);
+    vi.mocked(latestRenderInfo).mockResolvedValue(file(T + 100_000));
+    await settleLateRenders(T + 121_000, jobs);
+    expect(latestRenderInfo).toHaveBeenCalledTimes(2);
+    expect(upsertJob).toHaveBeenCalledWith(expect.objectContaining({ id: 'build-c1', status: 'done' }));
+  });
+
+  it('never touches a job whose chat is running a turn (waiting on a permission)', async () => {
+    vi.mocked(latestRenderInfo).mockResolvedValue(file(T + 120_000));
+    useChat.setState({ streaming: { c1: true } });
+    await settleLateRenders(T + 180_000, [job({ note: null })]);
+    expect(latestRenderInfo).not.toHaveBeenCalled();
+  });
+});
+
+describe('a build job that stopped without a video, on the Agents board', () => {
+  it('offers Open chat and Continue; Continue tells the agent to render, in that chat', async () => {
+    vi.mocked(listJobs).mockResolvedValue([job()]);
+    render(<Agents />);
+    await screen.findByText('No video yet. The agent stopped before rendering');
+    await userEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await waitFor(() => expect(agentPrompt).toHaveBeenCalled());
+    expect(vi.mocked(agentPrompt).mock.calls[0]![0]).toBe('c1');
+    expect(useChat.getState().messages.c1!.at(-1)!.parts[0]).toEqual({
+      type: 'text',
+      text: 'Continue and render the video, then check the frames.',
+    });
+    // The turn is the job's own: back to working.
+    await waitFor(() => expect(upsertJob).toHaveBeenCalledWith(expect.objectContaining({ id: 'build-c1', status: 'working' })));
+    await userEvent.click(screen.getByRole('button', { name: 'Open chat' }));
+    expect(useApp.getState().route).toEqual({ name: 'chat', chatId: 'c1' });
+  });
+
+  it('in Indonesian, also for a job waiting on an answer', async () => {
+    setUiLanguage('id');
+    vi.mocked(listJobs).mockResolvedValue([job({ note: 'The agent is waiting for your answer' })]);
+    render(<Agents />);
+    await screen.findByText('Agent menunggu jawabanmu');
+    await userEvent.click(screen.getByRole('button', { name: 'Lanjutkan' }));
+    await waitFor(() => expect(agentPrompt).toHaveBeenCalled());
+    expect(useChat.getState().messages.c1!.at(-1)!.parts[0]).toEqual({
+      type: 'text',
+      text: 'Lanjutkan dan render videonya, lalu cek frame-nya.',
+    });
+    expect(screen.getByRole('button', { name: 'Buka chat' })).toBeInTheDocument();
+  });
+
+  it('keeps Review, without Continue, for other needs-you jobs (a permission request)', async () => {
+    vi.mocked(listJobs).mockResolvedValue([job({ note: null })]);
+    render(<Agents />);
+    await screen.findByRole('button', { name: 'Review' });
+    expect(screen.queryByRole('button', { name: 'Continue' })).toBeNull();
+  });
+});
