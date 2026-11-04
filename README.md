@@ -50,6 +50,8 @@ Tayang sends a random install ID, your system (macOS, Windows or Linux), its ver
 
 To turn it off, open Settings › Account and switch off "Share anonymous install stats".
 
+Signing in is optional. Settings › Account › "Sign in with Google" opens your browser at the Tayang API (studio.tayang.app/api, or the API address you set), where you continue with Google. Google shares your email address and name with the Tayang API, which keeps them with your account and plan; nothing else from your Google account is asked for. The desktop app keeps a sign-in token in the OS keychain (Keychain on macOS, Credential Manager on Windows, Secret Service on Linux), tied to that API address. Only if the keychain can't be used does it keep the token in `auth.json` in the app's data folder, readable by your user only. The token is never shown in the app's window. It also caches your email, name and plan so the account still shows offline. "Sign out" revokes the token at the API when it can be reached and removes it from this computer.
+
 To show your Claude usage, Tayang reads the login Claude Code already stores on this computer and sends it only to Anthropic to fetch your usage numbers.
 
 The Style screen loads YouTube thumbnails from i.ytimg.com for styles copied from YouTube, and built-in style previews from the Tayang API at studio.tayang.app/api. A style copied from a video keeps a short silent preview clip and a poster frame on this computer; the video itself is deleted after the study.
