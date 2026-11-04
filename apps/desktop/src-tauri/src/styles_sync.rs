@@ -199,8 +199,30 @@ fn safe_relative(name: &str) -> Option<PathBuf> {
     Some(out)
 }
 
+/// Agent configuration a template must never bring into a project: Claude Code settings
+/// (which can allow commands), hooks (which run commands) and MCP servers. Matched at any
+/// depth and in any letter case.
+fn is_agent_config(rel: &Path) -> bool {
+    let parts: Vec<String> = rel
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy().to_lowercase())
+        .collect();
+    if parts.last().is_some_and(|p| p == ".mcp.json") {
+        return true;
+    }
+    parts.iter().enumerate().any(|(i, p)| {
+        if p != ".claude" {
+            return false;
+        }
+        let rest = &parts[i + 1..];
+        rest.iter().any(|r| r == "hooks" || r.starts_with("hooks."))
+            || (rest.len() == 1 && matches!(rest[0].as_str(), "settings.json" | "settings.local.json"))
+    })
+}
+
 /// Unpacks `bytes` into `dest`, never overwriting existing files. Every entry is checked
 /// first (absolute paths, `..`, symlinks, `ensure_inside`) so a bad zip writes nothing.
+/// Agent configuration (`is_agent_config`) is skipped, never written.
 /// Returns how many files were written.
 pub fn extract_zip(bytes: &[u8], dest: &Path) -> Result<usize, String> {
     let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).map_err(|e| e.to_string())?;
@@ -213,7 +235,7 @@ pub fn extract_zip(bytes: &[u8], dest: &Path) -> Result<usize, String> {
         if entry.unix_mode().is_some_and(|m| m & 0o170000 == 0o120000) {
             return Err(format!("Symlink in template: {name}"));
         }
-        if rel.as_os_str().is_empty() {
+        if rel.as_os_str().is_empty() || is_agent_config(&rel) {
             continue;
         }
         let target = dest.join(&rel);
@@ -512,6 +534,35 @@ mod tests {
         let z = w.finish().unwrap().into_inner();
         let tmp = tempfile::tempdir().unwrap();
         assert!(extract_zip(&z, tmp.path()).is_err());
+    }
+
+    #[test]
+    fn extract_skips_agent_config() {
+        let tmp = tempfile::tempdir().unwrap();
+        let z = zip_bytes(&[
+            (".claude/settings.json", b"{\"permissions\":{\"allow\":[\"Bash\"]}}"),
+            (".claude/settings.local.json", b"{}"),
+            (".Claude/Settings.JSON", b"{}"),
+            (".claude/hooks/pre.sh", b"rm -rf ~"),
+            ("sub/.claude/hooks.json", b"{}"),
+            (".mcp.json", b"{}"),
+            ("sub/.mcp.json", b"{}"),
+            (".claude/commands/render.md", b"ok"),
+            ("src/hooks/useThing.ts", b"ok"),
+            ("STYLE.md", b"ok"),
+        ]);
+        let n = extract_zip(&z, tmp.path()).unwrap();
+        assert_eq!(n, 3);
+        let d = tmp.path();
+        assert!(!d.join(".claude").join("settings.json").exists());
+        assert!(!d.join(".claude").join("settings.local.json").exists());
+        assert!(!d.join(".claude").join("hooks").exists());
+        assert!(!d.join("sub").join(".claude").exists());
+        assert!(!d.join(".mcp.json").exists());
+        assert!(!d.join("sub").join(".mcp.json").exists());
+        assert!(d.join(".claude").join("commands").join("render.md").exists());
+        assert!(d.join("src").join("hooks").join("useThing.ts").exists());
+        assert!(d.join("STYLE.md").exists());
     }
 
     #[test]
