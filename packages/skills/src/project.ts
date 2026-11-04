@@ -22,7 +22,9 @@ export function buildProjectBrief(
     `- Video language: ${LANGUAGE[p.language]}. All on-screen text and voice-over are in ${LANGUAGE[p.language]}.`,
     '',
     '## How to work',
-    '- Use HyperFrames (`npx hyperframes`) to build and render the video.',
+    template
+      ? '- Follow STYLE.md for the toolchain; install and render with the commands in tayang.json.'
+      : '- Use HyperFrames (`npx hyperframes`) to build and render the video.',
     '- Keep all files in this folder. Do not write outside it.',
     ...(template
       ? ['- When a version is ready, render it with the command in tayang.json so Tayang can show it.']

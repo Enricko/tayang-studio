@@ -804,15 +804,32 @@ pub async fn install_style_template(
     Ok(InstallResult { installed })
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct RenderCommand {
+    pub install: Option<Vec<String>>,
+    pub render: Vec<String>,
+}
+
 /// The exact command "Render video" will run when the project has a `tayang.json`.
 #[tauri::command]
-pub fn render_command(state: State<'_, AppState>, project_id: String) -> CmdResult<Option<Vec<String>>> {
+pub fn render_command(
+    state: State<'_, AppState>,
+    project_id: String,
+) -> CmdResult<Option<RenderCommand>> {
     let folder = project_folder(&state, &project_id)?;
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    media::render_command(&folder, now)
+    Ok(media::render_command(&folder, now)?.map(|p| RenderCommand { install: p.install, render: p.render }))
+}
+
+/// Rewrites the project's AGENTS.md and CLAUDE.md (e.g. after a template could not be installed).
+#[tauri::command]
+pub fn write_brief(state: State<'_, AppState>, project_id: String, brief: String) -> CmdResult<()> {
+    let folder = project_folder(&state, &project_id)?;
+    projects::write_project_brief(&folder, &brief)
+        .map_err(|e| format!("Can't write the project brief: {e}"))
 }
 
 #[cfg(test)]

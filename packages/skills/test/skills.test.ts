@@ -139,6 +139,8 @@ describe('brief', () => {
       'This project starts from the Atlas journey template. Read STYLE.md first, then run the install command in tayang.json once. Render with the command in tayang.json.',
     );
     expect(b).not.toContain('npx -y hyperframes');
+    expect(b).not.toContain('Use HyperFrames');
+    expect(b).toContain('Follow STYLE.md for the toolchain; install and render with the commands in tayang.json.');
     expect(buildProjectBrief(project, STYLE, { fps: 30, frameCheck: false })).not.toContain('template');
   });
   it('contains style prompt and Frames checked', () => {

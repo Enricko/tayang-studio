@@ -86,7 +86,12 @@ export const mediaExtractFrame = (projectId: string, timeSec: number) =>
   invoke<string>('media_extract_frame', { projectId, timeSec });
 export const mediaThumbnails = (projectId: string, count: number) =>
   invoke<string[]>('media_thumbnails', { projectId, count });
-export const renderCommand = (projectId: string) => invoke<string[] | null>('render_command', { projectId });
+export interface RenderCommand {
+  install: string[] | null;
+  render: string[];
+}
+export const renderCommand = (projectId: string) => invoke<RenderCommand | null>('render_command', { projectId });
+export const writeBrief = (projectId: string, brief: string) => invoke<void>('write_brief', { projectId, brief });
 export const mediaRender = (projectId: string) => invoke<string>('media_render', { projectId });
 
 /** URL the webview can load for a file on disk. */

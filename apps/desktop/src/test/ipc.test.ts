@@ -25,10 +25,12 @@ describe('ipc', () => {
     await ipc.syncStyles();
     await ipc.installStyleTemplate('p1');
     await ipc.renderCommand('p1');
+    await ipc.writeBrief('p1', 'b');
     expect(calls).toEqual([
       { cmd: 'sync_styles', args: {} },
       { cmd: 'install_style_template', args: { projectId: 'p1' } },
       { cmd: 'render_command', args: { projectId: 'p1' } },
+      { cmd: 'write_brief', args: { projectId: 'p1', brief: 'b' } },
     ]);
   });
 
