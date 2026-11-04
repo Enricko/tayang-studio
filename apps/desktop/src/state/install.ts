@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { AgentId, AgentUpdate, PermissionRequest, SystemInfo, ToolId, ToolStatus } from '@tayang/shared';
 import { buildInstallPrompt } from '@tayang/skills';
-import { agentPrompt, agentRespondPermission, agentStart, checkTools } from '@/lib/ipc';
+import { agentCancel, agentPrompt, agentRespondPermission, agentStart, checkTools } from '@/lib/ipc';
 import { onAgentUpdate, onPermission } from '@/lib/events';
 
 /** Every install runs in one shared agent chat. */
@@ -44,6 +44,8 @@ interface InstallState {
   respond(optionId: string | null): Promise<void>;
   /** Back to the plain "Install" button. */
   dismiss(tool: ToolId): void;
+  /** Stop an install that has not been approved yet and free the setup chat. */
+  cancel(tool: ToolId): Promise<void>;
   listen(): void;
   reset(): void;
 }
@@ -132,6 +134,14 @@ export const useInstall = create<InstallState>((set, get) => {
     },
 
     dismiss: (tool) => patch(tool, { status: 'missing', log: [], error: undefined }),
+
+    async cancel(tool) {
+      const wasActive = get().active === tool;
+      patch(tool, { status: 'missing', log: [], error: undefined });
+      if (!wasActive) return;
+      set({ active: null, request: null });
+      await agentCancel(SETUP_CHAT).catch(() => {});
+    },
 
     listen() {
       if (unlisten.length) return;

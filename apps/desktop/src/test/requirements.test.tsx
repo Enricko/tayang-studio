@@ -105,7 +105,7 @@ describe('Requirements', () => {
     await user.click(screen.getByRole('button', { name: 'Install FFmpeg' }));
     await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
     expect(ipc.agentStart).toHaveBeenCalledWith('setup', 'claude');
-    const parts = vi.mocked(ipc.agentPrompt).mock.calls[0][1];
+    const parts = vi.mocked(ipc.agentPrompt).mock.calls[0]![1];
     expect(JSON.stringify(parts)).toContain('brew install ffmpeg');
 
     await act(async () => handlers.perm.forEach((h) => h(request)));
