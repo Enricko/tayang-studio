@@ -860,7 +860,24 @@ describe('Agent picker', () => {
       info('codex', 'Codex', false, null),
       info('gemini', 'Gemini CLI', true, '0.4.0'),
     ] as never);
-    vi.mocked(ipc.updateChatAgent).mockImplementation(async (id, agentId) => ({ ...chat(id, 'p1'), agentId }));
+    vi.mocked(ipc.updateChatAgent).mockImplementation(async (id, agentId) => ({
+      ...chat(id, id === 'c1' ? 'p1' : null),
+      agentId,
+    }));
+  });
+
+  it('a chat without a project: the switch line does not mention project files', async () => {
+    const user = userEvent.setup();
+    render(<ChatNew />);
+    await user.type(await screen.findByRole('textbox', { name: 'Message' }), 'hello');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
+    await emit('c-new', { kind: 'done', stopReason: 'end_turn' });
+    await user.click(await screen.findByRole('button', { name: /Claude Code/ }));
+    await user.click(await screen.findByRole('menuitem', { name: /opencode/ }));
+    expect(
+      await screen.findByText("Switched to opencode. It starts fresh and doesn't see the earlier messages."),
+    ).toBeInTheDocument();
   });
 
   it('lists installed agents with versions, a check on the current one, and disables the rest', async () => {

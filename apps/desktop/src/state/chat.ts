@@ -325,14 +325,17 @@ export const useChat = create<ChatState>((set, get) => {
 
     async switchAgent(chatId, agent) {
       const earlier = get().messages[chatId] ?? [];
-      await updateChatAgent(chatId, agent);
+      const row = await updateChatAgent(chatId, agent);
       await get().stop(chatId);
       chatAgent.set(chatId, agent);
       pendingRecap.set(chatId, buildRecap(earlier));
+      const name = AGENT_NAMES[agent];
       const sys = localMessage(chatId, 'system', [
         {
           type: 'text',
-          text: `Switched to ${AGENT_NAMES[agent]}. It starts fresh: it sees this project's files but not the earlier messages.`,
+          text: row?.projectId
+            ? `Switched to ${name}. It starts fresh: it sees this project's files but not the earlier messages.`
+            : `Switched to ${name}. It starts fresh and doesn't see the earlier messages.`,
         },
       ]);
       append(chatId, sys);
