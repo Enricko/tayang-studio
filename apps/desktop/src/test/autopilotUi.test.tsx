@@ -225,7 +225,7 @@ describe('Autopilot dialog', () => {
     for (let i = 0; i < 5; i++) await userEvent.click(within(dialog).getByRole('button', { name: 'Add a time' }));
     expect(within(dialog).queryByRole('button', { name: 'Add a time' })).toBeNull();
     expect(within(dialog).getAllByLabelText(/^Time \d$/)).toHaveLength(6);
-    await userEvent.click(within(dialog).getAllByRole('button', { name: /^Remove / })[0]);
+    await userEvent.click(within(dialog).getAllByRole('button', { name: /^Remove / })[0]!);
     expect(within(dialog).getAllByLabelText(/^Time \d$/)).toHaveLength(5);
     // The other five were all added as 18:00: the same time twice is refused.
     await userEvent.type(within(dialog).getByLabelText('Name'), 'A');
