@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Check, Plus, X } from 'lucide-react';
 import type { AgentInfo, Autopilot, AutopilotFrequency, AutopilotInput, Style, VideoLanguage } from '@tayang/shared';
@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { AGENT_NAMES } from '@/lib/agents';
-import { dayName, frequencyLabel, isTime, LENGTHS, MAX_TIMES, planSlots, slotTime, validTimes, WEEK } from '@/lib/autopilot';
+import { dayName, frequencyLabel, isTime, LENGTHS, MAX_TIMES, nextFreeTime, planSlots, slotTime, validTimes, WEEK } from '@/lib/autopilot';
 import { notifyAutopilotChanged } from '@/lib/autopilotHooks';
 import { detectAgents, listAutopilots, listStyles, saveAutopilot } from '@/lib/ipc';
 import { cn } from '@/lib/utils';
@@ -50,6 +50,22 @@ const fromAutopilot = (a: Autopilot): Form => ({
 
 const frequencyOf = (f: Form): AutopilotFrequency =>
   f.mode === 'daily' ? { kind: 'daily', times: [...f.times].sort() } : { kind: 'weekly', days: [...f.days].sort((a, b) => a - b), time: f.time };
+
+/**
+ * Keyboard for a radio group: the arrow keys move the choice, and the focus with it (ARIA radio pattern).
+ * Each option sets `tabIndex` with `tabStop`, so the group is one Tab stop.
+ */
+function radioKeys<T>(values: T[], current: T, pick: (v: T) => void) {
+  return (e: ReactKeyboardEvent<HTMLElement>) => {
+    const step = ({ ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 } as Record<string, number>)[e.key];
+    if (!step || !values.length) return;
+    e.preventDefault();
+    const next = (Math.max(0, values.indexOf(current)) + step + values.length) % values.length;
+    pick(values[next]!);
+    e.currentTarget.querySelectorAll<HTMLElement>('[role="radio"]')[next]?.focus();
+  };
+}
+const tabStop = <T,>(values: T[], current: T, v: T) => (v === current || (!values.includes(current) && v === values[0]) ? 0 : -1);
 
 /** New (no `id`) or edit an autopilot, one step at a time, on its own screen. */
 export function AutopilotWizard({ id, now = new Date() }: { id?: string; now?: Date }) {
@@ -199,6 +215,9 @@ export function AutopilotWizard({ id, now = new Date() }: { id?: string; now?: D
       on ? 'border-foreground bg-foreground text-ink' : 'border-hairline bg-card text-text-2 hover:text-foreground',
     );
   const first = planSlots({ frequency: frequencyOf(form) }, now, 14).slice(0, 3);
+  const styleIds = styles.map((s) => s.id);
+  const agentIds = installed.map((a) => a.id);
+  const lengths = LENGTHS.includes(form.lengthSec) ? LENGTHS : [...LENGTHS, form.lengthSec].sort((a, b) => a - b);
 
   const body: Record<StepKey, () => ReactNode> = {
     niche: () => (
@@ -239,7 +258,13 @@ export function AutopilotWizard({ id, now = new Date() }: { id?: string; now?: D
     style: () => (
       <div className="flex flex-col gap-3">
         {!styles.length && <p className="m-0 text-xs text-text-2">{t('autopilot.form.noStyles')}</p>}
-        <div role="radiogroup" aria-label={t('autopilot.form.style')} className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(112px, 1fr))' }}>
+        <div
+          role="radiogroup"
+          aria-label={t('autopilot.form.style')}
+          onKeyDown={radioKeys(styleIds, form.styleId, (styleId) => change({ styleId }))}
+          className="grid gap-3"
+          style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(112px, 1fr))' }}
+        >
           {styles.map((s) => {
             const on = s.id === form.styleId;
             return (
@@ -248,6 +273,7 @@ export function AutopilotWizard({ id, now = new Date() }: { id?: string; now?: D
                 type="button"
                 role="radio"
                 aria-checked={on}
+                tabIndex={tabStop(styleIds, form.styleId, s.id)}
                 onClick={() => change({ styleId: s.id })}
                 className={cn(
                   'relative flex cursor-pointer flex-col gap-2 rounded-xl border bg-card p-2 text-left',
@@ -315,7 +341,7 @@ export function AutopilotWizard({ id, now = new Date() }: { id?: string; now?: D
                 </span>
               ))}
               {form.times.length < MAX_TIMES && (
-                <Button type="button" variant="secondary" className="h-8 px-3 text-[13px]" onClick={() => change({ times: [...form.times, '18:00'] })}>
+                <Button type="button" variant="secondary" className="h-8 px-3 text-[13px]" onClick={() => change({ times: [...form.times, nextFreeTime(form.times)] })}>
                   <Plus size={14} strokeWidth={1.5} aria-hidden="true" />
                   {t('autopilot.form.addTime')}
                 </Button>
@@ -346,11 +372,24 @@ export function AutopilotWizard({ id, now = new Date() }: { id?: string; now?: D
             </label>
           </div>
         )}
-        <div role="radiogroup" aria-label={t('autopilot.form.length')} className="flex flex-col gap-2">
+        <div
+          role="radiogroup"
+          aria-label={t('autopilot.form.length')}
+          onKeyDown={radioKeys(lengths, form.lengthSec, (lengthSec) => change({ lengthSec }))}
+          className="flex flex-col gap-2"
+        >
           <span className="text-xs text-text-2">{t('autopilot.form.length')}</span>
           <div className="flex flex-wrap gap-2">
-            {(LENGTHS.includes(form.lengthSec) ? LENGTHS : [...LENGTHS, form.lengthSec].sort((a, b) => a - b)).map((n) => (
-              <button key={n} type="button" role="radio" aria-checked={form.lengthSec === n} className={chip(form.lengthSec === n)} onClick={() => change({ lengthSec: n })}>
+            {lengths.map((n) => (
+              <button
+                key={n}
+                type="button"
+                role="radio"
+                aria-checked={form.lengthSec === n}
+                tabIndex={tabStop(lengths, form.lengthSec, n)}
+                className={chip(form.lengthSec === n)}
+                onClick={() => change({ lengthSec: n })}
+              >
                 {t('chat.seconds', { n })}
               </button>
             ))}
@@ -366,7 +405,12 @@ export function AutopilotWizard({ id, now = new Date() }: { id?: string; now?: D
     agent: () => (
       <div className="flex flex-col gap-5">
         {!installed.length && <p className="m-0 text-xs text-text-2">{t('autopilot.form.noAgents')}</p>}
-        <div role="radiogroup" aria-label={t('autopilot.form.agent')} className="flex flex-wrap gap-2">
+        <div
+          role="radiogroup"
+          aria-label={t('autopilot.form.agent')}
+          onKeyDown={radioKeys(agentIds, form.agentId as AgentInfo['id'], (agentId) => change({ agentId }))}
+          className="flex flex-wrap gap-2"
+        >
           {installed.map((a) => {
             const on = a.id === form.agentId;
             return (
@@ -375,6 +419,7 @@ export function AutopilotWizard({ id, now = new Date() }: { id?: string; now?: D
                 type="button"
                 role="radio"
                 aria-checked={on}
+                tabIndex={tabStop(agentIds, form.agentId as AgentInfo['id'], a.id)}
                 onClick={() => change({ agentId: a.id })}
                 className={cn(
                   'inline-flex cursor-pointer items-center gap-2 rounded-xl border bg-card px-3 py-2 text-[13px] text-foreground',
@@ -512,7 +557,7 @@ export function AutopilotWizard({ id, now = new Date() }: { id?: string; now?: D
       <Dialog open={leaving !== null} onOpenChange={(o) => !o && setLeaving(null)}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>{t('autopilot.wizard.discardTitle')}</DialogTitle>
+            <DialogTitle>{editing ? t('autopilot.wizard.discardEditTitle') : t('autopilot.wizard.discardTitle')}</DialogTitle>
             <DialogDescription>{t('autopilot.wizard.discardText')}</DialogDescription>
           </DialogHeader>
           <DialogFooter>

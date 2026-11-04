@@ -279,6 +279,42 @@ describe('Autopilot wizard', () => {
     expect(useApp.getState().leaveGuard).toBeNull();
   });
 
+  it('Add a time picks a free hour, so the times stay valid', async () => {
+    render(<AutopilotWizard now={now} />);
+    await toSchedule();
+    await userEvent.click(screen.getByRole('button', { name: 'Add a time' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Add a time' }));
+    expect(screen.getByLabelText('Time 2')).toHaveValue('13:00');
+    expect(screen.getByLabelText('Time 3')).toHaveValue('14:00');
+    expect(next()).toBeEnabled();
+  });
+
+  it('radio groups: arrow keys move the choice and the focus; only the checked option is a Tab stop', async () => {
+    render(<AutopilotWizard now={now} />);
+    await toSchedule();
+    const thirty = screen.getByRole('radio', { name: '30s' });
+    expect(thirty).toHaveAttribute('tabindex', '0');
+    expect(screen.getByRole('radio', { name: '45s' })).toHaveAttribute('tabindex', '-1');
+    thirty.focus();
+    await userEvent.keyboard('{ArrowRight}');
+    expect(screen.getByRole('radio', { name: '45s' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('radio', { name: '45s' })).toHaveFocus();
+    await userEvent.keyboard('{ArrowLeft}{ArrowLeft}{ArrowLeft}');
+    expect(screen.getByRole('radio', { name: '90s' })).toHaveAttribute('aria-checked', 'true');
+    await userEvent.click(next());
+    const claude = screen.getByRole('radio', { name: 'Claude Code' });
+    claude.focus();
+    await userEvent.keyboard('{ArrowDown}');
+    expect(screen.getByRole('radio', { name: 'Gemini CLI' })).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('editing asks to discard your changes, not the autopilot', async () => {
+    render(<AutopilotWizard id="a1" now={now} />);
+    await userEvent.type(await screen.findByLabelText('Name'), ' baru');
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(await screen.findByRole('dialog')).toHaveTextContent('Discard your changes?');
+  });
+
   it('speaks Indonesian', async () => {
     setUiLanguage('id');
     render(<AutopilotWizard now={now} />);

@@ -480,6 +480,7 @@ export const id: Translations = {
       edit: 'Ubah',
       editAria: 'Ubah {{section}}',
       discardTitle: 'Buang autopilot ini?',
+      discardEditTitle: 'Buang perubahanmu?',
       discardText: 'Yang sudah kamu isi di sini akan hilang.',
       discard: 'Buang',
       keepEditing: 'Lanjut mengisi',

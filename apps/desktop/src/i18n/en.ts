@@ -485,6 +485,7 @@ export const en = {
       edit: 'Edit',
       editAria: 'Edit {{section}}',
       discardTitle: 'Discard this autopilot?',
+      discardEditTitle: 'Discard your changes?',
       discardText: 'What you entered here will be lost.',
       discard: 'Discard',
       keepEditing: 'Keep editing',

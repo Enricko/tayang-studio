@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AutopilotFrequency } from '@tayang/shared';
-import { frequencyLabel, planSlots, slotTime, validTimes } from '@/lib/autopilot';
+import { frequencyLabel, nextFreeTime, planSlots, slotTime, validTimes } from '@/lib/autopilot';
 import { inTime } from '@/lib/time';
 import { setUiLanguage } from '@/i18n';
 
@@ -84,5 +84,15 @@ describe('autopilot labels', () => {
     expect(validTimes(['12:00', '12:00'])).toBe(false);
     expect(validTimes(['24:00'])).toBe(false);
     expect(validTimes(Array.from({ length: 7 }, (_, i) => `0${i}:00`))).toBe(false);
+  });
+});
+
+describe('nextFreeTime', () => {
+  it('is the first free whole hour after the last time', () => {
+    expect(nextFreeTime(['12:00'])).toBe('13:00');
+    expect(nextFreeTime(['12:00', '18:00'])).toBe('19:00');
+    expect(nextFreeTime(['23:00', '00:00'])).toBe('01:00');
+    expect(nextFreeTime(['18:30', '19:00'])).toBe('20:00');
+    expect(nextFreeTime([])).toBe('12:00');
   });
 });

@@ -11,10 +11,23 @@ export const WEEK = [1, 2, 3, 4, 5, 6, 0];
 /** The short weekday name in the active language (2024-01-07 is a Sunday). */
 export const dayName = (day: number) => new Intl.DateTimeFormat(locale(), { weekday: 'short' }).format(new Date(2024, 0, 7 + day));
 
+const pad = (n: number) => String(n).padStart(2, '0');
+
 export const isTime = (t: string) => /^([01]\d|2[0-3]):[0-5]\d$/.test(t);
 /** 1 to 6 different HH:MM times, as the Rust validation wants. */
 export const validTimes = (times: string[]) =>
   times.length >= 1 && times.length <= MAX_TIMES && times.every(isTime) && new Set(times).size === times.length;
+
+/** The first free whole hour after the last time (12:00 for none), for "Add a time". */
+export function nextFreeTime(times: string[]): string {
+  const used = new Set(times);
+  const last = times.length ? Number(times[times.length - 1]!.slice(0, 2)) : 11;
+  for (let i = 1; i <= 24; i++) {
+    const v = `${pad((last + i) % 24)}:00`;
+    if (!used.has(v)) return v;
+  }
+  return '00:00';
+}
 
 /** "2 a day · 12:00, 19:00" or "3 a week · Mon, Wed, Fri · 09:00". */
 export function frequencyLabel(a: Pick<Autopilot, 'frequency'>): string {
@@ -24,7 +37,6 @@ export function frequencyLabel(a: Pick<Autopilot, 'frequency'>): string {
   return i18n.t('autopilot.weekly', { count: f.days.length, days, time: f.time });
 }
 
-const pad = (n: number) => String(n).padStart(2, '0');
 /** "Thu 5 Nov 12:00" in the active language, 24-hour clock. */
 export function slotTime(d: Date): string {
   const part = (o: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat(locale(), o).format(d);
