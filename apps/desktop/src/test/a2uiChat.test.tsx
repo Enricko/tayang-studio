@@ -218,6 +218,17 @@ describe('activity card', () => {
   });
 });
 
+describe('skills preamble', () => {
+  it('goes to user-facing sessions only, not setup or style studies', async () => {
+    for (const id of ['setup', 'study-s1', 'ideas-2026-11-04']) {
+      vi.mocked(agentPrompt).mockClear();
+      await useChat.getState().send(id, [{ type: 'text', text: 'go' }], { agentId: 'codex' });
+      const sent = JSON.stringify(vi.mocked(agentPrompt).mock.calls[0]![1]);
+      expect(sent.includes('a2ui'), id).toBe(id.startsWith('ideas-'));
+    }
+  });
+});
+
 describe('send agent fallback', () => {
   it("uses the chat's last agent, not the default, when none is given", async () => {
     vi.mocked(agentStart).mockClear();

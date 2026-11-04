@@ -379,11 +379,18 @@ fn plugin_dir(resource_dir: Option<&Path>) -> Option<PathBuf> {
     found
 }
 
+/// Internal sessions (the setup installs and style studies) never show A2UI in a chat, so
+/// they get neither the plugin nor the A2UI system prompt. Topic ideas (`ideas-*`) do.
+pub fn wants_skills(chat_id: &str) -> bool {
+    !(chat_id == "setup" || chat_id.starts_with("study-"))
+}
+
 /// Claude gets the plugin and the system prompt through `_meta` (so nothing is
 /// installed in the user's own `~/.claude`); every agent gets `TAYANG_STUDIO=1`.
-fn session_options(agent: AgentId, plugin: Option<&Path>) -> crate::acp::SessionOptions {
+/// Without `skills` (internal sessions) there is no `_meta` at all.
+fn session_options(agent: AgentId, plugin: Option<&Path>, skills: bool) -> crate::acp::SessionOptions {
     let env = vec![("TAYANG_STUDIO".to_string(), "1".to_string())];
-    if agent != AgentId::Claude {
+    if agent != AgentId::Claude || !skills {
         return crate::acp::SessionOptions { meta: None, env };
     }
     let mut meta = serde_json::json!({ "systemPrompt": { "append": TAYANG_APPEND } });
@@ -414,9 +421,14 @@ pub async fn agent_start(
     let folder = project_folder_for_chat(&state, &chat_id)?;
     let cwd = resolve_cwd(&state.working(), &chat_id, folder.as_deref())?;
     let resource_dir = app.path().resource_dir().ok();
-    let plugin = if agent_id == AgentId::Claude { plugin_dir(resource_dir.as_deref()) } else { None };
-    let options = session_options(agent_id, plugin.as_deref());
-    let skills_as_text = needs_skills_text(agent_id, plugin.as_deref());
+    let skills = wants_skills(&chat_id);
+    let plugin = if agent_id == AgentId::Claude && skills {
+        plugin_dir(resource_dir.as_deref())
+    } else {
+        None
+    };
+    let options = session_options(agent_id, plugin.as_deref(), skills);
+    let skills_as_text = skills && needs_skills_text(agent_id, plugin.as_deref());
     state
         .acp
         .start_with(&chat_id, &command, &cwd, Arc::new(TauriSink(app)), options)
@@ -863,7 +875,7 @@ mod tests {
     #[test]
     fn session_options_for_claude_load_the_plugin() {
         let plugin = PathBuf::from("/res/agent-plugin");
-        let o = session_options(AgentId::Claude, Some(&plugin));
+        let o = session_options(AgentId::Claude, Some(&plugin), true);
         assert_eq!(o.env, vec![("TAYANG_STUDIO".to_string(), "1".to_string())]);
         let meta = o.meta.unwrap();
         let path = meta["claudeCode"]["options"]["plugins"][0]["path"].as_str().unwrap();
@@ -875,7 +887,7 @@ mod tests {
     #[test]
     fn session_options_for_other_agents_only_set_env() {
         for id in [AgentId::Opencode, AgentId::Codex, AgentId::Gemini] {
-            let o = session_options(id, Some(Path::new("/x")));
+            let o = session_options(id, Some(Path::new("/x")), true);
             assert!(o.meta.is_none());
             assert_eq!(o.env, vec![("TAYANG_STUDIO".to_string(), "1".to_string())]);
         }
@@ -883,7 +895,7 @@ mod tests {
 
     #[test]
     fn claude_without_a_plugin_folder_still_gets_the_append() {
-        let o = session_options(AgentId::Claude, None);
+        let o = session_options(AgentId::Claude, None, true);
         let meta = o.meta.unwrap();
         assert!(meta["claudeCode"].is_null());
         assert_eq!(meta["systemPrompt"]["append"], TAYANG_APPEND);
@@ -903,6 +915,17 @@ mod tests {
     fn dev_plugin_folder_exists_in_the_repo() {
         // Only debug builds look in the repo; a release build must use its bundled copy.
         assert_eq!(dev_plugin_dir().is_some(), cfg!(debug_assertions));
+    }
+
+    #[test]
+    fn internal_sessions_get_no_meta() {
+        assert!(!wants_skills("setup"));
+        assert!(!wants_skills("study-abc"));
+        assert!(wants_skills("ideas-2026-11-04"));
+        assert!(wants_skills("c1"));
+        let o = session_options(AgentId::Claude, Some(Path::new("/p")), false);
+        assert!(o.meta.is_none());
+        assert_eq!(o.env, vec![("TAYANG_STUDIO".to_string(), "1".to_string())]);
     }
 
     #[test]

@@ -68,6 +68,9 @@ const isLocal = (m: ChatMessage) => m.id.startsWith('local-');
 export const isScratchChat = (chatId: string) =>
   chatId === 'setup' || chatId.startsWith('study-') || chatId.startsWith('ideas-');
 
+/** Sessions that never show A2UI (setup installs, style studies): no skills preamble. Same rule as Rust. */
+const isInternalChat = (chatId: string) => chatId === 'setup' || chatId.startsWith('study-');
+
 /** Chats this store loaded or sent to; updates for any other chat id are not ours. */
 const tracked = new Set<string>();
 /** The agent each chat last started with, for error copy. */
@@ -284,7 +287,7 @@ export const useChat = create<ChatState>((set, get) => {
         const lead: MessagePart[] = [];
         // Claude loads the Tayang plugin itself (unless the app shipped without it); other agents get
         // the skills as text, once per session.
-        if (fresh && (agent !== 'claude' || noPlugin)) lead.push({ type: 'text', text: buildSessionPreamble() });
+        if (fresh && !isInternalChat(chatId) && (agent !== 'claude' || noPlugin)) lead.push({ type: 'text', text: buildSessionPreamble() });
         const recap = pendingRecap.get(chatId);
         if (recap) {
           lead.push({ type: 'text', text: `Earlier in this chat, with another agent:\n${recap}\n\nContinue from here.` });
