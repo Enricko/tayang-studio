@@ -2,6 +2,15 @@
 
 Tayang Studio is a free, open-source desktop app that helps Indonesian creators make motion videos without writing prompts. It picks topics, writes scripts and handles the prompting, while the user's own AI agent (Claude Code, opencode, Gemini CLI, Codex or any ACP agent) does the building.
 
+## Run it
+
+```
+pnpm install
+pnpm dev:desktop
+```
+
+Requires Node 22+, pnpm and Rust. See [docs/development.md](docs/development.md) for the full setup, API deployment and where data lives.
+
 ## Layout
 
 ```
@@ -26,3 +35,15 @@ tayang-desktop/
 | `pnpm typecheck` | `pnpm -r typecheck` | Type-check every workspace package |
 | `pnpm dev:desktop` | `pnpm --filter @tayang/desktop tauri dev` | Run the desktop app in dev mode |
 | `pnpm dev:api` | `pnpm --filter @tayang/api dev` | Run the API in dev mode |
+
+## How it works
+
+- The agent runs over ACP. Tayang has no AI of its own: every generation goes through the agent you already use.
+- Installs go through the agent too, and nothing runs on your computer until you press Allow on the permission request.
+- You pick a working folder. Projects live there, and agent sessions never work outside it.
+- App data is stored in a local SQLite database, so the desktop app works fully offline.
+- The API is optional and only adds the online features.
+
+## Credits
+
+UI polished with unslop by Damir Sokolovsky (@heydamir), CC BY 4.0.
