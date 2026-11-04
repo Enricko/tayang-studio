@@ -34,6 +34,21 @@ describe('ipc', () => {
     ]);
   });
 
+  it('project status and the newest video call the Rust commands with camelCase args', async () => {
+    const calls: { cmd: string; args: unknown }[] = [];
+    mockIPC((cmd, args) => {
+      calls.push({ cmd, args });
+    });
+    await ipc.setProjectStatus('p1', 'building');
+    await ipc.setProjectStatus('p1', 'draft', true);
+    await ipc.newestVideoInfo('p1');
+    expect(calls).toEqual([
+      { cmd: 'set_project_status', args: { projectId: 'p1', status: 'building', reset: false } },
+      { cmd: 'set_project_status', args: { projectId: 'p1', status: 'draft', reset: true } },
+      { cmd: 'newest_video_info', args: { projectId: 'p1' } },
+    ]);
+  });
+
   it('autopilot and slot wrappers call the Rust commands with camelCase args', async () => {
     const calls: { cmd: string; args: unknown }[] = [];
     mockIPC((cmd, args) => {
