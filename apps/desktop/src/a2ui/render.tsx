@@ -67,8 +67,10 @@ const isBinding = (v: unknown): v is { path: string } => isObj(v) && typeof v.pa
 /** Paths without a leading slash are relative to the template item being rendered. */
 const absPath = (path: string, base: string) => (path.startsWith('/') ? path : `${base}/${path}`.replace(/\/+/g, '/'));
 
-/** The API origins the app's CSP `img-src` allows (tauri.conf.json); keep the two in step. */
-export const API_IMAGE_ORIGINS = ['https://api.tayang.app', 'http://localhost:8787', 'http://127.0.0.1:8787'];
+/** The API origins the app's CSP `img-src`/`media-src` allow (tauri.conf.json); keep the two in step. */
+export const API_IMAGE_ORIGINS = ['https://studio.tayang.app', 'http://localhost:8787', 'http://127.0.0.1:8787'];
+/** The API owns only this path on those origins; other studio.tayang.app pages are not ours to embed. */
+const API_PATH_PREFIX = '/api/';
 
 /** Image URLs the agent may show: the app's own asset protocol, or the Tayang API. Nothing else loads. */
 export function safeImageUrl(url: unknown): string | null {
@@ -77,7 +79,8 @@ export function safeImageUrl(url: unknown): string | null {
     const u = new URL(url);
     if (u.protocol === 'asset:') return url;
     if (u.protocol === 'http:' && u.hostname === 'asset.localhost') return url;
-    if (API_IMAGE_ORIGINS.includes(u.origin)) return url;
+    // `pathname` is already normalised: `/api/../x` and `/api/%2e%2e/x` come out as `/x`.
+    if (API_IMAGE_ORIGINS.includes(u.origin) && u.pathname.startsWith(API_PATH_PREFIX)) return url;
   } catch {
     /* not a URL */
   }

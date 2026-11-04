@@ -249,9 +249,17 @@ describe('A2uiSurface', () => {
       'javascript:alert(1)',
       'asset://localhost/w/p1/frame.png',
       'http://asset.localhost/w/p1/frame.png',
+      'https://studio.tayang.app/api/v1/styles/atlas-journey/preview',
+      'https://studio.tayang.app.evil.com/api/a.png',
+      'https://studio.tayang.app/blog/a.png',
+      'https://studio.tayang.app/api',
+      'https://studio.tayang.app/apix/a.png',
+      'https://studio.tayang.app/api/../blog/a.png',
+      'https://studio.tayang.app/api/%2e%2e/blog/a.png',
       'https://api.tayang.app/v1/styles/atlas-journey/preview',
-      'https://api.tayang.app.evil.com/a.png',
+      'http://localhost:8787/api/v1/styles/x/preview',
       'http://localhost:8787/v1/styles/x/preview',
+      'http://127.0.0.1:8787/api/v1/styles/x/preview',
     ];
     const s = surfaceOf([
       create,
@@ -264,12 +272,16 @@ describe('A2uiSurface', () => {
     expect([...container.querySelectorAll('img')].map((i) => i.getAttribute('src'))).toEqual([
       'asset://localhost/w/p1/frame.png',
       'http://asset.localhost/w/p1/frame.png',
-      'https://api.tayang.app/v1/styles/atlas-journey/preview',
-      'http://localhost:8787/v1/styles/x/preview',
+      'https://studio.tayang.app/api/v1/styles/atlas-journey/preview',
+      'http://localhost:8787/api/v1/styles/x/preview',
+      'http://127.0.0.1:8787/api/v1/styles/x/preview',
     ]);
     const csp: string = JSON.parse(tauriConf).app.security.csp;
-    const imgSrc = csp.split(';').find((d) => d.trim().startsWith('img-src'))!.trim().split(/\s+/);
-    for (const origin of API_IMAGE_ORIGINS) expect(imgSrc).toContain(origin);
+    const directive = (name: string) => csp.split(';').find((d) => d.trim().startsWith(name))!.trim().split(/\s+/);
+    for (const name of ['img-src', 'media-src']) {
+      for (const origin of API_IMAGE_ORIGINS) expect(directive(name), name).toContain(origin);
+      expect(directive(name), name).not.toContain('https://api.tayang.app');
+    }
   });
 
   it('openUrl needs a confirm and https', async () => {
