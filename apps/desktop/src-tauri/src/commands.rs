@@ -1248,9 +1248,26 @@ pub async fn video_thumbnail(
     let folder = project_folder(&state, &project_id)?;
     let thumbs = app.path().app_data_dir().map_err(err)?.join("thumbs");
     let tools = state.media.clone();
-    tauri::async_runtime::spawn_blocking(move || media::video_thumbnail(&tools, &folder, &thumbs, &project_id, media::THUMB_TIMEOUT))
-        .await
-        .map_err(err)
+    // The newest render's thumbnail is already there: no slot needed.
+    let (f, t, id) = (folder.clone(), thumbs.clone(), project_id.clone());
+    if let Some(hit) = tauri::async_runtime::spawn_blocking(move || media::cached_video_thumbnail(&f, &t, &id)).await.map_err(err)? {
+        return Ok(Some(hit));
+    }
+    // It looks in the cache again: another lookup may have made it while this one waited.
+    in_thumb_slot(&THUMB_SLOTS, move || media::video_thumbnail(&tools, &folder, &thumbs, &project_id, media::THUMB_TIMEOUT)).await
+}
+
+/// At most two thumbnails are made at once: a Videos screen full of new renders must not start an ffprobe
+/// and an ffmpeg per card at the same time (an agent's render may be running).
+static THUMB_SLOTS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(2);
+
+/// Runs a blocking thumbnail job off the async runtime once one of `slots` is free.
+async fn in_thumb_slot<T: Send + 'static>(
+    slots: &'static tokio::sync::Semaphore,
+    job: impl FnOnce() -> T + Send + 'static,
+) -> CmdResult<T> {
+    let _slot = slots.acquire().await.map_err(err)?;
+    tokio::task::spawn_blocking(job).await.map_err(err)
 }
 
 #[tauri::command]
@@ -1367,6 +1384,32 @@ pub fn write_brief(state: State<'_, AppState>, project_id: String, brief: String
 
 #[cfg(test)]
 mod tests {
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn at_most_two_thumbnails_are_made_at_once() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+        assert_eq!(super::THUMB_SLOTS.available_permits(), 2);
+        let slots: &'static tokio::sync::Semaphore = Box::leak(Box::new(tokio::sync::Semaphore::new(2)));
+        let now = Arc::new(AtomicUsize::new(0));
+        let most = Arc::new(AtomicUsize::new(0));
+        let jobs = (0..6).map(|i| {
+            let (now, most) = (now.clone(), most.clone());
+            tokio::spawn(super::in_thumb_slot(slots, move || {
+                let n = now.fetch_add(1, Ordering::SeqCst) + 1;
+                most.fetch_max(n, Ordering::SeqCst);
+                std::thread::sleep(std::time::Duration::from_millis(80));
+                now.fetch_sub(1, Ordering::SeqCst);
+                i
+            }))
+        });
+        let mut done = Vec::new();
+        for j in jobs.collect::<Vec<_>>() {
+            done.push(j.await.unwrap().unwrap());
+        }
+        assert_eq!(done, [0, 1, 2, 3, 4, 5]);
+        assert_eq!(most.load(Ordering::SeqCst), 2);
+    }
+
     #[test]
     fn locale_is_trimmed_and_blank_is_none() {
         assert_eq!(super::clean_locale(Some(" id-ID ".into())), Some("id-ID".into()));

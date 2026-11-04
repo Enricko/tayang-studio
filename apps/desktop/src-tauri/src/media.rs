@@ -476,6 +476,15 @@ pub fn video_thumbnail(
     make_thumb(tools, video, meta, duration, thumbs, project_id, limit)
 }
 
+/// The cached thumbnail of the project's newest render, when it is already made (no ffmpeg, no probe).
+pub fn cached_video_thumbnail(folder: &Path, thumbs: &Path, project_id: &str) -> Option<VideoThumb> {
+    if !valid_style_id(project_id) {
+        return None;
+    }
+    let (_, meta) = newest_render(folder, false)?;
+    cached_thumb(thumbs, project_id, &meta)
+}
+
 /// The cache files for the render with this metadata.
 fn thumb_files(thumbs: &Path, project_id: &str, meta: &std::fs::Metadata) -> Option<(i64, String, PathBuf, PathBuf)> {
     let modified: chrono::DateTime<chrono::Utc> = meta.modified().ok()?.into();
@@ -1595,8 +1604,10 @@ mod tests {
         assert_eq!(again, first);
         assert_eq!(std::fs::read_to_string(&log).unwrap().lines().count(), 1);
 
+        assert_eq!(cached_video_thumbnail(&project, &thumbs, "p1"), Some(first.clone()));
         // A new render: a new thumbnail, the old one for this project gone, other projects' kept.
         set_mtime(&video, 60);
+        assert_eq!(cached_video_thumbnail(&project, &thumbs, "p1"), None, "the new render has none yet");
         let next = video_thumbnail(&tools, &project, &thumbs, "p1", THUMB_LIMIT).unwrap();
         assert!(next.path.ends_with("p1-1700000060000.jpg"));
         assert_eq!(thumb_names(&thumbs), ["other-1800000000000.jpg", "p1-1700000060000.jpg"]);
