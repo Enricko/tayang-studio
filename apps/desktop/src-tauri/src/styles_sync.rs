@@ -321,6 +321,7 @@ mod tests {
             created_at: "2026-11-04T00:00:00Z".into(),
             engine: Some(StyleEngine::Remotion),
             preview_url: None,
+            preview_video_url: Some(format!("https://api.test/v1/styles/{id}/preview-video")),
             template: template.map(|(b, v)| StyleTemplate {
                 sha256: sha256_hex(b),
                 size: b.len() as u64,
@@ -380,6 +381,9 @@ mod tests {
         let ids: Vec<_> = out.styles.iter().map(|s| s.id.as_str()).collect();
         assert_eq!(ids, ["a", "b"]);
         assert_eq!(db.list_styles().unwrap().len(), 2);
+        let want = Some("https://api.test/v1/styles/a/preview-video".to_string());
+        assert_eq!(out.styles[0].preview_video_url, want);
+        assert_eq!(db.get_style("a").unwrap().unwrap().preview_video_url, want);
     }
 
     #[tokio::test]

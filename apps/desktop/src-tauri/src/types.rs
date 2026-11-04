@@ -262,6 +262,8 @@ pub struct Style {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub preview_url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preview_video_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub template: Option<StyleTemplate>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub version: Option<u32>,

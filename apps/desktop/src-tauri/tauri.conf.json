@@ -22,7 +22,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; img-src 'self' asset: http://asset.localhost data: blob: https://api.tayang.app http://localhost:8787 http://127.0.0.1:8787; media-src 'self' asset: http://asset.localhost blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost",
+      "csp": "default-src 'self'; img-src 'self' asset: http://asset.localhost data: blob: https://api.tayang.app http://localhost:8787 http://127.0.0.1:8787; media-src 'self' asset: http://asset.localhost blob: https://api.tayang.app http://localhost:8787 http://127.0.0.1:8787; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost",
       "assetProtocol": { "enable": true, "scope": { "allow": [], "requireLiteralLeadingDot": false } }
     }
   },

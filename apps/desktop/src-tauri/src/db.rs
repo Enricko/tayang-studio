@@ -51,7 +51,7 @@ CREATE INDEX IF NOT EXISTS messages_chat ON messages(chat_id);
 CREATE TABLE IF NOT EXISTS styles (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, source TEXT NOT NULL, source_url TEXT,
   notes TEXT NOT NULL, prompt TEXT NOT NULL, created_at TEXT NOT NULL,
-  engine TEXT, preview_url TEXT, template TEXT, version INTEGER
+  engine TEXT, preview_url TEXT, preview_video_url TEXT, template TEXT, version INTEGER
 );
 CREATE TABLE IF NOT EXISTS jobs (
   id TEXT PRIMARY KEY, kind TEXT NOT NULL, title TEXT NOT NULL, project_id TEXT, chat_id TEXT,
@@ -420,9 +420,13 @@ impl Db {
                 have.push(r?);
             }
         }
-        for (col, ty) in
-            [("engine", "TEXT"), ("preview_url", "TEXT"), ("template", "TEXT"), ("version", "INTEGER")]
-        {
+        for (col, ty) in [
+            ("engine", "TEXT"),
+            ("preview_url", "TEXT"),
+            ("preview_video_url", "TEXT"),
+            ("template", "TEXT"),
+            ("version", "INTEGER"),
+        ] {
             if !have.iter().any(|c| c == col) {
                 conn.execute_batch(&format!("ALTER TABLE styles ADD COLUMN {col} {ty}"))?;
             }
@@ -463,7 +467,8 @@ impl Db {
             };
             tx.execute(
                 "INSERT OR REPLACE INTO styles (id, name, source, source_url, notes, prompt, created_at, \
-                 engine, preview_url, template, version) VALUES (?1,?2,'builtin',NULL,?3,?4,?5,?6,?7,?8,?9)",
+                 engine, preview_url, preview_video_url, template, version) \
+                 VALUES (?1,?2,'builtin',NULL,?3,?4,?5,?6,?7,?8,?9,?10)",
                 rusqlite::params![
                     s.id,
                     s.name,
@@ -472,6 +477,7 @@ impl Db {
                     s.created_at,
                     engine,
                     s.preview_url,
+                    s.preview_video_url,
                     template,
                     s.version
                 ],
@@ -494,7 +500,7 @@ impl Db {
         let conn = self.conn();
         let mut stmt = conn.prepare(
             "SELECT id, name, source, source_url AS sourceUrl, notes, prompt, created_at AS createdAt, \
-             engine, preview_url AS previewUrl, template, version FROM styles \
+             engine, preview_url AS previewUrl, preview_video_url AS previewVideoUrl, template, version FROM styles \
              ORDER BY CASE source WHEN 'builtin' THEN 0 ELSE 1 END, \
              CASE source WHEN 'builtin' THEN rowid END, created_at, rowid",
         )?;
@@ -734,6 +740,7 @@ mod tests {
             created_at: "2026-11-04T00:00:00Z".into(),
             engine: Some(StyleEngine::Remotion),
             preview_url: Some(format!("https://api/v1/styles/{id}/preview")),
+            preview_video_url: Some(format!("https://api/v1/styles/{id}/preview-video")),
             template: template
                 .then(|| StyleTemplate { sha256: "ab".repeat(32), size: 10, version: 2 }),
             version: Some(2),
@@ -748,6 +755,7 @@ mod tests {
             source: StyleSource::Mine,
             engine: None,
             preview_url: None,
+            preview_video_url: None,
             template: None,
             version: None,
             ..builtin("s1", false)
@@ -767,6 +775,10 @@ mod tests {
         let ids = |db: &Db| db.list_styles().unwrap().into_iter().map(|s| s.id).collect::<Vec<_>>();
         assert_eq!(ids(&db), ["b", "a", "mine"]);
         assert_eq!(db.get_style("b").unwrap().unwrap().template.unwrap().size, 10);
+        assert_eq!(
+            db.get_style("b").unwrap().unwrap().preview_video_url.as_deref(),
+            Some("https://api/v1/styles/b/preview-video")
+        );
         // "a" disappears from the API, "c" is new.
         db.replace_builtin_styles(&[builtin("b", true), builtin("c", true)]).unwrap();
         assert_eq!(ids(&db), ["b", "c", "mine"]);
@@ -792,6 +804,7 @@ mod tests {
         assert_eq!(styles.len(), 1);
         assert_eq!(styles[0].id, "keep");
         assert_eq!(styles[0].template, None);
+        assert_eq!(styles[0].preview_video_url, None);
         drop(db);
         assert_eq!(Db::open(&path).unwrap().list_styles().unwrap().len(), 1);
     }
