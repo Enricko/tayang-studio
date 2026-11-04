@@ -189,6 +189,41 @@ pub fn update_project(
     state.db.update_project(&id, patch).map_err(err)
 }
 
+/// Sets or clears when a video is due to be posted. `at` must be RFC 3339; a new time is
+/// reminded afresh, so `remindedAt` is cleared with it.
+pub fn schedule_project(db: &Db, project_id: &str, at: Option<String>) -> CmdResult<Project> {
+    if let Some(at) = &at {
+        chrono::DateTime::parse_from_rfc3339(at)
+            .map_err(|_| format!("That date and time isn't valid: {at}"))?;
+    }
+    db.update_project(project_id, serde_json::json!({ "scheduledAt": at, "remindedAt": null }))
+        .map_err(err)
+}
+
+pub fn mark_posted(db: &Db, project_id: &str, posted: bool) -> CmdResult<Project> {
+    let at = posted.then(crate::db::now);
+    db.update_project(project_id, serde_json::json!({ "postedAt": at })).map_err(err)
+}
+
+pub fn approve(db: &Db, project_id: &str) -> CmdResult<Project> {
+    db.update_project(project_id, serde_json::json!({ "reviewState": "approved" })).map_err(err)
+}
+
+#[tauri::command]
+pub fn set_schedule(state: State<'_, AppState>, project_id: String, at: Option<String>) -> CmdResult<Project> {
+    schedule_project(&state.db, &project_id, at)
+}
+
+#[tauri::command]
+pub fn set_posted(state: State<'_, AppState>, project_id: String, posted: bool) -> CmdResult<Project> {
+    mark_posted(&state.db, &project_id, posted)
+}
+
+#[tauri::command]
+pub fn approve_project(state: State<'_, AppState>, project_id: String) -> CmdResult<Project> {
+    approve(&state.db, &project_id)
+}
+
 // ---- chats ----
 
 #[tauri::command]
@@ -980,6 +1015,57 @@ mod tests {
         }
         assert_eq!(super::clean_locale(Some("ca-ES".into())), Some("ca-ES".into()));
         assert_eq!(super::clean_locale(Some("Czech".into())), Some("Czech".into()));
+    }
+
+    fn seeded() -> Db {
+        let db = Db::open_in_memory().unwrap();
+        db.insert_project(&Project {
+            id: "p".into(),
+            title: "P".into(),
+            slug: "p".into(),
+            folder: "/w/p".into(),
+            kind: VideoKind::Promo,
+            format: VideoFormat::Portrait,
+            language: VideoLanguage::Id,
+            status: ProjectStatus::Rendered,
+            style_id: None,
+            scheduled_at: None,
+            review_state: ReviewState::Pending,
+            posted_at: None,
+            reminded_at: Some("2026-11-01T00:00:00Z".into()),
+            duration_sec: None,
+            created_at: "t".into(),
+            updated_at: "t".into(),
+        })
+        .unwrap();
+        db
+    }
+
+    #[test]
+    fn set_schedule_validates_sets_clears_and_resets_the_reminder() {
+        let db = seeded();
+        assert!(schedule_project(&db, "p", Some("tomorrow".into())).is_err());
+        assert!(schedule_project(&db, "p", Some("2026-11-05 09:00".into())).is_err());
+        assert!(schedule_project(&db, "nope", Some("2026-11-05T09:00:00+07:00".into())).is_err());
+        assert!(schedule_project(&db, "nope", None).is_err());
+        let p = schedule_project(&db, "p", Some("2026-11-05T09:00:00+07:00".into())).unwrap();
+        assert_eq!(p.scheduled_at.as_deref(), Some("2026-11-05T09:00:00+07:00"));
+        assert_eq!(p.reminded_at, None);
+        let p = schedule_project(&db, "p", None).unwrap();
+        assert_eq!(p.scheduled_at, None);
+        assert_eq!(db.get_project("p").unwrap().unwrap().scheduled_at, None);
+    }
+
+    #[test]
+    fn set_posted_stamps_and_clears_and_approve_approves() {
+        let db = seeded();
+        let p = mark_posted(&db, "p", true).unwrap();
+        assert!(p.posted_at.is_some());
+        assert_eq!(mark_posted(&db, "p", false).unwrap().posted_at, None);
+        assert!(mark_posted(&db, "nope", true).is_err());
+        assert_eq!(approve(&db, "p").unwrap().review_state, ReviewState::Approved);
+        assert_eq!(db.get_project("p").unwrap().unwrap().review_state, ReviewState::Approved);
+        assert!(approve(&db, "nope").is_err());
     }
 
     #[test]
