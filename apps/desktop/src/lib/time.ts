@@ -17,3 +17,16 @@ export function mmss(sec: number | null): string {
   const s = Math.round(sec);
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
+
+/** Time until a reset: "42m", "1h 41m", "3d 13h". Past times read "now". */
+export function formatResetIn(iso: string | null, now: Date = new Date()): string {
+  if (!iso) return '';
+  const ms = new Date(iso).getTime() - now.getTime();
+  if (!Number.isFinite(ms)) return '';
+  const min = Math.floor(ms / 60000);
+  if (min < 1) return 'now';
+  if (min < 60) return `${min}m`;
+  if (min < 60 * 24) return `${Math.floor(min / 60)}h ${min % 60}m`;
+  const days = Math.floor(min / 1440);
+  return `${days}d ${Math.floor((min % 1440) / 60)}h`;
+}

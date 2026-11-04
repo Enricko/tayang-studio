@@ -2,6 +2,7 @@ import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 import type {
   AgentId,
   AgentInfo,
+  AgentUsage,
   Chat,
   ChatMessage,
   Job,
@@ -23,6 +24,9 @@ export const getSettings = () => invoke<Settings>('get_settings');
 export const updateSettings = (patch: Partial<Settings>) =>
   invoke<Settings>('update_settings', { patch });
 export const pickFolder = () => invoke<string | null>('pick_folder');
+
+// ---- usage ----
+export const getAgentUsage = (force: boolean) => invoke<AgentUsage[]>('get_agent_usage', { force });
 
 // ---- projects ----
 export const listProjects = () => invoke<Project[]>('list_projects');
