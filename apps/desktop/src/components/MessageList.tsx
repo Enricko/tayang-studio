@@ -218,7 +218,10 @@ export function MessageList({
   sendOptions,
   busy = false,
   agentId,
+  scrollRef,
 }: {
+  /** The scroll container the list lives in: it follows new messages only while the user is near the bottom. */
+  scrollRef?: React.RefObject<HTMLElement | null>;
   /** The chat's agent; the activity card names it. Defaults to the agent picked in Settings. */
   agentId?: AgentId;
   messages: ChatMessage[];
@@ -233,8 +236,25 @@ export function MessageList({
   children?: React.ReactNode;
 }) {
   const end = useRef<HTMLDivElement>(null);
+  // Follow the conversation only while the reader is at the bottom (or just sent something), so jumping
+  // to an earlier turn while the agent streams stays put.
+  const stick = useRef(true);
+  const prev = useRef({ count: messages.length, last: messages[messages.length - 1]?.id });
   useEffect(() => {
-    end.current?.scrollIntoView?.({ block: 'end' });
+    const box = scrollRef?.current;
+    if (!box) return;
+    const onScroll = () => {
+      stick.current = box.scrollHeight - box.scrollTop - box.clientHeight <= 80;
+    };
+    box.addEventListener('scroll', onScroll, { passive: true });
+    return () => box.removeEventListener('scroll', onScroll);
+  }, [scrollRef]);
+  useEffect(() => {
+    const last = messages[messages.length - 1];
+    const sent = last?.role === 'user' && (messages.length !== prev.current.count || last.id !== prev.current.last);
+    prev.current = { count: messages.length, last: last?.id };
+    if (sent) stick.current = true;
+    if (stick.current) end.current?.scrollIntoView?.({ block: 'end' });
   }, [messages, streaming]);
 
   const a2ui = useMemo(() => deriveA2ui(messages), [messages]);
@@ -249,7 +269,7 @@ export function MessageList({
       {messages.map((m, i) => {
         if (m.role === 'user') {
           return (
-            <div key={messageKey(m)} className="flex justify-end">
+            <div key={messageKey(m)} data-turn={i} className="flex justify-end">
               <div className="flex max-w-[80%] flex-wrap items-center gap-2 rounded-lg bg-raised px-3 py-2 text-[14px] leading-[1.6]">
                 {m.parts.map((p, j) =>
                   p.type === 'text' ? (
