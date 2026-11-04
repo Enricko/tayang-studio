@@ -114,7 +114,7 @@ function StudyBox() {
   const study = useStudy();
   const agent = useApp((s) => s.settings?.defaultAgent) ?? 'claude';
   const steps = ['Downloaded', 'Frames sampled', 'Reading camera, pacing and type', 'Writing the style prompt', 'Making a preview'];
-  const active = study.finishing ? steps.length - 1 : Math.min(study.toolCalls, steps.length - 2);
+  const active = study.phase === 'finishing' ? steps.length - 1 : Math.min(study.toolCalls, steps.length - 2);
 
   if (study.phase === 'idle') return null;
   if (study.phase === 'failed')
@@ -148,9 +148,11 @@ function StudyBox() {
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-[13px] font-medium">Studying a video</span>
             <span className="truncate font-mono text-xs text-text-3">{study.url.replace(/^https?:\/\//, '')}</span>
-            <Button variant="ghost" className="ml-auto h-7 px-2 text-xs" onClick={() => void study.cancel()}>
-              Cancel
-            </Button>
+            {study.phase === 'running' && (
+              <Button variant="ghost" className="ml-auto h-7 px-2 text-xs" onClick={() => void study.cancel()}>
+                Cancel
+              </Button>
+            )}
           </div>
           <div className="flex flex-wrap gap-4 text-xs">
             {steps.map((s, i) => (
@@ -679,7 +681,7 @@ export function Style() {
               className="h-10 bg-background pl-9"
             />
           </div>
-          <Button className="h-10" disabled={phase === 'running'} onClick={study}>
+          <Button className="h-10" disabled={phase === 'running' || phase === 'finishing'} onClick={study}>
             Study video
           </Button>
         </div>

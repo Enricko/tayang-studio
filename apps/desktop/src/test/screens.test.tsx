@@ -15,6 +15,7 @@ vi.mock('@/lib/ipc', () => ({
   readStyleResult: vi.fn(),
   studyDir: vi.fn(),
   makeStylePreview: vi.fn(),
+  removeStudyDir: vi.fn().mockResolvedValue(undefined),
   assetUrl: vi.fn((p: string) => `asset://localhost/${p}`),
   listJobs: vi.fn(),
   upsertJob: vi.fn(),
@@ -881,6 +882,95 @@ describe('Study preview', () => {
     const { view } = await runStudy();
     expect(vi.mocked(ipc.saveStyle).mock.calls[1]![0]).toMatchObject({ previewUrl: 'asset://localhost//d/poster.jpg' });
     expect(vi.mocked(ipc.saveStyle).mock.calls[1]![0].previewVideoUrl).toBeFalsy();
+    view.unmount();
+    useStudy.getState().dismiss();
+  });
+
+  it('removes the study folder after the preview step when the study succeeds', async () => {
+    vi.mocked(ipc.removeStudyDir).mockClear();
+    vi.mocked(ipc.makeStylePreview).mockResolvedValue(null);
+    const { view } = await runStudy();
+    const studyId = useStudy.getState().studyId!;
+    await waitFor(() => expect(ipc.removeStudyDir).toHaveBeenCalledWith(studyId));
+    expect(vi.mocked(ipc.makeStylePreview).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(ipc.removeStudyDir).mock.invocationCallOrder[0]!);
+    view.unmount();
+    useStudy.getState().dismiss();
+  });
+
+  it('removes the study folder after the agent has stopped when the result is unreadable, the save fails, or it is cancelled', async () => {
+    const cases: [string, () => Promise<void>][] = [
+      ['unreadable', async () => void vi.mocked(ipc.readStyleResult).mockResolvedValue('not json')],
+      ['save fails', async () => void vi.mocked(ipc.saveStyle).mockRejectedValueOnce(new Error('disk full'))],
+    ];
+    for (const [why, arrange] of cases) {
+      vi.mocked(ipc.removeStudyDir).mockClear();
+      vi.mocked(ipc.agentStop).mockClear();
+      vi.mocked(ipc.studyDir).mockResolvedValue('/w/s');
+      vi.mocked(ipc.readStyleResult).mockResolvedValue(good);
+      vi.mocked(ipc.agentPrompt).mockClear();
+      await arrange();
+      const view = render(<Style />);
+      await userEvent.type(screen.getByLabelText('Video link'), 'https://youtu.be/abc');
+      await userEvent.click(screen.getByRole('button', { name: 'Study video' }));
+      await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
+      const chatId = vi.mocked(ipc.agentPrompt).mock.calls[0]![0];
+      updateHandlers.forEach((h) => h({ chatId, update: { kind: 'done', stopReason: 'end_turn' } }));
+      await waitFor(() => expect(useStudy.getState().phase).toBe('failed'));
+      const studyId = useStudy.getState().studyId!;
+      await waitFor(() => expect(ipc.removeStudyDir).toHaveBeenCalledWith(studyId), { timeout: 2000 });
+      expect(vi.mocked(ipc.agentStop).mock.invocationCallOrder[0], why).toBeLessThan(vi.mocked(ipc.removeStudyDir).mock.invocationCallOrder[0]!);
+      view.unmount();
+      useStudy.getState().dismiss();
+    }
+    // Cancel
+    vi.mocked(ipc.removeStudyDir).mockClear();
+    vi.mocked(ipc.agentPrompt).mockClear();
+    vi.mocked(ipc.agentCancel).mockResolvedValue();
+    const view = render(<Style />);
+    await userEvent.type(screen.getByLabelText('Video link'), 'https://youtu.be/abc');
+    await userEvent.click(screen.getByRole('button', { name: 'Study video' }));
+    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    const studyId = useStudy.getState().studyId!;
+    await waitFor(() => expect(ipc.removeStudyDir).toHaveBeenCalledWith(studyId));
+    view.unmount();
+    useStudy.getState().dismiss();
+  });
+
+  it('while the preview is made: no Cancel, late errors and cancels ignored, no second study, and a stale finish cannot touch a newer study', async () => {
+    vi.mocked(ipc.studyDir).mockResolvedValue('/w/s');
+    vi.mocked(ipc.readStyleResult).mockResolvedValue(good);
+    vi.mocked(ipc.agentPrompt).mockClear();
+    vi.mocked(ipc.agentCancel).mockClear();
+    let release: (v: null) => void = () => {};
+    vi.mocked(ipc.makeStylePreview).mockReturnValueOnce(new Promise((res) => (release = res)));
+    const view = render(<Style />);
+    await userEvent.type(screen.getByLabelText('Video link'), 'https://youtu.be/abc');
+    await userEvent.click(screen.getByRole('button', { name: 'Study video' }));
+    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
+    const chatId = vi.mocked(ipc.agentPrompt).mock.calls[0]![0];
+    updateHandlers.forEach((h) => h({ chatId, update: { kind: 'done', stopReason: 'end_turn' } }));
+    await waitFor(() => expect(useStudy.getState().phase).toBe('finishing'));
+    expect(screen.getByText('Making a preview')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Cancel' })).toBeNull();
+    await act(async () => useStudy.getState().cancel());
+    expect(ipc.agentCancel).not.toHaveBeenCalled();
+    act(() => updateHandlers.forEach((h) => h({ chatId, update: { kind: 'error', message: 'late' } })));
+    expect(useStudy.getState().phase).toBe('finishing');
+    await act(async () => useStudy.getState().start('https://youtu.be/zzz', 'claude'));
+    expect(useStudy.getState().url).toBe('https://youtu.be/abc');
+    expect(screen.getByRole('button', { name: 'Study video' })).toBeDisabled();
+
+    // The study is dismissed and a new one starts before the old preview returns.
+    act(() => useStudy.getState().dismiss());
+    vi.mocked(ipc.upsertJob).mockClear();
+    await act(async () => useStudy.getState().start('https://youtu.be/new', 'claude'));
+    const newId = useStudy.getState().studyId;
+    await act(async () => release(null));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(useStudy.getState().studyId).toBe(newId);
+    expect(useStudy.getState().phase).toBe('running');
+    expect(vi.mocked(ipc.upsertJob).mock.calls.every(([j]) => j.status === 'working')).toBe(true);
     view.unmount();
     useStudy.getState().dismiss();
   });

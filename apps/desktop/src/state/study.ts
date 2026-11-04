@@ -12,6 +12,7 @@ import {
   makeStylePreview,
   readStyleResult,
   saveStyle,
+  removeStudyDir,
   studyDir,
   upsertJob,
 } from '@/lib/ipc';
@@ -19,7 +20,8 @@ import { agentErrorText } from '@/lib/agents';
 import { onAgentUpdate, onPermission } from '@/lib/events';
 import { refreshJobs } from '@/state/jobs';
 
-export type StudyPhase = 'idle' | 'running' | 'done' | 'failed';
+/** `finishing`: the agent is done and Tayang is saving the style and making its preview; it can't be cancelled. */
+export type StudyPhase = 'idle' | 'running' | 'finishing' | 'done' | 'failed';
 
 interface StudyState {
   phase: StudyPhase;
@@ -33,8 +35,6 @@ interface StudyState {
   /** Requests that arrived while `request` was open, oldest first. */
   queue: PermissionRequest[];
   error: string | null;
-  /** True while the finished study's preview is being made. */
-  finishing: boolean;
   /** Bumped when a style was saved so the library reloads. */
   savedVersion: number;
   /** `replaceJobId`: a failed study's job, deleted once this study's own job is written. */
@@ -70,8 +70,12 @@ export const useStudy = create<StudyState>((set, get) => {
   };
 
   /** Resolves true when the job was written. */
-  const writeJob = async (status: JobStatus, note: string | null): Promise<boolean> => {
-    const { studyId, url } = get();
+  const writeJob = async (
+    status: JobStatus,
+    note: string | null,
+    studyId: string | null = get().studyId,
+    url: string = get().url,
+  ): Promise<boolean> => {
     if (!studyId) return false;
     const job: Job = {
       id: studyChatId(studyId),
@@ -106,31 +110,43 @@ export const useStudy = create<StudyState>((set, get) => {
   };
 
   /** The study's agent has nothing left to do once it ends, however it ends. */
-  const stopAgent = () => {
-    const { studyId } = get();
-    if (studyId) void agentStop(studyChatId(studyId)).catch(() => {});
+  const stopAgent = async (studyId: string | null) => {
+    if (studyId) await agentStop(studyChatId(studyId)).catch(() => {});
+  };
+
+  /** The study folder (download, frames, result) is only ever needed while the study runs. */
+  const cleanUp = async (studyId: string | null) => {
+    if (studyId) await removeStudyDir(studyId).catch(() => {});
   };
 
   const fail = async (message: string) => {
+    const { studyId, url } = get();
     dropRequests();
-    stopAgent();
-    set({ phase: 'failed', finishing: false, error: message });
-    if (await writeJob('failed', message)) await dropStaleJob();
+    set({ phase: 'failed', error: message });
+    // Stop the agent first (it may still be writing the download), then delete what it left behind.
+    await stopAgent(studyId);
+    await cleanUp(studyId);
+    // Another study may have started meanwhile: never write the old one's state over it.
+    if (get().studyId !== studyId) return;
+    if (await writeJob('failed', message, studyId, url)) await dropStaleJob();
   };
 
   const finish = async () => {
     const { studyId, url } = get();
-    if (!studyId) return;
+    if (!studyId || get().phase !== 'running') return;
+    // From here the study can't be cancelled and late agent events are ignored.
+    set({ phase: 'finishing' });
     dropRequests();
-    stopAgent();
+    await stopAgent(studyId);
+    const mine = () => get().studyId === studyId && get().phase === 'finishing';
     try {
       const raw = await readStyleResult(studyId);
       const parsed = raw ? parseStyleResult(raw, url) : null;
+      if (!mine()) return;
       if (!parsed) return fail('The agent did not write a style Tayang could read. Try another video.');
       const style = { ...parsed, id: `copied-${studyId}`, createdAt: new Date().toISOString() };
       await saveStyle(style);
       // A short silent preview from the downloaded video. Never fails the study.
-      set({ finishing: true });
       try {
         const made = await makeStylePreview(studyId, style.id);
         if (made) {
@@ -143,10 +159,13 @@ export const useStudy = create<StudyState>((set, get) => {
       } catch {
         /* the style is saved without a preview */
       }
-      set((s) => ({ phase: 'done', finishing: false, request: null, error: null, savedVersion: s.savedVersion + 1 }));
-      await writeJob('done', parsed.name);
+      await cleanUp(studyId);
+      if (!mine()) return;
+      set((s) => ({ phase: 'done', request: null, error: null, savedVersion: s.savedVersion + 1 }));
+      await writeJob('done', parsed.name, studyId, url);
     } catch (e) {
-      await fail(e instanceof Error ? e.message : String(e));
+      if (mine()) await fail(e instanceof Error ? e.message : String(e));
+      else await cleanUp(studyId);
     }
   };
 
@@ -181,14 +200,13 @@ export const useStudy = create<StudyState>((set, get) => {
     request: null,
     queue: [],
     error: null,
-    finishing: false,
     savedVersion: 0,
 
     async start(url, agentId, replaceJobId) {
-      if (get().phase === 'running') return;
+      if (get().phase === 'running' || get().phase === 'finishing') return;
       agent = agentId;
       const studyId = newId();
-      set({ phase: 'running', finishing: false, url, studyId, toolCalls: 0, ranLog: [], request: null, queue: [], error: null });
+      set({ phase: 'running', url, studyId, toolCalls: 0, ranLog: [], request: null, queue: [], error: null });
       staleJobId = replaceJobId ?? null;
       listen();
       try {

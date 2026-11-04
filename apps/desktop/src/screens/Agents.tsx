@@ -21,7 +21,7 @@ const COLUMNS: { name: string; mood: OyenMood; match(s: JobStatus): boolean }[] 
 
 function JobCard({ job, project, onDismiss }: { job: Job; project: string; onDismiss(): void }) {
   const navigate = useApp((s) => s.navigate);
-  const studyRunning = useStudy((s) => s.phase === 'running');
+  const studyRunning = useStudy((s) => s.phase === 'running' || s.phase === 'finishing');
   const [starting, setStarting] = useState(false);
   const failed = job.status === 'failed';
   const working = job.status === 'working';
