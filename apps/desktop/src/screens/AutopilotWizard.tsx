@@ -432,6 +432,9 @@ export function AutopilotWizard({ id, now = new Date() }: { id?: string; now?: D
             );
           })}
         </div>
+        <p data-testid="autopilot-auto-mode" className="m-0 rounded-xl border border-border bg-card p-4 text-xs leading-normal text-text-2">
+          {t('autopilot.wizard.autoMode')}
+        </p>
         <div className="flex items-start justify-between gap-4 rounded-xl border border-border bg-card p-4">
           <div className="flex flex-col gap-1">
             <label htmlFor="autopilot-review" className="text-sm">
@@ -468,6 +471,7 @@ export function AutopilotWizard({ id, now = new Date() }: { id?: string; now?: D
         ['schedule', t('autopilot.form.frequency'), validTimes(form.times) || form.mode === 'weekly' ? frequencyLabel({ frequency: frequencyOf(form) }) : ''],
         ['schedule', t('autopilot.form.length'), t('chat.seconds', { n: form.lengthSec })],
         ['agent', t('autopilot.form.agent'), form.agentId ? AGENT_NAMES[form.agentId] : ''],
+        ['agent', t('autopilot.wizard.autoModeLabel'), t('autopilot.wizard.autoModeValue')],
         ['agent', t('autopilot.form.review'), form.review ? t('autopilot.wizard.reviewValueOn') : t('autopilot.wizard.reviewValueOff')],
         ['agent', t('autopilot.form.posting'), t('autopilot.form.manual')],
       ];

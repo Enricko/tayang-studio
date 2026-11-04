@@ -148,6 +148,10 @@ describe('Autopilot wizard', () => {
     expect(screen.getByText('Off: finished videos go straight to Ready.')).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: /Manual/ })).toBeChecked();
     expect(screen.getByRole('radio', { name: /Automatic · Coming soon/ })).toBeDisabled();
+    // The user decides here, so they learn here that it never stops to ask.
+    expect(screen.getByTestId('autopilot-auto-mode')).toHaveTextContent(
+      "Autopilot runs your agent in Auto mode so it can work without you: it won't stop to ask before running commands.",
+    );
   });
 
   it('summary shows everything, Edit links jump back, and Start creates it and opens its detail', async () => {
@@ -164,6 +168,7 @@ describe('Autopilot wizard', () => {
     expect(screen.getByTestId('summary-schedule')).toHaveTextContent('1 a day · 12:00');
     expect(screen.getByTestId('summary-agent')).toHaveTextContent('Gemini CLI');
     expect(screen.getByTestId('summary-agent')).toHaveTextContent('Waits for your Approve');
+    expect(screen.getByTestId('summary-agent')).toHaveTextContent('Auto modeAlways on: the agent runs commands without asking');
     await userEvent.click(screen.getByRole('button', { name: 'Edit Style' }));
     expect(heading()).toHaveTextContent('Pick a style');
     await userEvent.click(screen.getByRole('radio', { name: /Bold/ }));

@@ -259,6 +259,7 @@ export function Settings() {
                 {t('settings.autoMode')}
               </label>
               <span className="text-xs text-text-3">{t('settings.autoModeHint')}</span>
+              <span className="text-xs text-text-3">{t('settings.autoModeAutopilots')}</span>
             </div>
             <Switch
               id="auto-mode"

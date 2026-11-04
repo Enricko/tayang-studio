@@ -1579,6 +1579,7 @@ describe('Settings', () => {
   it('toggles auto mode through updateSettings and explains it', async () => {
     render(<SettingsScreen />);
     const sw = await screen.findByRole('switch', { name: 'Auto mode for chats' });
+    expect(screen.getByText('Autopilots always use Auto mode.')).toBeInTheDocument();
     expect(sw).not.toBeChecked();
     expect(
       screen.getByText(
