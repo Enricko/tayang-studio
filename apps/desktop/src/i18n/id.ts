@@ -8,6 +8,7 @@ export const id: Translations = {
   common: {
     tryAgain: 'Coba lagi',
     cancel: 'Batal',
+    close: 'Tutup',
     language: 'Bahasa',
     and: 'dan',
     back: 'Kembali',

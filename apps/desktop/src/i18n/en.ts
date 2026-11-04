@@ -6,6 +6,7 @@ export const en = {
   common: {
     tryAgain: 'Try again',
     cancel: 'Cancel',
+    close: 'Close',
     language: 'Language',
     and: 'and',
     back: 'Back',

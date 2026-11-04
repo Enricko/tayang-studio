@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { i18n } from '@/i18n';
+import { localized } from '@/lib/stored';
 import { deleteStyle, listStyles, saveStyle, syncStyles } from '@/lib/ipc';
 import { cn } from '@/lib/utils';
 import { useApp } from '@/state/app';
@@ -174,8 +175,8 @@ function StudyBox() {
       {study.ranLog.length > 0 && (
         <ul aria-label={t('style.ranAria')} className="m-0 flex list-none flex-col gap-1 p-0">
           {study.ranLog.slice(-4).map((line, i) => (
-            <li key={`${study.ranLog.length}-${i}`} className="truncate font-mono text-xs text-text-3" title={line}>
-              {line}
+            <li key={`${study.ranLog.length}-${i}`} className="truncate font-mono text-xs text-text-3" title={localized(line)}>
+              {localized(line)}
             </li>
           ))}
         </ul>
