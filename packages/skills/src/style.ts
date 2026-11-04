@@ -1,6 +1,6 @@
 import type { Style, StyleAspect, VideoKind, VideoLanguage } from '@tayang/shared';
 
-const KINDS: VideoKind[] = ['explainer', 'promo', 'quote', 'news', 'tutorial', 'data', 'event'];
+export const VIDEO_KINDS: VideoKind[] = ['explainer', 'promo', 'quote', 'news', 'tutorial', 'data', 'event'];
 const ASPECTS: StyleAspect[] = ['camera', 'pacing', 'type', 'color', 'captions', 'transitions'];
 
 function firstJsonBlock(text: string): string | null {
@@ -52,6 +52,14 @@ function topicExample(): string {
   return lines.map((l) => JSON.stringify(l)).join('\n');
 }
 
+/** What every topic must be: something Tayang can make in code. Shared by the ideas and autopilot prompts. */
+export const MOTION_RULES = [
+  '- Tayang makes videos built entirely in code, as motion design or animation: kinetic type, charts and data, maps and globes, illustrated or cartoon 3D worlds, diagrams.',
+  "- Never suggest anything that needs filming, a camera, real footage, screen recordings, stock video of real people, a presenter, or a real person's likeness or voice.",
+  '- Pick motion-design-friendly topics: explainers, "why" and "how" questions, data and comparisons, history and geography, science what-ifs, product or promo messages told with type and illustration.',
+];
+export const FACTS_RULE = '- Facts must be real and checkable. No made-up numbers.';
+
 export function buildTopicIdeasPrompt(
   kinds: VideoKind[],
   language: VideoLanguage,
@@ -65,12 +73,10 @@ export function buildTopicIdeasPrompt(
     `Suggest exactly 3 topic ideas for short videos. Write them in ${lang}. Allowed kinds: ${kinds.join(', ')}.`,
     '',
     'Rules for every idea:',
-    '- Tayang makes videos built entirely in code, as motion design or animation: kinetic type, charts and data, maps and globes, illustrated or cartoon 3D worlds, diagrams.',
-    "- Never suggest anything that needs filming, a camera, real footage, screen recordings, stock video of real people, a presenter, or a real person's likeness or voice.",
-    '- Pick motion-design-friendly topics: explainers, "why" and "how" questions, data and comparisons, history and geography, science what-ifs, product or promo messages told with type and illustration.',
+    ...MOTION_RULES,
     '- Fit each idea to one of these styles, or to a plain kinetic-type explainer (empty styleId):',
     ...list.map((s) => `  - ${s.name} (styleId "${s.id}")${STYLE_FIT[s.id] ? `: best for ${STYLE_FIT[s.id]}` : ''}`),
-    '- Facts must be real and checkable. No made-up numbers.',
+    FACTS_RULE,
     '',
     'How to reply:',
     `1. Start with one short, friendly sentence in ${lang}, as normal text.`,
@@ -86,7 +92,7 @@ export function buildTopicIdeasPrompt(
 
 /** Shortest and longest video a topic may ask for, in seconds. */
 export const TOPIC_LENGTH = { min: 5, max: 600 } as const;
-const clampLength = (sec: number) => Math.min(TOPIC_LENGTH.max, Math.max(TOPIC_LENGTH.min, Math.round(sec)));
+export const clampTopicLength = (sec: number) => Math.min(TOPIC_LENGTH.max, Math.max(TOPIC_LENGTH.min, Math.round(sec)));
 
 /** What a pick_topic button press carries, or null when it has no title. */
 export function topicIdeaFromAction(
@@ -94,9 +100,9 @@ export function topicIdeaFromAction(
 ): { title: string; kind: VideoKind; lengthSec: number; styleId?: string } | null {
   const title = typeof context.title === 'string' ? context.title.trim() : '';
   if (!title) return null;
-  const kind = KINDS.includes(context.kind as VideoKind) ? (context.kind as VideoKind) : 'explainer';
+  const kind = VIDEO_KINDS.includes(context.kind as VideoKind) ? (context.kind as VideoKind) : 'explainer';
   const len = Number(context.lengthSec);
-  const lengthSec = Number.isFinite(len) && len > 0 ? clampLength(len) : 30;
+  const lengthSec = Number.isFinite(len) && len > 0 ? clampTopicLength(len) : 30;
   const styleId = typeof context.styleId === 'string' && context.styleId ? context.styleId : undefined;
   return { title, kind, lengthSec, ...(styleId ? { styleId } : {}) };
 }
@@ -125,12 +131,12 @@ export function parseTopicIdeas(agentText: string): { title: string; kind: Video
       if (
         !item || typeof item !== 'object' ||
         typeof item.title !== 'string' || !item.title ||
-        !KINDS.includes(item.kind) ||
+        !VIDEO_KINDS.includes(item.kind) ||
         typeof item.lengthSec !== 'number' || !Number.isFinite(item.lengthSec)
       ) {
         return [];
       }
-      out.push({ title: item.title, kind: item.kind, lengthSec: clampLength(item.lengthSec) });
+      out.push({ title: item.title, kind: item.kind, lengthSec: clampTopicLength(item.lengthSec) });
     }
     return out;
   } catch {
