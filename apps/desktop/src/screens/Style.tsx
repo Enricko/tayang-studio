@@ -71,7 +71,7 @@ export function youtubeThumbnail(raw: string | null | undefined): string | null 
 }
 
 /** The style's picture: its own preview, else the YouTube thumbnail of a copied video. */
-const posterOf = (s: StyleT): string | null => s.previewUrl || (s.source === 'copied' ? youtubeThumbnail(s.sourceUrl) : null);
+export const posterOf = (s: StyleT): string | null => s.previewUrl || (s.source === 'copied' ? youtubeThumbnail(s.sourceUrl) : null);
 
 /** The calm panel shown when a style has no picture at all. */
 function NoPreview({ id, text, className }: { id: string; text?: boolean; className?: string }) {
@@ -195,7 +195,7 @@ function StudyBox() {
 }
 
 /** The style's preview image; the swatch when it has none or the image can't load (offline). */
-function PreviewImage({
+export function PreviewImage({
   src,
   className,
   fallback,
