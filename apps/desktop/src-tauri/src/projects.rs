@@ -42,7 +42,7 @@ pub fn unique_slug(base: &str, taken: &[String]) -> String {
     let mut n = 2;
     loop {
         let candidate = format!("{base}-{n}");
-        if !taken.iter().any(|t| *t == candidate) {
+        if !taken.contains(&candidate) {
             return candidate;
         }
         n += 1;
