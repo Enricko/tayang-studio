@@ -95,8 +95,8 @@ pub fn show_main<R: Runtime>(app: &AppHandle<R>) {
 fn tray_menu<R: Runtime>(app: &AppHandle<R>, lang: Option<UiLanguage>) -> tauri::Result<Menu<R>> {
     let l = tray_labels(lang);
     let open = MenuItem::with_id(app, "open", l.open, true, None::<&str>)?;
-    // Stays disabled until the autopilot engine (A4) handles `PAUSE_ALL_EVENT`.
-    let pause = MenuItem::with_id(app, "pause-all", l.pause_all, false, None::<&str>)?;
+    // The autopilot engine (state/autopilot.ts) pauses every autopilot on `PAUSE_ALL_EVENT`.
+    let pause = MenuItem::with_id(app, "pause-all", l.pause_all, true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", l.quit, true, None::<&str>)?;
     Menu::with_items(app, &[&open, &pause, &PredefinedMenuItem::separator(app)?, &quit])
 }
