@@ -149,6 +149,14 @@ export interface Settings {
   format: VideoFormat;
   fps: number;
   onboarded: boolean;
+  /** Base URL of the optional Tayang API; empty turns every online feature off. */
+  apiUrl: string;
+  /** Random uuid v4 made on first run (empty until then); never derived from the machine. */
+  installId: string;
+  /** Sends the anonymous daily install ping. */
+  shareInstallStats: boolean;
+  /** RFC 3339 time of the last successful ping. */
+  lastPingAt: string | null;
 }
 
 /** Defaults; workingFolder is `<home>/Tayang`, resolved at runtime. */
@@ -159,6 +167,10 @@ export const DEFAULT_SETTINGS: Omit<Settings, 'workingFolder'> = {
   format: '9:16',
   fps: 30,
   onboarded: false,
+  apiUrl: 'https://api.tayang.app',
+  installId: '',
+  shareInstallStats: true,
+  lastPingAt: null,
 };
 
 export type AgentUpdate =

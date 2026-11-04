@@ -17,6 +17,10 @@ const base: Settings = {
   format: '9:16',
   fps: 30,
   onboarded: false,
+  apiUrl: "https://api.tayang.app",
+  installId: "",
+  shareInstallStats: true,
+  lastPingAt: null,
 };
 
 describe('App start', () => {
