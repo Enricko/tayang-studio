@@ -48,10 +48,12 @@ describe('Markdown in agent replies', () => {
   });
 
   it('never renders raw HTML or images', () => {
-    const { container } = agent('<script>alert(1)</script> <img src=x onerror="alert(1)"> ![pic](http://e.com/a.png)');
+    const { container } = agent('<script>alert(1)</script>\n\nhi <img src=x onerror="alert(1)"> there\n\n![pic](http://e.com/a.png)');
     expect(container.querySelector('script')).toBeNull();
     expect(container.querySelector('img:not([alt="Oyen"])')).toBeNull();
     expect(container.textContent).toContain('pic');
+    expect(container.textContent).toContain('<script>alert(1)</script>');
+    expect(container.textContent).toContain('onerror');
   });
 
   it('does not make a link of a javascript: href', () => {

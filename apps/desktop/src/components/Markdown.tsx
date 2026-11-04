@@ -102,13 +102,22 @@ const components: Components = {
   },
 };
 
-const plugins = [remarkGfm];
+/** Raw HTML is never parsed into elements: it shows up as the literal text the agent wrote. */
+function htmlAsText() {
+  const walk = (node: { type: string; value?: string; children?: unknown[] }) => {
+    if (node.type === 'html') node.type = 'text';
+    node.children?.forEach((c) => walk(c as typeof node));
+  };
+  return walk;
+}
+
+const plugins = [remarkGfm, htmlAsText];
 
 /** Agent prose as Markdown: no raw HTML, no images, links open outside the webview. */
 export const Markdown = memo(function Markdown({ text }: { text: string }) {
   return (
     <div className="min-w-0">
-      <ReactMarkdown remarkPlugins={plugins} skipHtml urlTransform={(u) => u} components={components}>
+      <ReactMarkdown remarkPlugins={plugins} urlTransform={(u) => u} components={components}>
         {text}
       </ReactMarkdown>
     </div>
