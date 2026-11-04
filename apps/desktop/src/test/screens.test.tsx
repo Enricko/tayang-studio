@@ -107,6 +107,7 @@ const settings: Settings = {
   backgroundMode: false,
   openAtLogin: false,
   buildJobsChecked: true,
+  projectStatusChecked: true,
 };
 
 const project = (id: string, title: string, status: Project['status'], scheduledAt: string | null = null, extra: Partial<Project> = {}): Project => ({

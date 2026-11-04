@@ -152,6 +152,7 @@ const settings: Settings = {
   backgroundMode: false,
   openAtLogin: false,
   buildJobsChecked: true,
+  projectStatusChecked: true,
 };
 
 const atlas: Style = { id: 'atlas-journey', name: 'Atlas journey', source: 'builtin', sourceUrl: null, notes: {}, prompt: 'Animated maps', createdAt: '' };

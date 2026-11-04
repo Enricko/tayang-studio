@@ -37,6 +37,7 @@ const base: Settings = {
   backgroundMode: false,
   openAtLogin: false,
   buildJobsChecked: true,
+  projectStatusChecked: true,
 };
 
 describe('App start', () => {

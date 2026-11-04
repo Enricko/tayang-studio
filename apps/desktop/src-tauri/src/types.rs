@@ -418,6 +418,9 @@ pub struct Settings {
     /// The one-time startup check of build jobs marked done without a video has run.
     #[serde(default)]
     pub build_jobs_checked: bool,
+    /// The one-time startup backfill of project statuses (rendered, building) has run.
+    #[serde(default)]
+    pub project_status_checked: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
