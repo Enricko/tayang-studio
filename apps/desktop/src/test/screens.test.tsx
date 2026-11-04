@@ -231,9 +231,14 @@ const atlas: StyleT = {
   createdAt: '2026-11-04T00:00:00Z',
   engine: 'remotion',
   previewUrl: 'https://api.tayang.app/v1/styles/atlas-journey/preview',
+  previewVideoUrl: 'https://api.tayang.app/v1/styles/atlas-journey/preview-video',
   template: { sha256: 'a', size: 1, version: 1 },
 };
-const plain: StyleT = { ...atlas, id: 'plain', name: 'Plain look', engine: 'hyperframes', previewUrl: null, template: null };
+const plain: StyleT = { ...atlas, id: 'plain', name: 'Plain look', engine: 'hyperframes', previewUrl: null, previewVideoUrl: null, template: null };
+const openCard = async (name: string) => {
+  await userEvent.click(await screen.findByRole('button', { name: new RegExp(`^${name}`) }));
+  return screen.findByRole('dialog');
+};
 
 describe('Style built-in styles from the API', () => {
   it('syncs on open and shows the synced styles with preview images', async () => {
@@ -257,10 +262,13 @@ describe('Style built-in styles from the API', () => {
     const { container } = render(<Style />);
     await screen.findByText('Built-in styles are from your last sync');
     const imgs = [...container.querySelectorAll('img')];
-    expect(imgs.length).toBe(2);
+    expect(imgs.length).toBe(1);
     imgs.forEach((img) => fireEvent.error(img));
     expect(container.querySelector('img')).toBeNull();
     expect(screen.getByTestId('style-swatch')).toBeInTheDocument();
+    const dialog = await openCard('Atlas journey');
+    fireEvent.error(dialog.querySelector('video')!);
+    fireEvent.error(dialog.querySelector('img')!);
     expect(screen.getByLabelText('Sampled frames')).toBeInTheDocument();
   });
 
@@ -268,6 +276,7 @@ describe('Style built-in styles from the API', () => {
     vi.mocked(ipc.syncStyles).mockResolvedValue({ styles: [atlas], offline: false });
     vi.mocked(ipc.listStyles).mockResolvedValue([atlas]);
     render(<Style />);
+    await openCard('Atlas journey');
     expect(await screen.findByText('Remotion')).toBeInTheDocument();
   });
 
@@ -288,8 +297,163 @@ describe('Style built-in styles from the API', () => {
     vi.mocked(ipc.syncStyles).mockResolvedValue({ styles: [atlas], offline: false });
     vi.mocked(ipc.listStyles).mockResolvedValue([atlas]);
     render(<Style />);
+    await openCard('Atlas journey');
     await userEvent.click(await screen.findByRole('button', { name: 'Use in a new chat' }));
     expect(useApp.getState().route).toEqual({ name: 'chat-new', styleId: 'atlas-journey' });
+  });
+});
+
+describe('Style popup', () => {
+  const mocks = () => {
+    vi.mocked(ipc.syncStyles).mockResolvedValue({ styles: [atlas, plain], offline: false });
+    vi.mocked(ipc.listStyles).mockResolvedValue([atlas, plain]);
+  };
+  let reduced = false;
+  beforeEach(() => {
+    reduced = false;
+    window.matchMedia = ((q: string) => ({ matches: reduced && q.includes('reduce'), media: q, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} })) as unknown as typeof window.matchMedia;
+    HTMLMediaElement.prototype.play = vi.fn().mockResolvedValue(undefined);
+    HTMLMediaElement.prototype.pause = vi.fn();
+    HTMLMediaElement.prototype.load = vi.fn();
+  });
+
+  it('the grid is thumbnails only: no video, no details aside', async () => {
+    mocks();
+    const { container } = render(<Style />);
+    await screen.findByRole('button', { name: /^Plain look/ });
+    expect(container.querySelector('video')).toBeNull();
+    expect(screen.queryByRole('complementary', { name: 'Style details' })).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Use in a new chat' })).toBeNull();
+  });
+
+  it('clicking a card opens a dialog with the muted looping video, poster and details', async () => {
+    mocks();
+    render(<Style />);
+    const dialog = await openCard('Atlas journey');
+    const video = dialog.querySelector('video')!;
+    expect(video).toHaveAttribute('src', atlas.previewVideoUrl);
+    expect(video).toHaveAttribute('poster', atlas.previewUrl);
+    expect(video).toHaveAttribute('autoplay');
+    expect(video).toHaveAttribute('loop');
+    expect(video).toHaveAttribute('playsinline');
+    expect(video.muted).toBe(true);
+    expect(within(dialog).getByRole('heading', { name: 'Atlas journey' })).toBeInTheDocument();
+    expect(within(dialog).getByText('Map fly-through')).toBeInTheDocument();
+    expect(within(dialog).getByText('Fly over a map.')).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Use in a new chat' })).toBeInTheDocument();
+  });
+
+  it('Enter opens the dialog from a focused card', async () => {
+    mocks();
+    render(<Style />);
+    (await screen.findByRole('button', { name: /^Plain look/ })).focus();
+    await userEvent.keyboard('{Enter}');
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+  });
+
+  it('Escape closes the dialog, the video is gone and unloaded, and focus returns to the card', async () => {
+    mocks();
+    const { container } = render(<Style />);
+    const dialog = await openCard('Atlas journey');
+    const video = dialog.querySelector('video')!;
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(container.ownerDocument.querySelector('video')).toBeNull();
+    expect(video).not.toHaveAttribute('src');
+    expect(HTMLMediaElement.prototype.pause).toHaveBeenCalled();
+    expect(HTMLMediaElement.prototype.load).toHaveBeenCalled();
+    await waitFor(() => expect(screen.getByRole('button', { name: /^Atlas journey/ })).toHaveFocus());
+  });
+
+  it('the close button closes it too', async () => {
+    mocks();
+    render(<Style />);
+    const dialog = await openCard('Atlas journey');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('a style without a video shows its image, or the swatch frames', async () => {
+    vi.mocked(ipc.syncStyles).mockResolvedValue({ styles: [{ ...atlas, previewVideoUrl: null }, plain], offline: false });
+    vi.mocked(ipc.listStyles).mockResolvedValue([{ ...atlas, previewVideoUrl: null }, plain]);
+    render(<Style />);
+    let dialog = await openCard('Atlas journey');
+    expect(dialog.querySelector('video')).toBeNull();
+    expect(dialog.querySelector('img')).toHaveAttribute('src', atlas.previewUrl);
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    dialog = await openCard('Plain look');
+    expect(dialog.querySelector('video')).toBeNull();
+    expect(within(dialog).getByLabelText('Sampled frames')).toBeInTheDocument();
+  });
+
+  it('falls back to the image when the video fails to load', async () => {
+    mocks();
+    render(<Style />);
+    const dialog = await openCard('Atlas journey');
+    fireEvent.error(dialog.querySelector('video')!);
+    expect(dialog.querySelector('video')).toBeNull();
+    expect(dialog.querySelector('img')).toHaveAttribute('src', atlas.previewUrl);
+  });
+
+  it('reduced motion: no autoplay, the poster with a play button that starts it', async () => {
+    reduced = true;
+    mocks();
+    render(<Style />);
+    const dialog = await openCard('Atlas journey');
+    const video = dialog.querySelector('video')!;
+    expect(video).not.toHaveAttribute('autoplay');
+    expect(video).toHaveAttribute('poster', atlas.previewUrl);
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Play preview' }));
+    expect(HTMLMediaElement.prototype.play).toHaveBeenCalled();
+  });
+
+  it('has a pause button while playing', async () => {
+    mocks();
+    render(<Style />);
+    const dialog = await openCard('Atlas journey');
+    const video = dialog.querySelector('video')!;
+    Object.defineProperty(video, 'paused', { value: false, configurable: true });
+    fireEvent.play(video);
+    await userEvent.click(await within(dialog).findByRole('button', { name: 'Pause preview' }));
+    expect(HTMLMediaElement.prototype.pause).toHaveBeenCalled();
+    Object.defineProperty(video, 'paused', { value: true, configurable: true });
+    fireEvent.pause(video);
+    expect(await within(dialog).findByRole('button', { name: 'Play preview' })).toBeInTheDocument();
+  });
+
+  it('Edit prompt then Save on a built-in saves a copy of yours from the dialog', async () => {
+    mocks();
+    vi.mocked(ipc.saveStyle).mockResolvedValue(undefined);
+    render(<Style />);
+    const dialog = await openCard('Atlas journey');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Edit prompt' }));
+    await userEvent.type(within(dialog).getByRole('textbox', { name: 'Prompt your agent gets' }), ' More.');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(ipc.saveStyle).toHaveBeenCalledWith(expect.objectContaining({ source: 'mine', name: 'Atlas journey', prompt: 'Fly over a map. More.' })));
+  });
+
+  it('Delete on a copied style deletes it and closes the dialog', async () => {
+    const copied: StyleT = { id: 'c1', name: 'Zoom cut', source: 'copied', sourceUrl: 'https://youtu.be/x', notes: {}, prompt: 'Zoom.', createdAt: '2026-11-04T00:00:00Z' };
+    vi.mocked(ipc.syncStyles).mockResolvedValue({ styles: [atlas], offline: false });
+    vi.mocked(ipc.listStyles).mockResolvedValue([atlas, copied]);
+    vi.mocked(ipc.deleteStyle).mockResolvedValue(undefined);
+    render(<Style />);
+    const dialog = await openCard('Zoom cut');
+    expect(within(dialog).getByText('Copied from a video · youtu.be')).toBeInTheDocument();
+    expect(dialog.querySelector('video')).toBeNull();
+    vi.mocked(ipc.listStyles).mockResolvedValue([atlas]);
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
+    expect(ipc.deleteStyle).toHaveBeenCalledWith('c1');
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('built-in styles have no Delete', async () => {
+    mocks();
+    render(<Style />);
+    const dialog = await openCard('Atlas journey');
+    expect(within(dialog).queryByRole('button', { name: 'Delete' })).toBeNull();
   });
 });
 
