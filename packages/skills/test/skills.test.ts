@@ -116,6 +116,11 @@ describe('topics', () => {
     });
     expect(topicIdeaFromAction({ title: 'T', kind: 'nope' })).toMatchObject({ kind: 'explainer', lengthSec: 30 });
     expect(topicIdeaFromAction({ kind: 'promo' })).toBeNull();
+    // An agent can't ask for a 1-second or a 3-hour video.
+    expect(topicIdeaFromAction({ title: 'T', lengthSec: 1 })!.lengthSec).toBe(5);
+    expect(topicIdeaFromAction({ title: 'T', lengthSec: 10800 })!.lengthSec).toBe(600);
+    expect(topicIdeaFromAction({ title: 'T', lengthSec: '45' })!.lengthSec).toBe(45);
+    expect(parseTopicIdeas('```json\n[{"title":"A","kind":"promo","lengthSec":9999}]\n```')[0]!.lengthSec).toBe(600);
   });
   it('splitTopicJson hides a json block that parses as topic ideas', () => {
     const j = '```json\n[{"title":"A","kind":"promo","lengthSec":30}]\n```';

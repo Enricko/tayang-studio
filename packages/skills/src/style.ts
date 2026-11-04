@@ -84,6 +84,10 @@ export function buildTopicIdeasPrompt(
   ].join('\n');
 }
 
+/** Shortest and longest video a topic may ask for, in seconds. */
+export const TOPIC_LENGTH = { min: 5, max: 600 } as const;
+const clampLength = (sec: number) => Math.min(TOPIC_LENGTH.max, Math.max(TOPIC_LENGTH.min, Math.round(sec)));
+
 /** What a pick_topic button press carries, or null when it has no title. */
 export function topicIdeaFromAction(
   context: Record<string, unknown>,
@@ -92,7 +96,7 @@ export function topicIdeaFromAction(
   if (!title) return null;
   const kind = KINDS.includes(context.kind as VideoKind) ? (context.kind as VideoKind) : 'explainer';
   const len = Number(context.lengthSec);
-  const lengthSec = Number.isFinite(len) && len > 0 ? len : 30;
+  const lengthSec = Number.isFinite(len) && len > 0 ? clampLength(len) : 30;
   const styleId = typeof context.styleId === 'string' && context.styleId ? context.styleId : undefined;
   return { title, kind, lengthSec, ...(styleId ? { styleId } : {}) };
 }
@@ -126,7 +130,7 @@ export function parseTopicIdeas(agentText: string): { title: string; kind: Video
       ) {
         return [];
       }
-      out.push({ title: item.title, kind: item.kind, lengthSec: item.lengthSec });
+      out.push({ title: item.title, kind: item.kind, lengthSec: clampLength(item.lengthSec) });
     }
     return out;
   } catch {
