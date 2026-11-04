@@ -33,7 +33,7 @@ import { setUiLanguage } from '@/i18n';
 
 /** What the agent got, without the session facts line a new session starts with. */
 const noFacts = <T,>(parts: T[]): T[] =>
-  parts.filter((p) => !(typeof p === 'object' && p && (p as { type?: string; text?: string }).type === 'text' && (p as { text: string }).text.includes('local time zone is')));
+  parts.filter((p) => !String((p as { text?: unknown }).text ?? '').includes('local time zone is'));
 
 
 const V = 'v0.9';
