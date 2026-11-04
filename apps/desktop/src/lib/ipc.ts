@@ -132,7 +132,7 @@ export const recentImages = (chatId: string, since: string, limit: number) =>
   invoke<FileInfo[]>('recent_images', { chatId, since, limit });
 /** The newest render with its size and time; null when the project has none. */
 export const latestRenderInfo = (projectId: string) => invoke<FileInfo | null>('latest_render_info', { projectId });
-/** The newest mp4 anywhere in the project, still-empty ones too (a render being written); null when there is none. */
+/** The newest mp4 where renders land (renders/, the root, out/, runs/*/out/), still-empty ones too (a render being written); null when there is none. */
 export const newestVideoInfo = (projectId: string) => invoke<FileInfo | null>('newest_video_info', { projectId });
 export const mediaProbe = (projectId: string) =>
   invoke<MediaInfo | null>('media_probe', { projectId });

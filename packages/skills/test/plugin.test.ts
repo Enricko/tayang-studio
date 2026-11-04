@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { buildSessionPreamble, languageHint, sessionFacts } from '../src/preamble';
 import { AUTOPILOT_RENDER_NOW, buildAutopilotBuildPrompt } from '../src/autopilot';
-import { FOREGROUND_RULE } from '../src/frameCheck';
+import { FOREGROUND_RULE, RENDERS_RULE } from '../src/frameCheck';
 import { buildProjectBrief } from '../src/project';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', 'agent-plugin');
@@ -137,5 +137,22 @@ describe('agent plugin', () => {
       styleId: null, scheduledAt: null, reviewState: 'none', postedAt: null, remindedAt: null, reviewRemindedAt: null,
       durationSec: null, createdAt: '', updatedAt: '' } as const;
     expect(buildProjectBrief(p, null, { fps: 30, frameCheck: false })).toContain(FOREGROUND_RULE);
+  });
+
+  it('tells every agent to leave the final mp4 in renders/, wherever it gets its instructions', () => {
+    expect(RENDERS_RULE).toBe(
+      "When the video is finished, make sure the final mp4 is in the project's renders/ folder (copy it there if your pipeline writes it elsewhere). Tayang's preview and status read it from there.",
+    );
+    expect(read('skills/tayang-studio/SKILL.md')).toContain(RENDERS_RULE);
+    expect(buildSessionPreamble()).toContain(RENDERS_RULE);
+    expect(buildAutopilotBuildPrompt('Jalur Rempah', 30)).toContain(RENDERS_RULE);
+    expect(AUTOPILOT_RENDER_NOW).toContain(RENDERS_RULE);
+    const p = { id: 'p', title: 'T', slug: 't', folder: '/w/t', kind: 'explainer', format: '9:16', language: 'id', status: 'draft',
+      styleId: null, scheduledAt: null, reviewState: 'none', postedAt: null, remindedAt: null, reviewRemindedAt: null,
+      durationSec: null, createdAt: '', updatedAt: '' } as const;
+    // With and without a template (a template's pipeline may write elsewhere).
+    expect(buildProjectBrief(p, null, { fps: 30, frameCheck: false })).toContain(RENDERS_RULE);
+    const tmpl = { id: 's', name: 'Atlas', template: { url: 'x' } } as never;
+    expect(buildProjectBrief(p, tmpl, { fps: 30, frameCheck: true })).toContain(RENDERS_RULE);
   });
 });
