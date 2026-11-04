@@ -1,0 +1,216 @@
+# Tayang Studio: design
+
+Status: draft, 2026-11-04. Design canvas: https://claude.ai/artifact/YQ5VdN8VyaRqaHq8hYBD1h
+
+Lines marked **(my call)** were decided by Claude while designing and are open to change. Everything else was decided by the owner.
+
+## Why
+
+Many Indonesian creators need motion design for TikTok, Reels and Shorts but struggle to make it. They're new to Claude and AI agents and don't know how to prompt, so a blank chat box gives them nothing to start from.
+
+Tayang Studio is a free, open-source desktop app that guides them from idea to finished motion video. It picks topics, writes scripts and handles the prompting, while the user's own AI agent does the building. It also promotes tayang.app, which sells the paid features (see Money).
+
+## Goals
+
+- A creator who has never prompted an AI makes a finished motion video they would actually post.
+- Works with the agent the user already has: Claude Code, opencode, Gemini CLI, Codex or any agent that speaks ACP.
+- Runs on macOS, Windows and Linux.
+- Free to use. Paid features come later through tayang.app.
+
+## Non-goals
+
+- **Not a video editor.** No multi-track timeline, keyframes or clip trimming. The user watches a preview and talks to the agent.
+- Not a general Claude Code shell. Coding-agent features that don't serve making a video stay hidden.
+- No AI built into Tayang itself. All generation and every install runs through the user's agent.
+
+## Anti-goals
+
+These would make it a failure even if it worked technically:
+
+- The user has to write a prompt to get a decent result.
+- The user sees broken output (overlapping text, cut-off captions) that the agent could have caught.
+- A command runs on the user's computer without them seeing and approving it first.
+- It looks like a generic AI tool rather than Tayang.
+
+## Constraints and architecture
+
+**Repo:** one monorepo containing the desktop app and the backend. **(my call: the layout below, managed with pnpm workspaces)**
+
+```
+apps/
+  desktop/     Tauri app: Rust backend in src-tauri/, web UI in src/
+  api/         Hono app on Cloudflare Workers, deployed with wrangler
+packages/
+  shared/      Types and API contracts shared by desktop and api
+  skills/      The prompts and skills Tayang gives the agent (styles, frame check, install recipes)
+docs/
+```
+
+**Desktop (`apps/desktop`)**
+- **Shell:** Tauri, on macOS, Windows and Linux.
+- **Agent connection:** ACP (Agent Client Protocol) for every agent. Claude Code connects through its ACP adapter. The Rust side speaks ACP directly; there's an official crate, `agent-client-protocol`.
+- **Storage:** local SQLite holds projects, chats, styles, the job queue and settings. **(my call: through `tauri-plugin-sql` or `rusqlite`)**
+- **Working folder:** the user picks one folder in Settings, with a default like `~/Tayang` that the user can change. Each video project is a subfolder of it, and the agent's ACP session runs with that project folder as its working directory, so it only touches files there. **(interpreted from "set working directory"; the default path is my call)**
+- **Interface language:** English.
+- **License:** open source.
+- **Rendering engine:** HyperFrames (Apache-2.0), with Remotion acceptable. **(my call: HyperFrames first)**
+
+**Backend (`apps/api`)**
+- Hono on Cloudflare Workers, with a Cloudflare D1 database, deployed with wrangler.
+- The owner will build it later. The desktop app has to work fully offline without it.
+- Expected jobs **(my call)**:
+  - tayang.app sign-in
+  - checking which paid features an account has
+  - syncing premium styles
+  - Autopilot scheduling handoff
+  - anonymous crash and usage reports, only if the user opts in
+
+## Brand
+
+Follow `niche-to-video/BRANDING.md`:
+
+- **Logo and mascot:** Oyen. Use the outlined logo SVGs, never live text.
+- **Colors:** ink `#141414` and orange `#F2470C`.
+- **Fonts:** Plus Jakarta Sans for the interface, IBM Plex Mono for figures and meta, Lora for script text.
+- **Texture:** the on-air dither, once per screen.
+- **Oyen's expressions show job state:** wink = queued, sleepy = working, happy = done, surprised = error, default = idle or needs you.
+
+Third-party agents and tools appear with their real logos: Claude, opencode, Gemini, OpenAI/Codex, Node.js, FFmpeg, ElevenLabs, Chrome.
+
+Polished with the unslop skill by Damir Sokolovsky (@heydamir), CC BY 4.0:
+
+- Neutral ink surfaces
+- One orange action per screen
+- Sentence case, except the brand's mono kicker above the hero headline and on the Autopilot card
+- Weights 400 to 600, with 800 only for the onboarding hero
+- 4px spacing grid
+- 1.5 stroke icons
+
+The copy says "this computer", never "this Mac".
+
+## Screens
+
+### Onboarding
+
+Three steps, then the user lands in a new chat.
+
+1. **Welcome:** brand banner layout.
+2. **Connect your agent:** finds the agents installed on this computer, each with its real logo, and has a guided Claude Code install for beginners.
+3. **Check your computer:** detects the operating system and package manager and checks each tool.
+   - **Required:**
+     - Node.js 22 or newer
+     - FFmpeg
+     - Chrome or Chromium to draw frames **(my call: Chrome is listed because HyperFrames renders through a browser; confirm against the HyperFrames docs)**
+   - **Recommended:**
+     - **ElevenLabs MCP,** looked up in the connected agent's MCP config. If it's missing, a warning says videos get captions and music but no voiceover.
+     - **yt-dlp,** needed to copy a style from a video link.
+   - "Start my first video" is disabled until every required tool is ready. Recommended ones can be added later in Settings.
+
+**Installing goes through the agent.** Tayang never runs installers itself. When the user presses Install:
+
+1. **Tayang asks the agent in plain words,** for example "Install FFmpeg on this computer with the system package manager, then confirm `ffmpeg -version` works."
+2. **The agent picks the commands for this operating system:**
+   - macOS: Homebrew, e.g. `brew install ffmpeg`
+   - Windows: winget, e.g. `winget install Gyan.FFmpeg`
+   - Linux: the distro's package manager, e.g. `apt install ffmpeg`
+3. **Tayang shows exactly what the agent wants to run** (the request plus the commands) with "Allow and install" and Cancel. Nothing runs before Allow. This is the agent's own ACP permission request, shown in Tayang's interface.
+4. **The agent runs the commands while Tayang shows progress** (sleepy Oyen and a short step log). It then checks the version, and the item turns ready with "Installed by Claude Code".
+5. **If it fails,** the item shows surprised Oyen, the agent's own explanation, and two choices: "Ask the agent to fix it" or a manual install guide. **(my call)**
+
+For the ElevenLabs MCP, Tayang first asks for an API key, stored only in the agent's MCP settings on this computer. The agent then installs `uv` if needed, runs `claude mcp add elevenlabs -e ELEVENLABS_API_KEY=… -- uvx elevenlabs-mcp` (or the equivalent for another agent), and makes one test call.
+
+### App
+
+The app uses a sidebar with **Chat, Videos, Style, Agents, Calendar** and Settings.
+
+#### Chat
+
+There are two kinds of chat.
+
+- **Video project chat.** It is tied to one video and always has that video as context. The user moves through five steps: Topic, Script, Style, Build, Render. Suggestions are clickable cards, and quick changes ("Faster pace", "Make it 15s") are one-click chips.
+- **New chat.** It has no context. A video only becomes context when the user mentions it with `@`. Typing `@` opens a list of the user's videos (↑ ↓ to move, ↵ to attach), and the attached video shows as a chip in the message. The header reads "No video attached" or "1 video attached".
+
+The right panel of a video project chat is a **preview, not an editor**:
+
+- A 9:16 player with play and step one frame back or forward.
+- **A custom frame scrubber.** A strip of frame thumbnails with a draggable handle. A tooltip shows the timecode and scene, and scene names sit under the strip. Unbuilt scenes are hatched and show sleepy Oyen when the playhead is on them. Keys: ← → step one frame, Shift + ← → step one second.
+- **Send frame to chat.** Renders the exact frame to a PNG and attaches it to the next message as an image. It goes with the timecode, the frame number, the scene id and any spot the user marked on it.
+- **Mark a spot.** The user clicks on the frame to drop a numbered pin, which is sent with the frame.
+
+#### Videos
+
+A grid of every video in the working folder, with tabs for All, In progress, Rendered and Scheduled.
+
+#### Style
+
+Style is a **prompt library**. Each style is a prompt the agent follows for a look, plus a readable breakdown:
+
+- Camera
+- Pacing
+- Type
+- Color
+- Captions
+- Transitions
+
+Styles come from three places: **built in**, **copied from a video** and **yours**.
+
+**Copy a style from a video.** The user pastes a TikTok, Instagram Reels or YouTube link. The agent then:
+
+1. Downloads the video locally with yt-dlp.
+2. Samples frames at scene changes plus a regular interval, about 48 frames. It measures cut lengths and the beat if there's music. **(my call: ffmpeg scene detection, frames sent to the agent as contact sheets to save tokens)**
+3. Studies the frames with timestamps. It looks at camera movement (zoom, pan, shake), pacing (shot length, holds), type (family, weight, words per card, position), color, captions and transitions.
+4. Writes a style: the breakdown plus a prompt the user can read and edit.
+5. Deletes the downloaded video and frames. Tayang copies the look, never the footage.
+
+The study shows up as a job on the Agents board and in the Style screen with its steps: Downloaded, Frames sampled, Reading, Writing the prompt.
+
+#### Agents
+
+A kanban board with four columns: Queued, Working, Needs you, Done. Each column has its Oyen expression. Failed jobs land in Needs you with surprised Oyen and a "Fix it" action.
+
+#### Calendar
+
+A month view with each video marked as ready to post or planned. It also shows topic ideas for the week. An Autopilot card leads to tayang.app, which posts on schedule. The free app only reminds the user to post.
+
+#### Settings
+
+- Default agent
+- "Check every frame before showing me"
+- Working folder
+- Video defaults: language, format, frame rate
+- Where to render
+- Tools: the same checks and installs as onboarding step 3
+- tayang.app sign-in
+
+## Quality loop
+
+Before showing the user anything, the agent:
+
+1. renders stills of every scene
+2. checks them for overlaps, cut-off text and timing
+3. fixes what it finds.
+
+The chat shows "Frames checked" when the loop has passed. **(my call: default on, can be switched off in Settings)**
+
+## Money
+
+Free: everything needed to make a video.
+
+Paid, through tayang.app and checked by the Hono backend **(my call)**:
+
+- Voiceover
+- Cloud rendering
+- Premium styles
+- Autopilot posting
+
+## Open questions
+
+1. **Video language.** The content in the mockups is in Bahasa Indonesia and the interface in English. Is that right?
+2. **Downloading from TikTok, Instagram and YouTube.** Their terms may forbid downloading, and Instagram often needs a logged-in session. Decide whether to download locally, ask the user to upload the file instead, or both, and how to word the disclaimer.
+3. **Rendering engine.** HyperFrames only, or Remotion too?
+4. **Which features are paid** and when they launch.
+5. **Working folder.** Confirm it means a user-chosen folder where projects live and the agent runs, and the default path.
+
+## Next
+
+Before planning, this document gets a builder check: a fresh reader looks for gaps. After that comes an implementation plan.
