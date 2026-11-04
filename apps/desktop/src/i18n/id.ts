@@ -10,7 +10,6 @@ export const id: Translations = {
     cancel: 'Batal',
     close: 'Tutup',
     language: 'Bahasa',
-    and: 'dan',
     back: 'Kembali',
     continue: 'Lanjut',
     now: 'sekarang',
@@ -79,25 +78,30 @@ export const id: Translations = {
   },
   tools: {
     node: {
+      name: 'Node.js',
       detail: 'Menjalankan mesin video · butuh versi 22 atau lebih baru',
       missing: 'Pasang Node.js 22 atau lebih baru, lalu tekan Cek lagi',
       ask: 'Pasang Node.js 22 atau lebih baru di komputer ini, lalu pastikan node --version berjalan.',
     },
     chrome: {
+      name: 'Google Chrome',
       detail: 'Menggambar setiap frame sebelum di-encode',
       missingManual: 'Pasang Google Chrome, lalu tekan Cek lagi',
       ask: 'Pasang Google Chrome di komputer ini.',
     },
     ffmpeg: {
+      name: 'FFmpeg',
       detail: 'Meng-encode MP4 akhir dan membaca frame',
       missing: 'Tidak ditemukan · meng-encode MP4 akhir dan membaca frame',
       ask: 'Pasang FFmpeg di komputer ini lewat package manager sistem, lalu pastikan ffmpeg -version berjalan.',
     },
     'elevenlabs-mcp': {
+      name: 'Suara ElevenLabs',
       detail: 'Biar agenmu bisa menambah voiceover, termasuk dalam Bahasa Indonesia',
       ask: 'Tambahkan server MCP ElevenLabs ke agenmu dengan API key ini, lalu coba sekali untuk menampilkan daftar suara.',
     },
     ytdlp: {
+      name: 'yt-dlp',
       detail: 'Dibutuhkan untuk meniru gaya dari link TikTok, Reels, atau YouTube',
       missing: 'Tidak ditemukan · dibutuhkan untuk meniru gaya dari link TikTok, Reels, atau YouTube',
       ask: 'Pasang yt-dlp di komputer ini, lalu pastikan yt-dlp --version berjalan.',

@@ -8,7 +8,6 @@ export const en = {
     cancel: 'Cancel',
     close: 'Close',
     language: 'Language',
-    and: 'and',
     back: 'Back',
     continue: 'Continue',
     now: 'now',
@@ -77,25 +76,30 @@ export const en = {
   },
   tools: {
     node: {
+      name: 'Node.js',
       detail: 'Runs the video engine · needs 22 or newer',
       missing: 'Install Node.js 22 or newer, then press Check again',
       ask: 'Install Node.js 22 or newer on this computer, then confirm node --version works.',
     },
     chrome: {
+      name: 'Google Chrome',
       detail: 'Draws each frame before it is encoded',
       missingManual: 'Install Google Chrome, then press Check again',
       ask: 'Install Google Chrome on this computer.',
     },
     ffmpeg: {
+      name: 'FFmpeg',
       detail: 'Encodes the final MP4 and reads frames',
       missing: 'Not found · encodes the final MP4 and reads frames',
       ask: 'Install FFmpeg on this computer with the system package manager, then confirm ffmpeg -version works.',
     },
     'elevenlabs-mcp': {
+      name: 'ElevenLabs voice',
       detail: 'Lets your agent add voiceover, including in Bahasa Indonesia',
       ask: 'Add the ElevenLabs MCP server to your agent with this API key, then make one test call to list voices.',
     },
     ytdlp: {
+      name: 'yt-dlp',
       detail: 'Needed to copy a style from a TikTok, Reels or YouTube link',
       missing: 'Not found · needed to copy a style from a TikTok, Reels or YouTube link',
       ask: 'Install yt-dlp on this computer, then confirm yt-dlp --version works.',

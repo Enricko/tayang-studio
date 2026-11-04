@@ -21,6 +21,8 @@ import { CLOSED_NOTE } from '@/lib/agents';
 import { localized, stored } from '@/lib/stored';
 import { ago, formatResetIn } from '@/lib/time';
 import { summarize, ActivityGroup, type ActivityItem } from '@/components/Activity';
+import { ToolRow } from '@/components/ToolRow';
+import { toolDetail, toolName } from '@/lib/tools';
 import { Sidebar } from '@/components/Sidebar';
 import { Settings as SettingsScreen } from '@/screens/Settings';
 import { Welcome } from '@/screens/onboarding/Welcome';
@@ -201,4 +203,33 @@ it('re-renders without a restart', async () => {
   expect(screen.getByText('Recent')).toBeInTheDocument();
   await act(async () => setUiLanguage('id'));
   expect(screen.getByText('Terbaru')).toBeInTheDocument();
+});
+
+describe('tool names and details', () => {
+  it('are said by tool id, and unknown ones pass through', () => {
+    const tool = { id: 'elevenlabs-mcp', name: 'ElevenLabs voice', detail: 'Adds a natural voice to your videos' } as const;
+    expect(toolName(tool)).toBe('ElevenLabs voice');
+    setUiLanguage('id');
+    expect(toolName(tool)).toBe('Suara ElevenLabs');
+    expect(toolDetail({ id: 'chrome', detail: 'Draws each frame of your video' })).toBe('Menggambar setiap frame sebelum di-encode');
+    const unknown = { id: 'newtool', name: 'New tool', detail: 'Does a thing' } as unknown as typeof tool;
+    expect(toolName(unknown)).toBe('New tool');
+    expect(toolDetail(unknown)).toBe('Does a thing');
+  });
+
+  it('shows the translated row without the Rust detail', () => {
+    setUiLanguage('id');
+    render(
+      <ToolRow
+        tool={{ id: 'chrome', name: 'Google Chrome', required: true, found: false, version: null, ok: false, detail: 'Draws each frame of your video' }}
+        sys={{ os: 'linux', osVersion: '1', packageManager: 'apt' }}
+        agentName="Claude Code"
+        busy={false}
+        onInstall={() => {}}
+        onAskKey={() => {}}
+      />,
+    );
+    expect(screen.getByText('Menggambar setiap frame sebelum di-encode')).toBeInTheDocument();
+    expect(screen.queryByText('Draws each frame of your video')).toBeNull();
+  });
 });

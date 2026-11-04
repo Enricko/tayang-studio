@@ -9,6 +9,7 @@ import { AgentLogo } from '@/components/AgentLogo';
 import { Button } from '@/components/Button';
 import { PermissionCard } from '@/components/PermissionCard';
 import { Input } from '@/components/ui/input';
+import { toolDetail, toolName } from '@/lib/tools';
 import { cn } from '@/lib/utils';
 import { useApp } from '@/state/app';
 import { useInstall, type LogLine, type ToolInstall } from '@/state/install';
@@ -60,7 +61,8 @@ export function ToolRow({ tool, sys, agentName, busy, onInstall, onAskKey }: {
   const agent = useApp((s) => s.settings?.defaultAgent) ?? 'claude';
   const [key, setKey] = useState('');
   const { t } = useTranslation();
-  const detailText = t(`tools.${tool.id}.detail`);
+  const detailText = toolDetail(tool);
+  const name = toolName(tool);
   const askText = t(`tools.${tool.id}.ask`);
   const isEleven = tool.id === 'elevenlabs-mcp';
 
@@ -77,7 +79,7 @@ export function ToolRow({ tool, sys, agentName, busy, onInstall, onAskKey }: {
       (tool.id === 'node' && t('tools.node.missing')) ||
       (tool.id === 'ffmpeg' && t('tools.ffmpeg.missing')) ||
       (tool.id === 'ytdlp' && t('tools.ytdlp.missing')) ||
-      (isEleven ? detailText : tool.detail || detailText);
+      detailText;
   const label = isEleven ? t('tools.addTo', { agent: agentName }) : t('tools.install');
   const expected = sys ? installCommands(tool.id, sys, agent) : [];
 
@@ -88,7 +90,7 @@ export function ToolRow({ tool, sys, agentName, busy, onInstall, onAskKey }: {
           {tool.id === 'ytdlp' ? <Download size={20} strokeWidth={1.5} aria-hidden="true" /> : <AgentLogo id={tool.id} size={22} />}
         </div>
         <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <span className="text-[15px] font-medium">{tool.name}</span>
+          <span className="text-[15px] font-medium">{name}</span>
           <span className="text-[13px] text-text-3">{detail}</span>
         </div>
         {ok && (
@@ -102,7 +104,7 @@ export function ToolRow({ tool, sys, agentName, busy, onInstall, onAskKey }: {
             variant={tool.required ? 'primary' : 'secondary'}
             className="h-9 px-3 text-[13px]"
             disabled={busy}
-            aria-label={status === 'failed' ? undefined : `${label} ${tool.name}`}
+            aria-label={status === 'failed' ? undefined : `${label} ${name}`}
             onClick={() =>
               manualUrl ? void openUrl(manualUrl).catch(() => {}) : isEleven ? onAskKey() : onInstall()
             }

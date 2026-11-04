@@ -156,7 +156,7 @@ describe('Requirements', () => {
     );
     render(<Requirements />);
     expect(await screen.findByText('Install Google Chrome, then press Check again')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Install Chrome' }));
+    await user.click(screen.getByRole('button', { name: 'Install Google Chrome' }));
     expect(openUrl).toHaveBeenCalledWith('https://www.google.com/chrome/');
     expect(ipc.agentStart).not.toHaveBeenCalled();
     expect(screen.queryByText(/apt install/)).toBeNull();

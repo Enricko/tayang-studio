@@ -6,6 +6,8 @@ import { AgentLogo } from '@/components/AgentLogo';
 import { Button } from '@/components/Button';
 import { OnboardingHeader } from '@/components/OnboardingHeader';
 import { AGENT_NAMES } from '@/lib/agents';
+import { locale } from '@/i18n';
+import { toolName } from '@/lib/tools';
 import { getSystemInfo, updateSettings } from '@/lib/ipc';
 import { cn } from '@/lib/utils';
 import { useApp } from '@/state/app';
@@ -132,7 +134,7 @@ export function Requirements() {
             {t('common.back')}
           </Button>
           {blocked && missing.length > 0 && (
-            <span className="text-[13px] text-text-3">{t('onboarding.requirements.installToContinue', { names: missing.map((m) => m.name).join(` ${t('common.and')} `) })}</span>
+            <span className="text-[13px] text-text-3">{t('onboarding.requirements.installToContinue', { names: new Intl.ListFormat(locale(), { type: 'conjunction' }).format(missing.map(toolName)) })}</span>
           )}
           <Button
             variant={blocked ? 'secondary' : 'primary'}
