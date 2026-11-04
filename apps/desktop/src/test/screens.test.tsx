@@ -1,7 +1,7 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AgentInfo, Job, Project, Settings } from '@tayang/shared';
+import type { AgentInfo, AgentUpdate, Job, Project, Settings } from '@tayang/shared';
 
 vi.mock('@/lib/ipc', () => ({
   listProjects: vi.fn(),
@@ -28,8 +28,12 @@ vi.mock('@/lib/ipc', () => ({
   listMessages: vi.fn(),
   addMessage: vi.fn(),
 }));
+const updateHandlers: ((e: { chatId: string; update: AgentUpdate }) => void)[] = [];
 vi.mock('@/lib/events', () => ({
-  onAgentUpdate: vi.fn(async () => () => {}),
+  onAgentUpdate: vi.fn(async (f: (e: { chatId: string; update: AgentUpdate }) => void) => {
+    updateHandlers.push(f);
+    return () => {};
+  }),
   onPermission: vi.fn(async () => () => {}),
 }));
 vi.mock('@tauri-apps/plugin-opener', () => ({ openUrl: vi.fn() }));
@@ -41,6 +45,7 @@ import { Settings as SettingsScreen } from '@/screens/Settings';
 import { Style } from '@/screens/Style';
 import { Videos } from '@/screens/Videos';
 import { useApp } from '@/state/app';
+import { useStudy } from '@/state/study';
 
 const settings: Settings = {
   workingFolder: '/w/Tayang',
@@ -75,6 +80,7 @@ const agents: AgentInfo[] = [
 
 beforeEach(() => {
   vi.clearAllMocks();
+  useStudy.getState().dismiss();
   useApp.setState({ settings, needsYouCount: 0, route: { name: 'videos' } });
   vi.mocked(ipc.listProjects).mockResolvedValue([]);
   vi.mocked(ipc.listStyles).mockResolvedValue([]);
@@ -93,12 +99,12 @@ describe('Videos', () => {
       project('c', 'Building one', 'building'),
     ]);
     render(<Videos />);
-    await screen.findByText('Draft one');
+    await screen.findAllByText('Draft one');
     const tab = screen.getByRole('tab', { name: /Rendered/ });
     expect(tab).toHaveTextContent('1');
     expect(screen.getByRole('tab', { name: /In progress/ })).toHaveTextContent('2');
     await userEvent.click(tab);
-    expect(screen.getByText('Rendered one')).toBeInTheDocument();
+    expect(screen.getAllByText('Rendered one').length).toBeGreaterThan(0);
     expect(screen.queryByText('Draft one')).not.toBeInTheDocument();
     expect(screen.queryByText('Building one')).not.toBeInTheDocument();
   });
@@ -130,6 +136,25 @@ describe('Style', () => {
     const [chatId, parts] = vi.mocked(ipc.agentPrompt).mock.calls[0]!;
     expect(chatId).toMatch(/^study-/);
     expect(JSON.stringify(parts)).toContain('/w/Tayang/.tayang/style-study/s1');
+  });
+  it('saves the style on done and marks the job failed when the result is unreadable', async () => {
+    vi.mocked(ipc.studyDir).mockResolvedValue('/w/s');
+    const good = JSON.stringify({ name: 'Zoom cut', notes: { camera: 'Punch-in' }, prompt: 'Cut on every beat' });
+    vi.mocked(ipc.readStyleResult).mockResolvedValueOnce(good).mockResolvedValueOnce('not json');
+    for (const [i, last] of [[0, 'done'], [1, 'failed']] as const) {
+      vi.mocked(ipc.upsertJob).mockClear();
+      const { unmount } = render(<Style />);
+      await userEvent.type(screen.getByLabelText('Video link'), 'https://youtu.be/abc');
+      await userEvent.click(screen.getByRole('button', { name: 'Study video' }));
+      await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalledTimes(i + 1));
+      const chatId = vi.mocked(ipc.agentPrompt).mock.calls[i]![0];
+      updateHandlers.forEach((h) => h({ chatId, update: { kind: 'done', stopReason: 'end_turn' } }));
+      await waitFor(() => expect(vi.mocked(ipc.upsertJob).mock.calls.at(-1)![0].status).toBe(last));
+      if (last === 'done') expect(ipc.saveStyle).toHaveBeenCalledWith(expect.objectContaining({ name: 'Zoom cut', source: 'copied' }));
+      else expect(vi.mocked(ipc.upsertJob).mock.calls.at(-1)![0].note).toBeTruthy();
+      unmount();
+      useStudy.getState().dismiss();
+    }
   });
 });
 

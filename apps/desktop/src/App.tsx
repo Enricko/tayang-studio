@@ -2,12 +2,18 @@ import { useCallback, useEffect, useState } from 'react';
 import { Button } from '@/components/Button';
 import { Sidebar, type SidebarKey } from '@/components/Sidebar';
 import { getSettings } from '@/lib/ipc';
+import { Agents } from '@/screens/Agents';
+import { Calendar } from '@/screens/Calendar';
 import { ChatNew } from '@/screens/ChatNew';
 import { ChatProject } from '@/screens/ChatProject';
+import { Settings } from '@/screens/Settings';
+import { Style } from '@/screens/Style';
+import { Videos } from '@/screens/Videos';
 import { Connect } from '@/screens/onboarding/Connect';
 import { Requirements } from '@/screens/onboarding/Requirements';
 import { Welcome } from '@/screens/onboarding/Welcome';
 import { useApp, type Route } from '@/state/app';
+import { refreshJobs } from '@/state/jobs';
 
 const ONBOARDING = new Set<Route['name']>(['welcome', 'connect', 'requirements']);
 
@@ -20,27 +26,6 @@ const SIDEBAR_KEY: Partial<Record<Route['name'], SidebarKey>> = {
   calendar: 'calendar',
   settings: 'settings',
 };
-
-const TITLES: Record<Route['name'], string> = {
-  welcome: 'Welcome',
-  connect: 'Connect your agent',
-  requirements: 'Requirements',
-  'chat-new': 'New chat',
-  chat: 'Chat',
-  videos: 'Videos',
-  style: 'Style',
-  agents: 'Agents',
-  calendar: 'Calendar',
-  settings: 'Settings',
-};
-
-function Placeholder({ name }: { name: Route['name'] }) {
-  return (
-    <div className="flex h-full items-center justify-center">
-      <h1 className="text-xl font-semibold">{TITLES[name]}</h1>
-    </div>
-  );
-}
 
 function Onboarding({ name }: { name: Route['name'] }) {
   if (name === 'connect') return <Connect />;
@@ -60,7 +45,10 @@ export default function App() {
     getSettings()
       .then((st) => {
         useApp.getState().setSettings(st);
-        if (st.onboarded) useApp.getState().navigate({ name: 'chat-new' });
+        if (st.onboarded) {
+          useApp.getState().navigate({ name: 'chat-new' });
+          void refreshJobs().catch(() => {});
+        }
       })
       .catch(() => setLoadError(true));
   }, []);
@@ -101,8 +89,16 @@ export default function App() {
           <ChatNew key="chat-new" />
         ) : route.name === 'chat' ? (
           <ChatProject key={route.chatId} chatId={route.chatId} />
+        ) : route.name === 'videos' ? (
+          <Videos />
+        ) : route.name === 'style' ? (
+          <Style />
+        ) : route.name === 'agents' ? (
+          <Agents />
+        ) : route.name === 'calendar' ? (
+          <Calendar />
         ) : (
-          <Placeholder name={route.name} />
+          <Settings />
         )}
       </main>
     </div>
