@@ -49,6 +49,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_system_info,
+            commands::system_locale,
             commands::detect_agents,
             commands::check_tools,
             commands::get_settings,

@@ -49,6 +49,18 @@ pub async fn get_system_info() -> CmdResult<SystemInfo> {
         .map_err(err)
 }
 
+/// The operating system's preferred language, like `id-ID` or `en-US`. The webview's own
+/// `navigator.language` follows the app bundle (English only), not the system, so the first-run
+/// interface language is picked from this instead.
+#[tauri::command]
+pub fn system_locale() -> Option<String> {
+    clean_locale(sys_locale::get_locale())
+}
+
+fn clean_locale(raw: Option<String>) -> Option<String> {
+    raw.map(|l| l.trim().to_string()).filter(|l| !l.is_empty())
+}
+
 #[tauri::command]
 pub async fn detect_agents() -> CmdResult<Vec<AgentInfo>> {
     tauri::async_runtime::spawn_blocking(|| system::detect_agents(&RealExec))
@@ -948,6 +960,18 @@ pub fn write_brief(state: State<'_, AppState>, project_id: String, brief: String
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn locale_is_trimmed_and_blank_is_none() {
+        assert_eq!(super::clean_locale(Some(" id-ID ".into())), Some("id-ID".into()));
+        assert_eq!(super::clean_locale(Some("  ".into())), None);
+        assert_eq!(super::clean_locale(None), None);
+    }
+
+    #[test]
+    fn system_locale_never_panics_and_is_none_or_text() {
+        assert!(super::system_locale().is_none_or(|l| !l.is_empty()));
+    }
+
     use super::*;
 
     #[test]
