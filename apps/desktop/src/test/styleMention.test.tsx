@@ -60,6 +60,7 @@ describe('styleContext', () => {
         'Camera: Slow push-ins on the map',
         'Color: Navy and paper white',
         'This style has a starter template; Tayang sets it up when a new video starts from it.',
+        'Its Tayang style id is "builtin-atlas": put exactly this id in a topic card\'s styleId.',
       ].join('\n'),
     );
     expect(text).not.toMatch(/https?:/);
@@ -89,7 +90,12 @@ describe('styleContext', () => {
       ],
       [plain],
     );
-    expect(out).toEqual([{ type: 'text', text: 'Use the style "Mine" for this video:\nAnimate a journey across a paper map.' }]);
+    expect(out).toEqual([
+      {
+        type: 'text',
+        text: 'Use the style "Mine" for this video:\nAnimate a journey across a paper map.\nIts Tayang style id is "mine-1": put exactly this id in a topic card\'s styleId.',
+      },
+    ]);
   });
 });
 

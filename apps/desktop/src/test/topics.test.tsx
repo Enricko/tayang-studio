@@ -231,6 +231,29 @@ describe('createTopicProject', () => {
     ]);
   });
 
+  it('finds a style the agent named by a slug of its name instead of its id', async () => {
+    const copied = { ...atlas, id: 'copied-11442bd890', name: 'Storybook 3D Cartoon Narrative', template: null };
+    vi.mocked(ipc.listStyles).mockResolvedValue([atlas, copied]);
+    await createTopicProject({ ...idea, styleId: 'storybook-3d-cartoon-narrative' }, { settings, agent: 'claude' });
+    expect(vi.mocked(ipc.createProject).mock.calls[0]![0]).toHaveProperty('styleId', 'copied-11442bd890');
+  });
+
+  it('uses the style the user mentioned when the agent names an unknown one', async () => {
+    const copied = { ...atlas, id: 'copied-1', name: 'Storybook', template: null };
+    vi.mocked(ipc.listStyles).mockResolvedValue([atlas, copied]);
+    await createTopicProject({ ...idea, styleId: 'made-up' }, { settings, agent: 'claude', styleId: 'copied-1' });
+    expect(vi.mocked(ipc.createProject).mock.calls[0]![0]).toHaveProperty('styleId', 'copied-1');
+  });
+
+  it('says so in the chat when the agent names a style nobody has', async () => {
+    vi.mocked(ipc.listStyles).mockResolvedValue([atlas]);
+    await createTopicProject({ ...idea, styleId: 'made-up' }, { settings, agent: 'claude' });
+    expect(vi.mocked(ipc.createProject).mock.calls[0]![0]).not.toHaveProperty('styleId');
+    expect(ipc.addMessage).toHaveBeenCalledWith('chat-1', 'system', [
+      { type: 'text', text: expect.stringContaining('made-up') },
+    ]);
+  });
+
   it('startTopic still opens the chat and asks for the script', async () => {
     await startTopic(idea, { settings, agent: 'claude' });
     expect(useApp.getState().route).toEqual({ name: 'chat', chatId: 'chat-1' });

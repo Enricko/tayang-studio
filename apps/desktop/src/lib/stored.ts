@@ -25,6 +25,7 @@ export const STORED_KEYS = [
   'chat.autoOffFailed',
   'chat.templateProblem',
   'chat.templateGone',
+  'chat.styleUnknown',
   'chat.templateFilesMissing',
   'chat.settingTemplate',
   'chat.templateFailed',

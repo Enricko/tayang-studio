@@ -419,6 +419,7 @@ export const id: Translations = {
     ranWithoutAsking: 'Dijalankan tanpa minta izin: {{what}}',
     templateProblem: 'Template belum bisa disiapkan: {{problem}}. Lanjut tanpa template.',
     templateGone: 'gaya itu sudah tidak ada di koleksimu',
+    styleUnknown: 'Agent memilih gaya yang tidak ada di Tayang ({{id}}), jadi video ini dimulai tanpa gaya. Sebut gaya dengan @ untuk memakainya.',
     templateFilesMissing: 'file template-nya gagal ditambahkan',
     settingTemplate: 'Menyiapkan template {{name}}…',
     templateFailed: 'Template {{name}} belum bisa disiapkan: {{reason}}. Lanjut tanpa template.',

@@ -419,6 +419,7 @@ export const en = {
     ranWithoutAsking: 'Ran without asking: {{what}}',
     templateProblem: "Couldn't set up the template: {{problem}}. Continuing without it.",
     templateGone: 'that style is no longer in your library',
+    styleUnknown: 'The agent picked a style Tayang doesn\'t have ({{id}}), so this video starts without one. Mention a style with @ to use it.',
     templateFilesMissing: 'the template files were not added',
     settingTemplate: 'Setting up the {{name}} template…',
     templateFailed: "Couldn't set up the {{name}} template: {{reason}}. Continuing without it.",

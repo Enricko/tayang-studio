@@ -94,11 +94,24 @@ export function draftProject(
  * user picked on the Style screen, or the autopilot's style). A template that can't be set up is reported
  * in the chat as a system line and the brief is rewritten without it.
  */
+const slug = (s: string) =>
+  s
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+/** A style by its id, or (agents sometimes write the name instead) by its name or a slug of it. */
+function findStyle(styles: Style[], ref: string): Style | undefined {
+  return styles.find((s) => s.id === ref) ?? styles.find((s) => slug(s.name) === slug(ref));
+}
+
 export async function createTopicProject(idea: TopicIdea, opts: TopicProjectOpts): Promise<{ project: Project; chat: Chat }> {
   const { settings, agent } = opts;
   const fallbackId = opts.styleId ?? null;
   let style: Style | null = null;
   let styleProblem: string | null = null;
+  let unknownStyle: string | null = null;
   if (idea.styleId || fallbackId) {
     try {
       let styles = await listStyles();
@@ -108,11 +121,12 @@ export async function createTopicProject(idea: TopicIdea, opts: TopicProjectOpts
         if (synced) styles = await listStyles();
       }
       style =
-        (idea.styleId ? styles.find((s) => s.id === idea.styleId) : undefined) ??
+        (idea.styleId ? findStyle(styles, idea.styleId) : undefined) ??
         (fallbackId ? styles.find((s) => s.id === fallbackId) : undefined) ??
         null;
-      // An unknown style the agent suggested is ignored; a template the user picked is reported.
+      // A style the user picked that is gone, or one the agent named that nobody has, is said in the chat.
       if (!style && fallbackId) styleProblem = stored('chat.templateGone');
+      else if (!style && idea.styleId) unknownStyle = idea.styleId;
     } catch (e) {
       styleProblem = e instanceof Error ? e.message : String(e);
     }
@@ -123,6 +137,7 @@ export async function createTopicProject(idea: TopicIdea, opts: TopicProjectOpts
   const chat = await createChat(project.id, agent, idea.title);
   const say = (text: string) => appendSystem(chat.id, text);
   if (styleProblem) await say(stored('chat.templateProblem', { problem: styleProblem }));
+  if (unknownStyle) await say(stored('chat.styleUnknown', { id: unknownStyle }));
   if (style?.template) {
     opts.onStatus?.(i18n.t('chat.settingTemplate', { name: style.name }));
     await say(stored('chat.settingTemplate', { name: style.name }));

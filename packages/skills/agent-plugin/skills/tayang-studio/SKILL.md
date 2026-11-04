@@ -20,7 +20,7 @@ Tayang Studio is a desktop app that turns a topic into a short motion video. You
 - Good topics: explainers, "why" and "how" questions, data and comparisons, history and geography, science what-ifs, product or promo messages told with type and illustration.
 - Pick topics that fit one of the installed styles (Atlas journey for places, routes, borders and trade; Cartoon 3D world for short true stories; Cartoon 3D what-if for "What if you…" escalations) or a plain kinetic-type explainer.
 - Facts must be real and checkable. No made-up numbers.
-- When you suggest topics: start with one short, friendly sentence in the user's video language, then show the options as A2UI cards (a Card per idea with a "Make this" button that sends `pick_topic` with `title`, `kind`, `lengthSec` and `styleId`). Never show raw JSON.
+- When you suggest topics: start with one short, friendly sentence in the user's video language, then show the options as A2UI cards (a Card per idea with a "Make this" button that sends `pick_topic` with `title`, `kind`, `lengthSec` and `styleId`). Never show raw JSON. For `styleId`, use the exact Tayang style id you were given (the user's mentioned style says "Its Tayang style id is …"); never invent one from the style's name. If the user mentioned a style, every idea uses that style's id.
 
 ## Working folder
 

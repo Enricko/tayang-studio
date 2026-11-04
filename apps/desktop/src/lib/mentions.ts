@@ -64,8 +64,23 @@ export function styleContext(parts: MessagePart[], styles: Style[]): MessagePart
       ...notes,
       // i18n-ignore: this goes to the agent, not the user
       style.template ? 'This style has a starter template; Tayang sets it up when a new video starts from it.' : '',
+      // i18n-ignore: this goes to the agent, not the user
+      `Its Tayang style id is "${style.id}": put exactly this id in a topic card's styleId.`,
     ].filter(Boolean);
     out.push({ type: 'text', text: lines.join('\n') });
   }
   return out;
+}
+
+/** The newest style the user mentioned in this chat: the style a topic picked here starts from. */
+export function lastMentionedStyle(messages: ChatMessage[] | undefined): string | null {
+  for (let i = (messages?.length ?? 0) - 1; i >= 0; i--) {
+    const m = messages![i]!;
+    if (m.role !== 'user') continue;
+    for (let j = m.parts.length - 1; j >= 0; j--) {
+      const p = m.parts[j]!;
+      if (p.type === 'style-mention') return p.styleId;
+    }
+  }
+  return null;
 }

@@ -9,7 +9,7 @@ import { ScrollToBottom } from '@/components/ScrollToBottom';
 import { stylesFor, TemplateChip, templateOf, useChipTemplate, useStyles } from '@/components/TemplateChip';
 import { TurnRail } from '@/components/TurnRail';
 import { listProjects } from '@/lib/ipc';
-import { mentionContext, mentionedIn, styleContext } from '@/lib/mentions';
+import { lastMentionedStyle, mentionContext, mentionedIn, styleContext } from '@/lib/mentions';
 import { ideasFromReply, startTopic, type TopicIdea } from '@/lib/topics';
 import { extractA2ui } from '@/a2ui/parse';
 import { useApp } from '@/state/app';
@@ -116,8 +116,10 @@ export function ChatThread({ chatId, draft, styleId: routeStyleId }: { chatId: s
     setSetupLine(t('chat.settingUp'));
     setError(null);
     try {
-      // The idea's own style wins when it is a synced one; else the template chip's style.
-      await startTopic(idea, { settings, agent, styleId: chipTemplate ?? styleId, onStatus: setSetupLine });
+      // The idea's own style wins when it is a synced one; else the template chip's style, else the
+      // style the user last mentioned here (a copied style has no template, so no chip).
+      const chatStyle = chipTemplate ?? styleId ?? lastMentionedStyle(useChat.getState().messages[chatId]);
+      await startTopic(idea, { settings, agent, styleId: chatStyle, onStatus: setSetupLine });
       setStyleId(null);
       const { summary, ...action } = card ?? { summary: '' };
       await appendSystem(
