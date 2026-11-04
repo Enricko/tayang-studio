@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronLeft, Plus } from 'lucide-react';
-import { openUrl } from '@tauri-apps/plugin-opener';
 import type { Autopilot as AutopilotT, AutopilotSlot, Project, SlotStatus, Style } from '@tayang/shared';
 import { Button } from '@/components/Button';
 import { Oyen } from '@/components/Oyen';
@@ -392,7 +391,7 @@ export function Autopilot({ id, now: fixedNow }: { id?: string; now?: Date } = {
 
       <p className="m-0 mt-auto border-t border-border pt-3 text-xs leading-[1.6] text-text-3">
         {t('autopilot.plansLine')}{' '}
-        <button type="button" className="cursor-pointer border-0 bg-transparent p-0 text-xs text-orange-light underline" onClick={() => void openUrl('https://tayang.app')}>
+        <button type="button" className="cursor-pointer border-0 bg-transparent p-0 text-xs text-orange-light underline" onClick={() => navigate({ name: 'plans', from: 'autopilot' })}>
           {t('calendar.plans')}
         </button>
       </p>

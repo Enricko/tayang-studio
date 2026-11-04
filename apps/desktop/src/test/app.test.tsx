@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import { vi } from 'vitest';
 import type { Settings } from '@tayang/shared';
 
@@ -49,6 +49,15 @@ describe('App start', () => {
     vi.mocked(getSettings).mockResolvedValue(base);
     render(<App />);
     expect(await screen.findByText('Get started')).toBeInTheDocument();
+  });
+
+  it('shows the plans screen full window, like onboarding (no sidebar)', async () => {
+    vi.mocked(getSettings).mockResolvedValue({ ...base, onboarded: true });
+    const { container } = render(<App />);
+    await screen.findByText('What are we making?', { selector: 'h1' });
+    act(() => useApp.getState().navigate({ name: 'plans', from: 'settings' }));
+    expect(await screen.findByRole('heading', { level: 1, name: 'Let Tayang do the posting' })).toBeInTheDocument();
+    expect(container.querySelector('#app-sidebar')).toBeNull();
   });
 
   it('goes to a new chat when onboarded', async () => {

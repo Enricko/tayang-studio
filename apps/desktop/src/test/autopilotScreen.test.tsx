@@ -93,8 +93,11 @@ describe('Autopilot screen list', () => {
     expect(await screen.findByText(/An autopilot picks a topic in your niche/)).toBeInTheDocument();
     expect(screen.getByRole('img', { name: 'Oyen' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'New autopilot' })).toBeNull();
-    expect(screen.getByText(/Automatic posting to TikTok, Reels and Shorts is coming to tayang.app plans/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'See plans' })).toBeInTheDocument();
+    expect(screen.getByText(/Automatic posting to TikTok, Reels and Shorts is coming to Tayang plans/)).toBeInTheDocument();
+    // See plans opens the plans screen, and Back there returns here.
+    await userEvent.click(screen.getByRole('button', { name: 'See plans' }));
+    expect(useApp.getState().route).toEqual({ name: 'plans', from: 'autopilot' });
+    useApp.setState({ route: { name: 'autopilot' } });
     await userEvent.click(screen.getByRole('button', { name: 'Create your first autopilot' }));
     expect(useApp.getState().route).toEqual({ name: 'autopilot-wizard' });
   });

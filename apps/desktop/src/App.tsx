@@ -18,6 +18,7 @@ import { AutopilotWizard } from '@/screens/AutopilotWizard';
 import { Calendar } from '@/screens/Calendar';
 import { ChatNew } from '@/screens/ChatNew';
 import { ChatProject } from '@/screens/ChatProject';
+import { Plans } from '@/screens/Plans';
 import { Settings } from '@/screens/Settings';
 import { Style } from '@/screens/Style';
 import { Videos } from '@/screens/Videos';
@@ -132,6 +133,13 @@ export default function App() {
     );
   }
 
+  if (route.name === 'plans') {
+    return (
+      <div className="h-full overflow-y-auto bg-background">
+        <Plans from={route.from} plan={route.plan} />
+      </div>
+    );
+  }
   if (ONBOARDING.has(route.name)) {
     return (
       <div className="h-full overflow-y-auto bg-background">

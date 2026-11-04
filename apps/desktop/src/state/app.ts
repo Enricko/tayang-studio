@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Settings } from '@tayang/shared';
+import type { PaidPlanId, Settings } from '@tayang/shared';
 
 export type Route =
   | { name: 'welcome' }
@@ -13,7 +13,9 @@ export type Route =
   | { name: 'autopilot-wizard'; /** Editing this autopilot; none for a new one. */ id?: string }
   | { name: 'agents' }
   | { name: 'calendar' }
-  | { name: 'settings' };
+  | { name: 'settings' }
+  /** Full window, like onboarding. `from` is where Back returns to; `plan` is picked first. */
+  | { name: 'plans'; from?: 'settings' | 'autopilot'; plan?: PaidPlanId };
 
 /** Asked before every navigation while set; returning false keeps the current screen (it asks the user itself). */
 export type LeaveGuard = (next: Route) => boolean;

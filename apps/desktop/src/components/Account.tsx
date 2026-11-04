@@ -45,7 +45,8 @@ export function initials(a: Pick<Account, 'name' | 'email'>): string {
   return first ? first.toUpperCase() : '?';
 }
 
-function SignInDialog({ flow, apiUrl }: { flow: SignInFlow; apiUrl: string }) {
+/** The sign-in dialog: the code to check, then waiting for the browser. Also used on the plans screen. */
+export function SignInDialog({ flow, apiUrl }: { flow: SignInFlow; apiUrl: string }) {
   const { t } = useTranslation();
   const signIn = useAuth((s) => s.signIn);
   const cancel = useAuth((s) => s.cancel);
