@@ -59,6 +59,13 @@ describe('plan card', () => {
     expect(screen.queryByRole('button', { name: 'Change plan' })).not.toBeInTheDocument();
   });
 
+  it('a running plan shows its AI credits and how far they go (B4)', async () => {
+    vi.mocked(billing.billingStatus).mockResolvedValue(creator);
+    render(<PlanCard />);
+    expect(await screen.findByText('165 AI credits a month')).toBeInTheDocument();
+    expect(screen.getByText('Enough to generate up to 165 images, or up to 23 minutes of AI voice')).toBeInTheDocument();
+  });
+
   it('ended: the lapsed plan, Ended, and Renew', async () => {
     vi.mocked(billing.billingStatus).mockResolvedValue({ ...creator, plan: 'free', active: false });
     render(<PlanCard />);
@@ -91,7 +98,7 @@ describe('plan card', () => {
 describe("plan card when the plan state can't be read", () => {
   const withAccount = (plan: string) =>
     useAuth.setState({
-      status: { state: 'signed-in', signedIn: true, offline: false, apiUrl: 'x', account: { id: 'a', email: 'a@b.c', name: 'A', plan: plan as 'lite', features: [] } },
+      status: { state: 'signed-in', signedIn: true, offline: false, apiUrl: 'x', account: { id: 'a', email: 'a@b.c', name: 'A', plan: plan as 'lite', features: [], credits: 0 } },
     });
 
   it('never says Free when the read failed: it shows the signed-in plan and offers to try again', async () => {

@@ -44,7 +44,7 @@ const signedIn: AuthStatus = {
   signedIn: true,
   offline: false,
   apiUrl: 'http://localhost:8787/api',
-  account: { id: 'acc_1', email: 'a@b.c', name: 'Ana', plan: 'free', features: [] },
+  account: { id: 'acc_1', email: 'a@b.c', name: 'Ana', plan: 'free', features: [], credits: 0 },
 };
 const signedOut: AuthStatus = { state: 'signed-out', signedIn: false, offline: false, apiUrl: 'http://localhost:8787/api' };
 
@@ -88,6 +88,25 @@ describe('plans screen: choose', () => {
     expect(screen.getByText('For posting regularly every day')).toBeInTheDocument();
     expect(screen.getByText('150 auto-posts a month')).toBeInTheDocument();
     expect(screen.getByText('Always free')).toBeInTheDocument();
+  });
+
+  it('AI credits are one number per plan, with how far they go, and Lite says it has none (B4)', async () => {
+    render(<Plans from="settings" />);
+    expect(await screen.findByText('165 AI credits a month')).toBeInTheDocument();
+    expect(screen.getByText('Enough to generate up to 165 images, or up to 23 minutes of AI voice')).toBeInTheDocument();
+    expect(screen.getByText('310 AI credits a month')).toBeInTheDocument();
+    expect(screen.getByText('Enough to generate up to 310 images, or up to 44 minutes of AI voice')).toBeInTheDocument();
+    expect(screen.getByText('No AI credits')).toBeInTheDocument();
+    expect(screen.queryByText(/AI images a month|minutes of AI voice a month/)).toBeNull();
+  });
+
+  it('"What are credits?" explains them, without picking the card (B4)', async () => {
+    const u = user();
+    render(<Plans from="settings" />);
+    const info = (await screen.findAllByRole('button', { name: 'What are credits?' }))[1]!;
+    await u.click(info);
+    expect(await screen.findByText(/1 credit = 1 AI image\. 7 credits = 1 minute of AI voice\./)).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'Creator' })).toBeChecked();
     expect(screen.getByText(/Nothing is charged automatically/)).toBeInTheDocument();
     expect(screen.getByRole('list', { name: 'Plan steps' })).toBeInTheDocument();
   });
@@ -167,6 +186,11 @@ describe('plans screen: choose', () => {
     expect(screen.getAllByText('/bulan').length).toBe(3);
     expect(screen.getByRole('button', { name: 'Lanjut bayar' })).toBeInTheDocument();
     expect(screen.getByText(/Tidak ada tagihan otomatis/)).toBeInTheDocument();
+    expect(screen.getByText('165 kredit AI per bulan')).toBeInTheDocument();
+    expect(screen.getByText('Cukup untuk generate sampai 165 gambar, atau sampai 23 menit suara AI')).toBeInTheDocument();
+    expect(screen.getByText('Tanpa kredit AI')).toBeInTheDocument();
+    expect(screen.getByText('90 posting otomatis per bulan')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Apa itu kredit?' }).length).toBe(2);
   });
 
   it('signed out: signs in with Google first, then carries on to paying', async () => {
@@ -312,7 +336,8 @@ describe('plans screen: done', () => {
     const u = await payAndSucceed();
     expect(await screen.findByRole('heading', { level: 1, name: 'Creator plan active' })).toHaveFocus();
     expect(screen.getByText('Until Dec 4, 2026')).toBeInTheDocument();
-    expect(screen.getByText('60 AI images a month')).toBeInTheDocument();
+    expect(screen.getByText('165 AI credits a month')).toBeInTheDocument();
+    expect(screen.getByText('Enough to generate up to 165 images, or up to 23 minutes of AI voice')).toBeInTheDocument();
     expect(fireConfetti).toHaveBeenCalledTimes(1);
     expect(document.querySelector('[data-static-celebration]')).toBeNull();
     await u.click(screen.getByRole('button', { name: 'Start making a video' }));

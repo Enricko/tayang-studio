@@ -270,8 +270,12 @@ export const en = {
     quota: {
       socialAccounts: 'Unlimited social accounts',
       autoPosts: '{{count}} auto-posts a month',
-      images: '{{count}} AI images a month',
-      voice: '{{count}} minutes of AI voice a month',
+      credits: '{{count}} AI credits a month',
+      creditsReach: 'Enough to generate up to {{images}} images, or up to {{minutes}} minutes of AI voice',
+      noCredits: 'No AI credits',
+      whatAreCredits: 'What are credits?',
+      creditsExplain:
+        '{{image}} credit = 1 AI image. {{voice}} credits = 1 minute of AI voice. Credits are shared between images and voice, and refill every month.',
     },
     errors: {
       signedOut: 'Your sign-in has ended. Sign in again, then try again',

@@ -31,7 +31,7 @@ const signedIn: AuthStatus = {
   signedIn: true,
   offline: false,
   apiUrl: API,
-  account: { id: 'acc_1', email: 'ana@example.com', name: 'Ana Putri', plan: 'pro', features: ['voiceover'] },
+  account: { id: 'acc_1', email: 'ana@example.com', name: 'Ana Putri', plan: 'pro', features: ['voiceover'], credits: 310 },
 };
 const started = {
   userCode: 'ABCD-EFGH',

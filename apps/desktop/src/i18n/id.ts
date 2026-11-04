@@ -272,8 +272,12 @@ export const id: Translations = {
     quota: {
       socialAccounts: 'Akun sosial tanpa batas',
       autoPosts: '{{count}} posting otomatis per bulan',
-      images: '{{count}} gambar AI per bulan',
-      voice: '{{count}} menit suara AI per bulan',
+      credits: '{{count}} kredit AI per bulan',
+      creditsReach: 'Cukup untuk generate sampai {{images}} gambar, atau sampai {{minutes}} menit suara AI',
+      noCredits: 'Tanpa kredit AI',
+      whatAreCredits: 'Apa itu kredit?',
+      creditsExplain:
+        '{{image}} kredit = 1 gambar AI. {{voice}} kredit = 1 menit suara AI. Kredit dipakai bersama untuk gambar dan suara, dan diisi ulang tiap bulan.',
     },
     errors: {
       signedOut: 'Sesi masukmu sudah berakhir. Masuk lagi, lalu coba lagi',

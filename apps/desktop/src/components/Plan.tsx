@@ -1,8 +1,10 @@
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Check } from 'lucide-react';
-import { findPlan, type PaidPlanId, type Plan, type PlanId } from '@tayang/shared';
+import type React from 'react';
+import { Check, Info } from 'lucide-react';
+import { CREDIT_COSTS, creditReach, findPlan, planCredits, type PaidPlanId, type Plan, type PlanId } from '@tayang/shared';
 import { Button } from '@/components/Button';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { uiLanguage } from '@/i18n';
 import { formatDay, planCard, type BillingErrorCode } from '@/lib/billing';
 import { cn } from '@/lib/utils';
@@ -25,22 +27,53 @@ export const BILLING_ERROR_KEYS = {
 
 export const planName = (id: PlanId, free: string) => findPlan(id)?.name ?? free;
 
-/** What a plan includes, one line each. */
+/** "165 AI credits a month", "Enough to generate up to 165 images, or up to 23 minutes of AI voice", from CREDIT_COSTS. */
+export function CreditsLine({ credits }: { credits: number }) {
+  const { t } = useTranslation();
+  const reach = creditReach(credits);
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="flex items-center gap-1.5">
+        {t('billing.quota.credits', { count: credits })}
+        <Popover>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              aria-label={t('billing.quota.whatAreCredits')}
+              // Inside a plan card's label: explaining credits must not pick the card.
+              onClick={(e) => e.stopPropagation()}
+              className="inline-flex cursor-pointer items-center rounded-full border-0 bg-transparent p-0 text-text-3 hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary"
+            >
+              <Info size={14} strokeWidth={1.5} aria-hidden="true" />
+            </button>
+          </PopoverTrigger>
+          <PopoverContent className="w-72 text-[13px] leading-normal text-text-2">
+            {t('billing.quota.creditsExplain', { image: CREDIT_COSTS.image, voice: CREDIT_COSTS.voiceMinute })}
+          </PopoverContent>
+        </Popover>
+      </span>
+      <span className="text-xs text-text-3">{t('billing.quota.creditsReach', { images: reach.images, minutes: reach.voiceMinutes })}</span>
+    </div>
+  );
+}
+
+/** What a plan includes, one line each: AI credits (one pool), auto-posts, social accounts. */
 export function Quotas({ plan }: { plan: Plan }) {
   const { t } = useTranslation();
   const q = plan.quotas;
-  const lines = [
-    t('billing.quota.socialAccounts'),
-    t('billing.quota.autoPosts', { count: q.autoPosts }),
-    ...(q.images ? [t('billing.quota.images', { count: q.images })] : []),
-    ...(q.voiceMinutes ? [t('billing.quota.voice', { count: q.voiceMinutes })] : []),
+  const lines: { key: string; body: React.ReactNode; muted?: boolean }[] = [
+    q.credits
+      ? { key: 'credits', body: <CreditsLine credits={q.credits} /> }
+      : { key: 'credits', body: t('billing.quota.noCredits'), muted: true },
+    { key: 'posts', body: t('billing.quota.autoPosts', { count: q.autoPosts }) },
+    { key: 'social', body: t('billing.quota.socialAccounts') },
   ];
   return (
-    <ul className="m-0 flex list-none flex-col gap-1 p-0">
+    <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
       {lines.map((l) => (
-        <li key={l} className="flex items-start gap-2 text-[13px] leading-normal text-text-2">
-          <Check size={16} strokeWidth={1.5} aria-hidden="true" className="mt-0.5 shrink-0 text-text-3" />
-          {l}
+        <li key={l.key} className={cn('flex items-start gap-2 text-[13px] leading-normal', l.muted ? 'text-text-3' : 'text-text-2')}>
+          <Check size={16} strokeWidth={1.5} aria-hidden="true" className={cn('mt-0.5 shrink-0', l.muted ? 'opacity-0' : 'text-text-3')} />
+          {l.body}
         </li>
       ))}
     </ul>
@@ -104,6 +137,11 @@ export function PlanCard() {
       <div className="flex min-w-[220px] flex-1 flex-col gap-1">
         <span className="text-sm font-medium">{planName(paidPlan ?? 'free', t('billing.free'))}</span>
         <span className={cn('text-[13px] leading-normal', state === 'ended' ? 'text-orange-light' : 'text-text-2')}>{line}</span>
+        {state === 'active' && paidPlan && planCredits(paidPlan) > 0 && (
+          <div className="text-[13px] text-text-2">
+            <CreditsLine credits={planCredits(paidPlan)} />
+          </div>
+        )}
         {pending && (
           <span className="text-xs text-text-3">
             {t('billing.pendingNote', {
