@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { buildSessionPreamble, languageHint, stripFramesToken } from '@tayang/skills';
+import { buildSessionPreamble, languageHint, sessionFacts, stripFramesToken } from '@tayang/skills';
 import type { AgentId, AgentUpdate, ChatMessage, JobStatus, MessagePart, PermissionRequest } from '@tayang/shared';
 import {
   addMessage,
@@ -19,6 +19,7 @@ import { extractA2ui } from '@/a2ui/parse';
 import { agentErrorText, AGENT_NAMES } from '@/lib/agents';
 import { uiLanguage } from '@/i18n';
 import { stored } from '@/lib/stored';
+import { localClock } from '@/lib/time';
 import { useApp } from '@/state/app';
 import { refreshJobs } from '@/state/jobs';
 
@@ -92,7 +93,7 @@ export const isScratchChat = (chatId: string) =>
   chatId === 'setup' || chatId.startsWith('study-') || chatId.startsWith('ideas-') || chatId.startsWith('autopilot-');
 
 /** Sessions that never show A2UI (setup installs, style studies, autopilot topics): no skills preamble. Same rule as Rust. */
-const isInternalChat = (chatId: string) => chatId === 'setup' || chatId.startsWith('study-') || chatId.startsWith('autopilot-');
+export const isInternalChat = (chatId: string) => chatId === 'setup' || chatId.startsWith('study-') || chatId.startsWith('autopilot-');
 
 /** Chats this store loaded or sent to; updates for any other chat id are not ours. */
 const tracked = new Set<string>();
@@ -418,8 +419,11 @@ export const useChat = create<ChatState>((set, get) => {
         // the skills as text, once per session.
         const uiLang = uiLanguage();
         if (fresh && !isInternalChat(chatId)) {
-          if (agent !== 'claude' || noPlugin) lead.push({ type: 'text', text: buildSessionPreamble(uiLang) });
-          else if (languageHint(uiLang)) lead.push({ type: 'text', text: languageHint(uiLang) });
+          // The agent's clock for scheduling, and the id that lets it schedule this project's video.
+          const projectId = opts?.job?.projectId ?? chatJobs.get(chatId)?.projectId;
+          const facts = { ...localClock(), ...(projectId ? { projectId } : {}) };
+          if (agent !== 'claude' || noPlugin) lead.push({ type: 'text', text: buildSessionPreamble(uiLang, facts) });
+          else lead.push({ type: 'text', text: [languageHint(uiLang), sessionFacts(facts)].filter(Boolean).join('\n\n') });
         }
         const recap = pendingRecap.get(chatId);
         if (recap?.text) {

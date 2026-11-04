@@ -46,3 +46,15 @@ export function inTime(at: Date, now: Date = new Date()): string {
   if (min < 60 * 24) return rtf.format(Math.floor(min / 60), 'hour');
   return rtf.format(Math.floor(min / 1440), 'day');
 }
+
+/** The computer's clock as the agent needs it: IANA zone, RFC 3339 offset, and the local date and time in English. */
+export function localClock(now: Date = new Date()): { timeZone: string; offset: string; localNow: string } {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const off = -now.getTimezoneOffset();
+  const offset = `${off < 0 ? '-' : '+'}${pad(Math.floor(Math.abs(off) / 60))}:${pad(Math.abs(off) % 60)}`;
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || `UTC${offset}`;
+  // i18n-ignore: this goes to the agent, not the user
+  const weekday = new Intl.DateTimeFormat('en-US', { weekday: 'long' }).format(now);
+  const localNow = `${weekday} ${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  return { timeZone, offset, localNow };
+}

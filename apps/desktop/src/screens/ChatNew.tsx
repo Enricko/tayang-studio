@@ -126,7 +126,7 @@ export function ChatNew() {
       out.push({
         type: 'text',
         // i18n-ignore: this goes to the agent, not the user
-        text: `The user attached the video "${p.title}". Its project folder is ${p.folder}.\n\n${buildProjectBrief(p, style, settings)}`,
+        text: `The user attached the video "${p.title}". Its Tayang id is ${p.id}. Its project folder is ${p.folder}.\n\n${buildProjectBrief(p, style, settings)}`,
       });
     }
     return out;

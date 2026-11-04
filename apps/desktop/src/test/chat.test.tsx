@@ -62,6 +62,11 @@ import { buildRecap, useChat } from '@/state/chat';
 import { useUsage } from '@/state/usage';
 import { UsageBar } from '@/components/UsageBar';
 
+/** What the agent got, without the session facts line a new session starts with. */
+const noFacts = <T,>(parts: T[]): T[] =>
+  parts.filter((p) => !(typeof p === 'object' && p && (p as { type?: string; text?: string }).type === 'text' && (p as { text: string }).text.includes('local time zone is')));
+
+
 const settings: Settings = {
   workingFolder: '/tmp/Tayang',
   defaultAgent: 'claude',
@@ -183,6 +188,8 @@ describe('ChatNew', () => {
     const parts = vi.mocked(ipc.agentPrompt).mock.calls[0]![1];
     expect(parts.some((p) => p.type === 'mention')).toBe(true);
     expect(JSON.stringify(parts)).toContain('/tmp/Tayang/p1');
+    // The agent can schedule a mentioned video by its id.
+    expect(JSON.stringify(parts)).toMatch(/Its Tayang id is p1\./);
   });
 });
 
@@ -794,7 +801,7 @@ describe('ChatProject', () => {
     await user.type(await screen.findByRole('textbox', { name: 'Message' }), 'faster');
     await user.click(screen.getByRole('button', { name: 'Send' }));
     await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
-    const parts = vi.mocked(ipc.agentPrompt).mock.calls[0]![1];
+    const parts = noFacts(vi.mocked(ipc.agentPrompt).mock.calls[0]![1]);
     expect(parts[0]).toEqual(
       frameCheck ? { type: 'text', text: 'faster' } : { type: 'text', text: 'Skip the frame check this time.' },
     );
@@ -1078,7 +1085,7 @@ describe('Composer attachments', () => {
     await user.type(screen.getByRole('textbox', { name: 'Message' }), 'use this');
     await user.click(screen.getByRole('button', { name: 'Send' }));
     await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
-    expect(vi.mocked(ipc.agentPrompt).mock.calls[0]![1]).toEqual([doc, { type: 'text', text: 'use this' }]);
+    expect(noFacts(vi.mocked(ipc.agentPrompt).mock.calls[0]![1])).toEqual([doc, { type: 'text', text: 'use this' }]);
     expect(screen.queryByRole('button', { name: 'Remove file' })).not.toBeInTheDocument();
   });
 

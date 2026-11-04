@@ -31,6 +31,11 @@ import { BUSY_NOTE, failChatJob, useChat } from '@/state/chat';
 import { needsYou } from '@/state/jobs';
 import { setUiLanguage } from '@/i18n';
 
+/** What the agent got, without the session facts line a new session starts with. */
+const noFacts = <T,>(parts: T[]): T[] =>
+  parts.filter((p) => !(typeof p === 'object' && p && (p as { type?: string; text?: string }).type === 'text' && (p as { text: string }).text.includes('local time zone is')));
+
+
 const V = 'v0.9';
 const block = (surfaceId: string, label: string) =>
   '```a2ui\n' +
@@ -108,7 +113,7 @@ describe('A2UI in the chat', () => {
     );
     await userEvent.click(screen.getByRole('button', { name: 'Pick me' }));
     await waitFor(() => expect(agentPrompt).toHaveBeenCalled());
-    const parts = vi.mocked(agentPrompt).mock.calls[0]![1];
+    const parts = noFacts(vi.mocked(agentPrompt).mock.calls[0]![1]);
     // The agent gets summary + action JSON from the single a2ui-action part (Rust turns it into text).
     expect(parts).toHaveLength(1);
     const act = parts[0]!;
@@ -300,6 +305,20 @@ describe('skills preamble', () => {
       const sent = JSON.stringify(vi.mocked(agentPrompt).mock.calls[0]![1]);
       expect(sent.includes('a2ui'), id).toBe(id.startsWith('ideas-'));
     }
+  });
+
+  it("states the user's time zone, and the project id in a project chat, for Claude with the plugin too", async () => {
+    await useChat.getState().send('c9', [{ type: 'text', text: 'go' }], { agentId: 'claude', job: { projectId: 'p7', title: 'Jalur Rempah' } });
+    const lead = JSON.stringify(vi.mocked(agentPrompt).mock.calls[0]![1][0]);
+    expect(lead).toMatch(/The user's local time zone is .+ \(UTC[+-]\d\d:\d\d\)\. It was \w+day \d{4}-\d\d-\d\d \d\d:\d\d when this chat started\./);
+    expect(lead).toContain("This video's Tayang id is p7.");
+    expect(lead).not.toContain('createSurface'); // the plugin has the skills
+    vi.mocked(agentPrompt).mockClear();
+    await useChat.getState().send('c10', [{ type: 'text', text: 'go' }], { agentId: 'codex' });
+    const text = JSON.stringify(vi.mocked(agentPrompt).mock.calls[0]![1][0]);
+    expect(text).toContain('## Scheduling videos');
+    expect(text).toContain('time zone is');
+    expect(text).not.toContain('Tayang id is');
   });
 });
 

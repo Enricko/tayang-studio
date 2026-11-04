@@ -658,8 +658,8 @@ pub fn build_prompt(
                 out.push(PromptPart::Text(match project(project_id) {
                     Some(p) => {
                         let head = format!(
-                            "Context: video project \"{}\". Its files are in {}.",
-                            p.title, p.folder
+                            "Context: video project \"{}\". Its Tayang id is {}. Its files are in {}.",
+                            p.title, p.id, p.folder
                         );
                         match brief(Path::new(&p.folder)) {
                             Some(b) if !b.trim().is_empty() => {
@@ -1442,7 +1442,7 @@ mod tests {
             vec![
                 PromptPart::Text("hi".into()),
                 PromptPart::Text(
-                    "Context: video project \"Launch\". Its files are in /w/launch.\nIts AGENTS.md:\n\n# Launch\n- Kind: promo"
+                    "Context: video project \"Launch\". Its Tayang id is p1. Its files are in /w/launch.\nIts AGENTS.md:\n\n# Launch\n- Kind: promo"
                         .into()
                 ),
                 PromptPart::Image { path: PathBuf::from("/w/f.png") },
