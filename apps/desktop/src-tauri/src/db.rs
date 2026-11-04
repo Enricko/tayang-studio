@@ -765,6 +765,14 @@ impl Db {
     /// Creates an autopilot (no id; starts active) or edits one (keeps its status and creation time).
     pub fn save_autopilot(&self, input: &AutopilotInput) -> Result<Autopilot> {
         validate_autopilot(input)?;
+        let style_known: bool = self
+            .conn()
+            .query_row("SELECT 1 FROM styles WHERE id = ?1", [&input.style_id], |_| Ok(true))
+            .optional()?
+            .unwrap_or(false);
+        if !style_known {
+            return Err(DbError(format!("That style isn't in your library: {}", input.style_id)));
+        }
         let existing = match input.id.as_deref() {
             Some(id) => Some(self.get_autopilot(id)?.ok_or_else(|| DbError(format!("No autopilot with id {id}")))?),
             None => None,
@@ -787,7 +795,17 @@ impl Db {
         };
         let v = serde_json::to_value(&a)?;
         let text = |k: &str| v[k].as_str().unwrap_or_default().to_string();
-        self.conn().execute(
+        let conn = self.conn();
+        let tx = conn.unchecked_transaction()?;
+        // An edit may change when videos are due, so its future planned slots are dropped with it;
+        // the engine's slot upkeep plans them again from the new settings on its next pass.
+        if existing.is_some() {
+            tx.execute(
+                "DELETE FROM autopilot_slots WHERE autopilot_id = ?1 AND status = 'planned' AND due_at > ?2",
+                rusqlite::params![a.id, now()],
+            )?;
+        }
+        tx.execute(
             "INSERT INTO autopilots (id, name, niche, language, style_id, agent_id, frequency, length_sec, review, posting, status, created_at, updated_at) \
              VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13) ON CONFLICT(id) DO UPDATE SET name=excluded.name, \
              niche=excluded.niche, language=excluded.language, style_id=excluded.style_id, agent_id=excluded.agent_id, \
@@ -799,17 +817,31 @@ impl Db {
                 text("status"), a.created_at, a.updated_at
             ],
         )?;
+        tx.commit()?;
         Ok(a)
     }
 
     pub fn set_autopilot_status(&self, id: &str, status: AutopilotStatus) -> Result<Autopilot> {
         let text = serde_json::to_value(status)?.as_str().unwrap_or_default().to_string();
-        let n = self.conn().execute(
-            "UPDATE autopilots SET status = ?1, updated_at = ?2 WHERE id = ?3",
-            rusqlite::params![text, now(), id],
-        )?;
-        if n == 0 {
-            return Err(DbError(format!("No autopilot with id {id}")));
+        {
+            let conn = self.conn();
+            let tx = conn.unchecked_transaction()?;
+            let n = tx.execute(
+                "UPDATE autopilots SET status = ?1, updated_at = ?2 WHERE id = ?3",
+                rusqlite::params![text, now(), id],
+            )?;
+            if n == 0 {
+                return Err(DbError(format!("No autopilot with id {id}")));
+            }
+            // Pausing drops the future planned slots. Resuming leaves them empty: the engine's
+            // slot upkeep plans the next 7 days again on its next pass.
+            if status == AutopilotStatus::Paused {
+                tx.execute(
+                    "DELETE FROM autopilot_slots WHERE autopilot_id = ?1 AND status = 'planned' AND due_at > ?2",
+                    rusqlite::params![id, now()],
+                )?;
+            }
+            tx.commit()?;
         }
         self.get_autopilot(id)?.ok_or_else(|| DbError(format!("No autopilot with id {id}")))
     }
@@ -818,11 +850,13 @@ impl Db {
     /// Done slots and a slot being made stay; the videos themselves are never touched.
     pub fn delete_autopilot(&self, id: &str) -> Result<()> {
         let conn = self.conn();
-        conn.execute(
+        let tx = conn.unchecked_transaction()?;
+        tx.execute(
             "DELETE FROM autopilot_slots WHERE autopilot_id = ?1 AND status IN ('planned', 'failed', 'skipped')",
             [id],
         )?;
-        conn.execute("DELETE FROM autopilots WHERE id = ?1", [id])?;
+        tx.execute("DELETE FROM autopilots WHERE id = ?1", [id])?;
+        tx.commit()?;
         Ok(())
     }
 
@@ -1278,6 +1312,20 @@ mod tests {
         assert_eq!(jobs.iter().find(|j| j.id == "d").unwrap().status, JobStatus::Done);
     }
 
+    /// A database whose library holds the styles `s1` and `s2`.
+    fn adb() -> Db {
+        let db = db();
+        for id in ["s1", "s2"] {
+            db.conn()
+                .execute(
+                    "INSERT INTO styles (id, name, source, notes, prompt, created_at) VALUES (?1, ?1, 'mine', '{}', '', 'x')",
+                    [id],
+                )
+                .unwrap();
+        }
+        db
+    }
+
     fn input(name: &str) -> AutopilotInput {
         AutopilotInput {
             id: None,
@@ -1295,7 +1343,7 @@ mod tests {
 
     #[test]
     fn autopilot_create_edit_status_and_round_trip() {
-        let db = db();
+        let db = adb();
         let a = db.save_autopilot(&input("  Kopi  ")).unwrap();
         assert_eq!((a.name.as_str(), a.status, a.review), ("Kopi", AutopilotStatus::Active, true));
         assert_eq!(db.get_autopilot(&a.id).unwrap().unwrap(), a);
@@ -1319,7 +1367,7 @@ mod tests {
 
     #[test]
     fn autopilot_validation() {
-        let db = db();
+        let db = adb();
         let reject = |f: &dyn Fn(&mut AutopilotInput)| {
             let mut i = input("A");
             f(&mut i);
@@ -1351,7 +1399,7 @@ mod tests {
 
     #[test]
     fn slots_are_unique_normalised_listed_and_patched() {
-        let db = db();
+        let db = adb();
         let a = db.save_autopilot(&input("A")).unwrap();
         assert!(db.upsert_slot("nope", "2026-11-05T09:00:00Z").is_err());
         assert!(db.upsert_slot(&a.id, "soon").is_err());
@@ -1380,7 +1428,7 @@ mod tests {
 
     #[test]
     fn deleting_an_autopilot_drops_unfinished_slots_and_keeps_videos_and_other_autopilots() {
-        let db = db();
+        let db = adb();
         db.insert_project(&project("p", "2026-01-01T00:00:00Z")).unwrap();
         let a = db.save_autopilot(&input("A")).unwrap();
         let b = db.save_autopilot(&input("B")).unwrap();
@@ -1400,5 +1448,72 @@ mod tests {
         let kept: Vec<_> = left.iter().map(|s| (s.autopilot_id.as_str(), s.status)).collect();
         assert_eq!(kept, vec![(b.id.as_str(), SlotStatus::Planned), (a.id.as_str(), SlotStatus::Done)]);
         assert_eq!(db.list_projects().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn an_unknown_style_is_refused_and_a_known_one_saves() {
+        let db = adb();
+        let mut i = input("A");
+        i.style_id = "gone".into();
+        assert!(db.save_autopilot(&i).unwrap_err().0.contains("gone"));
+        i.style_id = "s2".into();
+        assert!(db.save_autopilot(&i).is_ok());
+    }
+
+    /// Slots at `days` days from now with the given status, for autopilot `id`.
+    fn slots_at(db: &Db, id: &str, days: &[(i64, &str)]) {
+        for (d, status) in days {
+            let at = (chrono::Utc::now() + chrono::Duration::days(*d)).to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+            let s = db.upsert_slot(id, &at).unwrap();
+            db.update_slot(&s.id, json!({"status": status})).unwrap();
+        }
+    }
+
+    fn statuses(db: &Db, id: &str) -> Vec<(String, SlotStatus)> {
+        let from = (chrono::Utc::now() - chrono::Duration::days(30)).to_rfc3339();
+        let to = (chrono::Utc::now() + chrono::Duration::days(30)).to_rfc3339();
+        db.list_slots(&from, &to).unwrap().into_iter().filter(|s| s.autopilot_id == id).map(|s| (s.due_at, s.status)).collect()
+    }
+
+    #[test]
+    fn editing_drops_future_planned_slots_only() {
+        let db = adb();
+        let a = db.save_autopilot(&input("A")).unwrap();
+        let b = db.save_autopilot(&input("B")).unwrap();
+        slots_at(&db, &a.id, &[(-2, "planned"), (1, "planned"), (2, "making"), (3, "failed"), (4, "planned")]);
+        slots_at(&db, &b.id, &[(1, "planned")]);
+        let mut edit = input("A");
+        edit.id = Some(a.id.clone());
+        edit.frequency = AutopilotFrequency::Daily { times: vec!["09:00".into()] };
+        db.save_autopilot(&edit).unwrap();
+        let left: Vec<_> = statuses(&db, &a.id).into_iter().map(|x| x.1).collect();
+        assert_eq!(left, vec![SlotStatus::Planned, SlotStatus::Making, SlotStatus::Failed]);
+        assert_eq!(statuses(&db, &b.id).len(), 1);
+    }
+
+    #[test]
+    fn creating_keeps_slots_and_a_failed_edit_keeps_them_too() {
+        let db = adb();
+        let a = db.save_autopilot(&input("A")).unwrap();
+        slots_at(&db, &a.id, &[(1, "planned")]);
+        let mut bad = input("A");
+        bad.id = Some(a.id.clone());
+        bad.length_sec = 5;
+        assert!(db.save_autopilot(&bad).is_err());
+        assert_eq!(statuses(&db, &a.id).len(), 1);
+    }
+
+    #[test]
+    fn pausing_drops_future_planned_slots_and_resuming_leaves_them_empty() {
+        let db = adb();
+        let a = db.save_autopilot(&input("A")).unwrap();
+        slots_at(&db, &a.id, &[(-1, "planned"), (1, "planned"), (2, "making"), (3, "planned")]);
+        db.set_autopilot_status(&a.id, AutopilotStatus::Paused).unwrap();
+        let left: Vec<_> = statuses(&db, &a.id).into_iter().map(|x| x.1).collect();
+        assert_eq!(left, vec![SlotStatus::Planned, SlotStatus::Making]);
+        db.set_autopilot_status(&a.id, AutopilotStatus::Active).unwrap();
+        assert_eq!(statuses(&db, &a.id).len(), 2);
+        // Setting an unknown autopilot fails without touching anything.
+        assert!(db.set_autopilot_status("nope", AutopilotStatus::Paused).is_err());
     }
 }

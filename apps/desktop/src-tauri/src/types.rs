@@ -662,6 +662,12 @@ mod tests {
             json!({"id": "i", "autopilotId": "a", "dueAt": "2026-11-05T09:00:00Z", "status": "making", "projectId": null, "error": null})
         );
         assert!(serde_json::from_value::<AutopilotInput>(json!({"posting": "automatic"})).is_err());
+        // An agent id Tayang doesn't know never gets past parsing.
+        let bad = json!({
+            "name": "K", "niche": "C", "language": "id", "styleId": "s", "agentId": "nonsense",
+            "frequency": {"kind": "daily", "times": ["09:00"]}, "lengthSec": 30, "review": true, "posting": "manual"
+        });
+        assert!(serde_json::from_value::<AutopilotInput>(bad).is_err());
     }
 }
 
