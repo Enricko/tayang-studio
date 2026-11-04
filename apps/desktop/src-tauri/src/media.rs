@@ -196,7 +196,7 @@ pub fn recent_images(folder: &Path, since: chrono::DateTime<chrono::Utc>, limit:
             }
         }
     }
-    found.sort_by(|a, b| b.0.cmp(&a.0));
+    found.sort_by_key(|f| std::cmp::Reverse(f.0));
     found
         .into_iter()
         .take(limit.min(IMAGES_MAX_LIMIT))
