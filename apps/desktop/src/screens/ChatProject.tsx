@@ -80,7 +80,14 @@ export function ChatProject({ chatId }: { chatId: string }) {
             </MessageList>
           </div>
           <div className="px-6 pb-6 pt-2">
-            <Composer chatId={chatId} onSend={send} disabled={streaming} quickChips sees={project?.title} />
+            <Composer
+              chatId={chatId}
+              onSend={send}
+              disabled={streaming}
+              onStop={() => void useChat.getState().cancel(chatId)}
+              quickChips
+              sees={project?.title}
+            />
           </div>
         </section>
         <section aria-label="Preview" className="w-[360px] shrink-0 border-l border-border">

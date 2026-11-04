@@ -1,6 +1,14 @@
 import { create } from 'zustand';
 import type { AgentId, AgentUpdate, ChatMessage, MessagePart, PermissionRequest } from '@tayang/shared';
-import { addMessage, agentRespondPermission, agentPrompt, agentStart, agentStop, listMessages } from '@/lib/ipc';
+import {
+  addMessage,
+  agentCancel,
+  agentRespondPermission,
+  agentPrompt,
+  agentStart,
+  agentStop,
+  listMessages,
+} from '@/lib/ipc';
 import { onAgentUpdate, onPermission } from '@/lib/events';
 import { agentErrorText } from '@/lib/agents';
 import { useApp } from '@/state/app';
@@ -25,6 +33,8 @@ interface ChatState {
   /** Resolves to an error message when the agent could not be reached, otherwise null. */
   send(chatId: string, parts: MessagePart[], opts?: SendOpts): Promise<string | null>;
   respondPermission(chatId: string, optionId: string | null): Promise<void>;
+  /** Stops the running turn; it ends with done (cancelled). */
+  cancel(chatId: string): Promise<void>;
   /** Ends the chat's agent process; the next send starts a new one. */
   stop(chatId: string): Promise<void>;
   attach(chatId: string, part: MessagePart): void;
@@ -186,6 +196,10 @@ export const useChat = create<ChatState>((set, get) => {
       if (!req) return;
       set((s) => ({ permissions: { ...s.permissions, [chatId]: rest } }));
       await agentRespondPermission(req.requestId, optionId);
+    },
+
+    async cancel(chatId) {
+      await agentCancel(chatId).catch(() => {});
     },
 
     async stop(chatId) {

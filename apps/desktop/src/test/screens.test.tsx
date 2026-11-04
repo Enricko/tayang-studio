@@ -1,7 +1,7 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AgentInfo, AgentUpdate, Job, Project, Settings } from '@tayang/shared';
+import type { AgentInfo, AgentUpdate, Job, PermissionRequest, Project, Settings } from '@tayang/shared';
 
 vi.mock('@/lib/ipc', () => ({
   listProjects: vi.fn(),
@@ -30,12 +30,16 @@ vi.mock('@/lib/ipc', () => ({
   addMessage: vi.fn(),
 }));
 const updateHandlers: ((e: { chatId: string; update: AgentUpdate }) => void)[] = [];
+const permHandlers: ((r: PermissionRequest) => void)[] = [];
 vi.mock('@/lib/events', () => ({
   onAgentUpdate: vi.fn(async (f: (e: { chatId: string; update: AgentUpdate }) => void) => {
     updateHandlers.push(f);
     return () => {};
   }),
-  onPermission: vi.fn(async () => () => {}),
+  onPermission: vi.fn(async (f: (r: PermissionRequest) => void) => {
+    permHandlers.push(f);
+    return () => {};
+  }),
 }));
 vi.mock('@tauri-apps/plugin-opener', () => ({ openUrl: vi.fn() }));
 
@@ -47,6 +51,7 @@ import { Style } from '@/screens/Style';
 import { Videos } from '@/screens/Videos';
 import { useApp } from '@/state/app';
 import { useStudy } from '@/state/study';
+import { useChat } from '@/state/chat';
 
 const settings: Settings = {
   workingFolder: '/w/Tayang',
@@ -160,6 +165,22 @@ describe('Style', () => {
   });
 });
 
+describe('Style study cancel', () => {
+  it('cancels a running study and marks its job failed "Cancelled"', async () => {
+    vi.mocked(ipc.studyDir).mockResolvedValue('/w/s');
+    vi.mocked(ipc.agentCancel).mockResolvedValue();
+    render(<Style />);
+    await userEvent.type(screen.getByLabelText('Video link'), 'https://youtu.be/abc');
+    await userEvent.click(screen.getByRole('button', { name: 'Study video' }));
+    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
+    const chatId = vi.mocked(ipc.agentPrompt).mock.calls[0]![0];
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(ipc.agentCancel).toHaveBeenCalledWith(chatId);
+    await waitFor(() => expect(vi.mocked(ipc.upsertJob).mock.calls.at(-1)![0]).toMatchObject({ status: 'failed', note: 'Cancelled' }));
+    expect(ipc.agentStop).toHaveBeenCalledWith(chatId);
+  });
+});
+
 describe('Agents', () => {
   it('puts a failed job in Needs you with Fix it', async () => {
     const failed: Job = {
@@ -184,6 +205,43 @@ describe('Agents', () => {
 });
 
 describe('Calendar', () => {
+  it('asks for ideas in a scratch chat, shows its permission card and stops the agent after', async () => {
+    useChat.getState().reset();
+    vi.mocked(ipc.agentStart).mockResolvedValue();
+    vi.mocked(ipc.agentPrompt).mockResolvedValue();
+    vi.mocked(ipc.agentRespondPermission).mockResolvedValue();
+    render(<Calendar today={new Date(2026, 10, 4)} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Get ideas' }));
+    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
+    expect(ipc.createChat).not.toHaveBeenCalled();
+    expect(ipc.agentStart).toHaveBeenCalledWith('ideas-2026-11-02', 'claude');
+    await act(async () =>
+      permHandlers.forEach((h) =>
+        h({
+          chatId: 'ideas-2026-11-02',
+          requestId: 'r1',
+          title: 'Read trends',
+          commands: ['curl trends'],
+          options: [{ id: 'once', label: 'Allow', kind: 'allow-once' }],
+        }),
+      ),
+    );
+    await userEvent.click(await screen.findByRole('button', { name: 'Allow' }));
+    expect(ipc.agentRespondPermission).toHaveBeenCalledWith('r1', 'once');
+    await act(async () => {
+      updateHandlers.forEach((h) =>
+        h({
+          chatId: 'ideas-2026-11-02',
+          update: { kind: 'text', text: '```json\n[{"title":"Ide","kind":"promo","lengthSec":20}]\n```' },
+        }),
+      );
+      updateHandlers.forEach((h) => h({ chatId: 'ideas-2026-11-02', update: { kind: 'done', stopReason: 'end_turn' } }));
+    });
+    expect(await screen.findByText('Ide')).toBeInTheDocument();
+    await waitFor(() => expect(ipc.agentStop).toHaveBeenCalledWith('ideas-2026-11-02'));
+    expect(ipc.addMessage).not.toHaveBeenCalled();
+  });
+
   it('renders 42 cells starting on Monday Oct 26 for November 2026', () => {
     render(<Calendar today={new Date(2026, 10, 4)} />);
     const cells = screen.getAllByTestId('cal-cell');

@@ -211,6 +211,7 @@ export function ChatNew() {
             chatId={chatId}
             onSend={onSend}
             disabled={streaming}
+            onStop={chatId ? () => void useChat.getState().cancel(chatId) : undefined}
             projects={projects}
             mention={mention}
             onMention={setMention}

@@ -103,6 +103,9 @@ function StudyBox() {
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-[13px] font-medium">Studying a video</span>
             <span className="truncate font-mono text-xs text-text-3">{study.url.replace(/^https?:\/\//, '')}</span>
+            <Button variant="ghost" className="ml-auto h-7 px-2 text-xs" onClick={() => void study.cancel()}>
+              Cancel
+            </Button>
           </div>
           <div className="flex flex-wrap gap-4 text-xs">
             {steps.map((s, i) => (

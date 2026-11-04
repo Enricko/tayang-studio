@@ -5,10 +5,11 @@ import type { MessagePart, Project, VideoKind } from '@tayang/shared';
 import { buildTopicIdeasPrompt, parseTopicIdeas } from '@tayang/skills';
 import { Button } from '@/components/Button';
 import { Oyen } from '@/components/Oyen';
-import { createChat, listProjects } from '@/lib/ipc';
+import { PermissionCard } from '@/components/PermissionCard';
+import { listProjects } from '@/lib/ipc';
 import { cn } from '@/lib/utils';
 import { useApp } from '@/state/app';
-import { useChat } from '@/state/chat';
+import { headPermission, useChat } from '@/state/chat';
 
 const KINDS: VideoKind[] = ['explainer', 'promo', 'quote', 'news', 'tutorial', 'data', 'event'];
 const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -27,9 +28,15 @@ export function monthCells(year: number, month: number): Date[] {
   return Array.from({ length: 42 }, (_, i) => new Date(year, month, 1 - offset + i));
 }
 
+function weekStart(today: Date) {
+  return dateKey(new Date(today.getFullYear(), today.getMonth(), today.getDate() - ((today.getDay() + 6) % 7)));
+}
+
+/** The week's ideas run in a scratch agent chat (no chat row), like a new chat's folder. */
+export const ideasChatId = (today: Date) => `ideas-${weekStart(today)}`;
+
 function weekKey(today: Date) {
-  const mon = new Date(today.getFullYear(), today.getMonth(), today.getDate() - ((today.getDay() + 6) % 7));
-  return `tayang.ideas.${dateKey(mon)}`;
+  return `tayang.ideas.${weekStart(today)}`;
 }
 
 function readCache(key: string): Idea[] {
@@ -60,6 +67,7 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
 
   const messages = useChat((s) => (chatId ? s.messages[chatId] : undefined)) ?? NO_MESSAGES;
   const streaming = useChat((s) => (chatId ? !!s.streaming[chatId] : false));
+  const permission = useChat((s) => headPermission(s, chatId));
 
   useEffect(() => {
     let alive = true;
@@ -105,11 +113,8 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
     setAsking(true);
     setError(null);
     try {
-      let id = chatId;
-      if (!id) {
-        id = (await createChat(null, settings.defaultAgent, 'Ideas for this week')).id;
-        setChatId(id);
-      }
+      const id = ideasChatId(today);
+      setChatId(id);
       pending.current = true;
       const err = await useChat.getState().send(id, [{ type: 'text', text: 'Suggest video topics for this week' }], {
         promptParts: [{ type: 'text', text: buildTopicIdeasPrompt(KINDS, settings.language) }],
@@ -247,6 +252,14 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
               </Button>
             </div>
           ))}
+          {permission && chatId && (
+            <PermissionCard
+              request={permission}
+              agentId={settings?.defaultAgent ?? 'claude'}
+              allowLabel="Allow"
+              onRespond={(o) => void useChat.getState().respondPermission(chatId, o)}
+            />
+          )}
           {error && (
             <p role="alert" className="m-0 text-xs text-orange-light">
               {error}

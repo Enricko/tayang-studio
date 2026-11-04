@@ -285,6 +285,19 @@ describe('ChatProject', () => {
     expect(useChat.getState().permissions['c1']).toEqual([]);
   });
 
+  it('shows Stop while the agent works and cancels the turn', async () => {
+    const user = userEvent.setup();
+    vi.mocked(ipc.agentCancel).mockResolvedValue();
+    render(<ChatProject chatId="c1" />);
+    await user.type(await screen.findByRole('textbox', { name: 'Message' }), 'faster');
+    expect(screen.queryByRole('button', { name: 'Stop' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+    await user.click(await screen.findByRole('button', { name: 'Stop' }));
+    expect(ipc.agentCancel).toHaveBeenCalledWith('c1');
+    await emit('c1', { kind: 'done', stopReason: 'cancelled' });
+    expect(await screen.findByRole('button', { name: 'Send' })).toBeInTheDocument();
+  });
+
   it('attach and detach feed the next send, then clear', async () => {
     const user = userEvent.setup();
     render(<ChatProject chatId="c1" />);

@@ -33,6 +33,8 @@ interface StudyState {
   start(url: string, agent: AgentId): Promise<void>;
   /** Allow once only. Null cancels the study. */
   respond(optionId: string | null): Promise<void>;
+  /** Stop a running study; its job ends failed "Cancelled". */
+  cancel(): Promise<void>;
   dismiss(): void;
 }
 
@@ -165,6 +167,13 @@ export const useStudy = create<StudyState>((set, get) => {
         await agentCancel(studyChatId(studyId)).catch(() => {});
         await fail('You cancelled the study');
       }
+    },
+
+    async cancel() {
+      const { phase, studyId } = get();
+      if (phase !== 'running' || !studyId) return;
+      await agentCancel(studyChatId(studyId)).catch(() => {});
+      await fail('Cancelled');
     },
 
     dismiss: () => set({ phase: 'idle', error: null, studyId: null, url: '' }),

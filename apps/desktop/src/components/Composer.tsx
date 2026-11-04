@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowUp, ChevronDown, X } from 'lucide-react';
+import { ArrowUp, ChevronDown, Square, X } from 'lucide-react';
 import type { MessagePart, Project } from '@tayang/shared';
 import { AgentLogo } from '@/components/AgentLogo';
 import { FrameChip } from '@/components/MessageList';
@@ -31,6 +31,7 @@ export function Composer({
   sees,
   placeholder = 'Say what to change. Bahasa Indonesia is fine',
   mentionSignal = 0,
+  onStop,
 }: {
   chatId: string | null;
   /** Resolve to false when sending failed: the draft is then kept. */
@@ -46,6 +47,8 @@ export function Composer({
   placeholder?: string;
   /** Bump to open the @ menu from outside. */
   mentionSignal?: number;
+  /** While the agent is working (`disabled`), show a Stop button that calls this. */
+  onStop?(): void;
 }) {
   const agent = useApp((s) => s.settings?.defaultAgent ?? 'claude');
   const attachments = useChat((s) => (chatId ? s.attachments[chatId] : undefined)) ?? NONE;
@@ -213,15 +216,26 @@ export function Composer({
                 </button>
               )}
               {sees && <span className="truncate text-xs text-text-3">This chat sees {sees}</span>}
-              <button
-                type="button"
-                aria-label="Send"
-                disabled={!canSend}
-                onClick={() => void send()}
-                className="ml-auto inline-flex size-8 cursor-pointer items-center justify-center rounded-md border-none bg-primary text-primary-foreground transition-colors hover:bg-accent-hover disabled:cursor-default disabled:opacity-50"
-              >
-                <ArrowUp size={16} strokeWidth={2} aria-hidden="true" />
-              </button>
+              {disabled && onStop ? (
+                <button
+                  type="button"
+                  aria-label="Stop"
+                  onClick={onStop}
+                  className="ml-auto inline-flex size-8 cursor-pointer items-center justify-center rounded-md border border-hairline bg-raised text-foreground transition-colors hover:bg-[#333333]"
+                >
+                  <Square size={12} strokeWidth={1.5} fill="currentColor" aria-hidden="true" />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  aria-label="Send"
+                  disabled={!canSend}
+                  onClick={() => void send()}
+                  className="ml-auto inline-flex size-8 cursor-pointer items-center justify-center rounded-md border-none bg-primary text-primary-foreground transition-colors hover:bg-accent-hover disabled:cursor-default disabled:opacity-50"
+                >
+                  <ArrowUp size={16} strokeWidth={2} aria-hidden="true" />
+                </button>
+              )}
             </div>
           </div>
         </PopoverAnchor>
