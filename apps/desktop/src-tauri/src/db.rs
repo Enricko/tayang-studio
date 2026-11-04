@@ -514,6 +514,22 @@ impl Db {
         }
     }
 
+    /// Every chat, project or not, newest activity first; at most `limit`. Chats of a deleted
+    /// project are left out.
+    pub fn list_recent_chats(&self, limit: Option<u32>) -> Result<Vec<RecentChat>> {
+        let limit = limit.map_or(-1, i64::from);
+        query_as(
+            &self.conn(),
+            "SELECT c.id, c.project_id AS projectId, c.agent_id AS agentId, c.title, \
+             c.created_at AS createdAt, p.title AS projectTitle, \
+             COALESCE((SELECT MAX(m.created_at) FROM messages m WHERE m.chat_id = c.id), c.created_at) AS activeAt \
+             FROM chats c LEFT JOIN projects p ON p.id = c.project_id \
+             WHERE c.project_id IS NULL OR p.id IS NOT NULL \
+             ORDER BY activeAt DESC, c.rowid DESC LIMIT ?1",
+            &[&limit],
+        )
+    }
+
     /// Points a chat at another agent. `None` when the chat doesn't exist.
     pub fn set_chat_agent(&self, chat_id: &str, agent: AgentId) -> Result<Option<Chat>> {
         let v = serde_json::to_value(agent)?;
@@ -1222,6 +1238,42 @@ mod tests {
         assert_eq!(updated.title, "Fix intro");
         assert_eq!(db.get_chat(&chat.id).unwrap().unwrap().agent_id, AgentId::Codex);
         assert_eq!(db.set_chat_agent("nope", AgentId::Gemini).unwrap(), None);
+    }
+
+    #[test]
+    fn recent_chats_newest_activity_first_with_project_titles() {
+        let db = db();
+        db.insert_project(&project("a", "2026-01-01T00:00:00Z")).unwrap();
+        let video = db.create_chat(Some("a"), AgentId::Claude, "Video chat").unwrap();
+        let loose = db.create_chat(None, AgentId::Codex, "Loose").unwrap();
+        let quiet = db.create_chat(None, AgentId::Claude, "Quiet").unwrap();
+        // A chat of a deleted project has nowhere to go: it is left out.
+        let orphan = db.create_chat(Some("gone"), AgentId::Claude, "Orphan").unwrap();
+        let conn = db.conn();
+        conn.execute("UPDATE chats SET created_at = '2026-01-01T00:00:00Z'", []).unwrap();
+        for (chat, at) in [(&video, "2026-01-02T00:00:00Z"), (&loose, "2026-01-03T00:00:00Z"), (&orphan, "2026-01-09T00:00:00Z")] {
+            conn.execute(
+                "INSERT INTO messages (id, chat_id, role, parts, created_at) VALUES (?1, ?2, 'user', '[]', ?3)",
+                rusqlite::params![format!("m-{}", chat.id), chat.id, at],
+            )
+            .unwrap();
+        }
+        drop(conn);
+
+        let recent = db.list_recent_chats(None).unwrap();
+        let ids: Vec<&str> = recent.iter().map(|c| c.id.as_str()).collect();
+        assert_eq!(ids, vec![loose.id.as_str(), video.id.as_str(), quiet.id.as_str()]);
+        assert_eq!(recent[0].project_title, None);
+        assert_eq!(recent[0].active_at, "2026-01-03T00:00:00Z");
+        assert_eq!(recent[1].project_title.as_deref(), Some("Title a"));
+        assert_eq!(recent[1].project_id.as_deref(), Some("a"));
+        // No messages yet: the chat counts from when it was made.
+        assert_eq!(recent[2].active_at, "2026-01-01T00:00:00Z");
+        assert_eq!(recent[2].title, "Quiet");
+
+        let top = db.list_recent_chats(Some(1)).unwrap();
+        assert_eq!(top.len(), 1);
+        assert_eq!(top[0].id, loose.id);
     }
 
     #[test]

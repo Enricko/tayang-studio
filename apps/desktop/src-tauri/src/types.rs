@@ -181,6 +181,20 @@ pub struct Chat {
     pub created_at: String,
 }
 
+/// A chat in the sidebar's Recent list: its project's title, and when anything last happened in it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecentChat {
+    pub id: String,
+    pub project_id: Option<String>,
+    pub agent_id: AgentId,
+    pub title: String,
+    pub created_at: String,
+    pub project_title: Option<String>,
+    /// The newest message's time, or the chat's own when it has none (RFC 3339).
+    pub active_at: String,
+}
+
 /// Relative position, 0-1.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Mark {

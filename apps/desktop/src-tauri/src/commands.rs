@@ -453,6 +453,12 @@ pub fn list_chats(state: State<'_, AppState>, project_id: Option<String>) -> Cmd
     state.db.list_chats(project_id.as_deref()).map_err(err)
 }
 
+/// The sidebar's Recent list: chats with and without a project, newest activity first.
+#[tauri::command]
+pub fn list_recent_chats(state: State<'_, AppState>, limit: Option<u32>) -> CmdResult<Vec<RecentChat>> {
+    state.db.list_recent_chats(limit).map_err(err)
+}
+
 /// One chat by id, whether or not it belongs to a project.
 pub fn lookup_chat(db: &Db, chat_id: &str) -> CmdResult<Option<Chat>> {
     db.get_chat(chat_id).map_err(err)

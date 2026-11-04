@@ -17,6 +17,20 @@ describe('ipc', () => {
     expect(calls).toEqual([{ cmd: 'create_project', args: { input, brief: 'brief text' } }]);
   });
 
+  it('recent chats ask Rust for a limit, or for all of them', async () => {
+    const calls: { cmd: string; args: unknown }[] = [];
+    mockIPC((cmd, args) => {
+      calls.push({ cmd, args });
+      return [];
+    });
+    await ipc.listRecentChats(10);
+    await ipc.listRecentChats();
+    expect(calls).toEqual([
+      { cmd: 'list_recent_chats', args: { limit: 10 } },
+      { cmd: 'list_recent_chats', args: { limit: null } },
+    ]);
+  });
+
   it('schedule, posted and approve call the Rust commands with camelCase args', async () => {
     const calls: { cmd: string; args: unknown }[] = [];
     mockIPC((cmd, args) => {

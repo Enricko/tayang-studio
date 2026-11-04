@@ -79,6 +79,13 @@ export interface Chat {
   createdAt: string;
 }
 
+/** A chat in the sidebar's Recent list. */
+export interface RecentChat extends Chat {
+  projectTitle: string | null;
+  /** The newest message's time, or the chat's own when it has none (RFC 3339). */
+  activeAt: string;
+}
+
 /** Relative position, 0-1. */
 export interface Mark {
   x: number;
