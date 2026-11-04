@@ -189,6 +189,16 @@ pub fn create_chat(
         .map_err(err)
 }
 
+/// Switches the chat to another agent. The agent id is validated by its enum on the way in.
+#[tauri::command]
+pub fn update_chat_agent(state: State<'_, AppState>, chat_id: String, agent_id: AgentId) -> CmdResult<Chat> {
+    state
+        .db
+        .set_chat_agent(&chat_id, agent_id)
+        .map_err(err)?
+        .ok_or_else(|| format!("No chat {chat_id}"))
+}
+
 #[tauri::command]
 pub fn list_messages(state: State<'_, AppState>, chat_id: String) -> CmdResult<Vec<ChatMessage>> {
     state.db.list_messages(&chat_id).map_err(err)
