@@ -80,3 +80,7 @@ export const mediaRender = (projectId: string) => invoke<string>('media_render',
 
 /** URL the webview can load for a file on disk. */
 export const assetUrl = (path: string): string => convertFileSrc(path);
+
+// ---- attachments ----
+export const attachFile = (chatId: string, sourcePath: string) =>
+  invoke<Extract<MessagePart, { type: 'file' }>>('attach_file', { chatId, sourcePath });

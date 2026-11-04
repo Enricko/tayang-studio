@@ -26,8 +26,10 @@ vi.mock('@/lib/ipc', () => ({
   mediaRender: vi.fn(),
   upsertJob: vi.fn().mockResolvedValue(undefined),
   listJobs: vi.fn().mockResolvedValue([]),
+  attachFile: vi.fn(),
   assetUrl: (p: string) => p,
 }));
+vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn() }));
 
 type UpdateCb = (e: { chatId: string; update: AgentUpdate }) => void;
 type PermCb = (r: PermissionRequest) => void;
@@ -43,6 +45,7 @@ vi.mock('@/lib/events', () => ({
   }),
 }));
 
+import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import * as ipc from '@/lib/ipc';
 import { ChatNew } from '@/screens/ChatNew';
 import { ChatProject } from '@/screens/ChatProject';
@@ -516,3 +519,78 @@ describe('chat failure handling', () => {
   });
 });
 
+
+describe('Composer attachments', () => {
+  const doc = { type: 'file', path: '/tmp/Tayang/p1/attachments/brief.pdf', name: 'brief.pdf', mime: 'application/pdf', size: 2048 } as const;
+  const img = { type: 'file', path: '/tmp/Tayang/p1/attachments/shot.png', name: 'shot.png', mime: 'image/png', size: 10 } as const;
+
+  it('opens the picker, copies the files and shows removable chips', async () => {
+    const user = userEvent.setup();
+    vi.mocked(openDialog).mockResolvedValue(['/Users/me/brief.pdf', '/Users/me/shot.png']);
+    vi.mocked(ipc.attachFile).mockResolvedValueOnce(doc).mockResolvedValueOnce(img);
+    render(<ChatProject chatId="c1" />);
+    await user.click(await screen.findByRole('button', { name: 'Attach files' }));
+    expect(openDialog).toHaveBeenCalledWith(expect.objectContaining({ multiple: true }));
+    expect(await screen.findByText('brief.pdf')).toBeInTheDocument();
+    expect(ipc.attachFile).toHaveBeenCalledWith('c1', '/Users/me/brief.pdf');
+    expect(ipc.attachFile).toHaveBeenCalledWith('c1', '/Users/me/shot.png');
+    expect(screen.getByText('2.0 KB')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'shot.png' })).toHaveAttribute('src', img.path);
+    await user.click(screen.getAllByRole('button', { name: 'Remove file' })[0]!);
+    expect(screen.queryByText('brief.pdf')).not.toBeInTheDocument();
+    expect(screen.getByText('shot.png')).toBeInTheDocument();
+  });
+
+  it('shows the error when a file cannot be attached', async () => {
+    const user = userEvent.setup();
+    vi.mocked(openDialog).mockResolvedValue('/Users/me/big.mov');
+    vi.mocked(ipc.attachFile).mockRejectedValue('That file is larger than 50 MB');
+    render(<ChatProject chatId="c1" />);
+    await user.click(await screen.findByRole('button', { name: 'Attach files' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('That file is larger than 50 MB');
+  });
+
+  it('sends file parts to the agent with the message', async () => {
+    const user = userEvent.setup();
+    vi.mocked(openDialog).mockResolvedValue(['/Users/me/brief.pdf']);
+    vi.mocked(ipc.attachFile).mockResolvedValue(doc);
+    render(<ChatProject chatId="c1" />);
+    await user.click(await screen.findByRole('button', { name: 'Attach files' }));
+    await screen.findByText('brief.pdf');
+    await user.type(screen.getByRole('textbox', { name: 'Message' }), 'use this');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
+    expect(vi.mocked(ipc.agentPrompt).mock.calls[0]![1]).toEqual([doc, { type: 'text', text: 'use this' }]);
+    expect(screen.queryByRole('button', { name: 'Remove file' })).not.toBeInTheDocument();
+  });
+
+  it('can send attachments without any text', async () => {
+    const user = userEvent.setup();
+    vi.mocked(openDialog).mockResolvedValue(['/Users/me/brief.pdf']);
+    vi.mocked(ipc.attachFile).mockResolvedValue(doc);
+    render(<ChatProject chatId="c1" />);
+    await user.click(await screen.findByRole('button', { name: 'Attach files' }));
+    await screen.findByText('brief.pdf');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
+  });
+
+  it('creates the chat first when attaching in a new chat', async () => {
+    const user = userEvent.setup();
+    vi.mocked(openDialog).mockResolvedValue(['/Users/me/brief.pdf']);
+    vi.mocked(ipc.attachFile).mockResolvedValue(doc);
+    render(<ChatNew />);
+    await user.click(await screen.findByRole('button', { name: 'Attach files' }));
+    expect(await screen.findByText('brief.pdf')).toBeInTheDocument();
+    expect(ipc.attachFile).toHaveBeenCalledWith('c-new', '/Users/me/brief.pdf');
+  });
+
+  it('is flat: no inner box around the textarea', async () => {
+    render(<ChatProject chatId="c1" />);
+    const box = await screen.findByRole('textbox', { name: 'Message' });
+    expect(box.className).toContain('bg-transparent');
+    expect(box.className).toContain('border-0');
+    expect(box.className).toContain('focus-visible:ring-0');
+    expect(box.className).toContain('focus-visible:border-transparent');
+  });
+});
