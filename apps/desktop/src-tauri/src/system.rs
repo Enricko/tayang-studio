@@ -13,6 +13,66 @@ use std::time::{Duration, Instant};
 
 const EXEC_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// Newest `~/.nvm/versions/node/*/bin` that exists.
+fn newest_nvm_bin(home: &Path) -> Option<PathBuf> {
+    std::fs::read_dir(home.join(".nvm/versions/node"))
+        .ok()?
+        .filter_map(|e| e.ok())
+        .map(|e| e.path().join("bin"))
+        .filter(|p| p.is_dir())
+        .filter_map(|p| Some((p.parent()?.metadata().ok()?.modified().ok()?, p)))
+        .max()
+        .map(|(_, p)| p)
+}
+
+/// Pure core of `augmented_path`: node's directory first, then the usual install spots,
+/// then the existing PATH. Duplicates and empty entries are dropped, order is kept.
+pub fn build_path(
+    home: Option<&Path>,
+    existing: Option<&std::ffi::OsStr>,
+    node_dir: Option<&Path>,
+    appdata: Option<&Path>,
+) -> std::ffi::OsString {
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    dirs.extend(node_dir.map(Path::to_path_buf));
+    if cfg!(unix) {
+        dirs.push(PathBuf::from("/opt/homebrew/bin"));
+        dirs.push(PathBuf::from("/usr/local/bin"));
+        if let Some(h) = home {
+            dirs.push(h.join(".local/bin"));
+            dirs.push(h.join(".volta/bin"));
+            let fnm = h.join(".fnm/aliases/default/bin");
+            if fnm.is_dir() {
+                dirs.push(fnm);
+            }
+            dirs.extend(newest_nvm_bin(h));
+        }
+    }
+    if cfg!(windows) {
+        dirs.extend(appdata.map(|a| a.join("npm")));
+    }
+    if let Some(p) = existing {
+        dirs.extend(std::env::split_paths(p));
+    }
+    let mut seen = std::collections::HashSet::new();
+    dirs.retain(|d| !d.as_os_str().is_empty() && seen.insert(d.clone()));
+    std::env::join_paths(dirs).unwrap_or_else(|_| existing.map(Into::into).unwrap_or_default())
+}
+
+/// PATH for processes we spawn. A GUI launch has a minimal PATH, so scripts with
+/// `#!/usr/bin/env node` (npx, gemini, hyperframes) would otherwise fail.
+pub fn augmented_path() -> std::ffi::OsString {
+    let node_dir = RealExec.which("node").and_then(|p| p.parent().map(Path::to_path_buf));
+    let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).map(PathBuf::from);
+    let appdata = std::env::var_os("APPDATA").map(PathBuf::from);
+    build_path(
+        home.as_deref(),
+        std::env::var_os("PATH").as_deref(),
+        node_dir.as_deref(),
+        appdata.as_deref(),
+    )
+}
+
 /// Runs real processes with a 5 s timeout.
 pub struct RealExec;
 
@@ -42,6 +102,7 @@ impl Exec for RealExec {
         let resolved = self.which(program).unwrap_or_else(|| PathBuf::from(program));
         let mut child = std::process::Command::new(resolved)
             .args(args)
+            .env("PATH", augmented_path())
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
@@ -334,6 +395,43 @@ pub fn check_tools(exec: &dyn Exec, agent: AgentId, home: &Path) -> Vec<ToolStat
     };
 
     vec![node, ffmpeg, chrome, ytdlp, elevenlabs]
+}
+
+#[cfg(test)]
+mod path_tests {
+    use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn build_path_orders_and_dedupes() {
+        let home = tempfile::tempdir().unwrap();
+        let h = home.path();
+        std::fs::create_dir_all(h.join(".nvm/versions/node/v20.1.0/bin")).unwrap();
+        let existing = std::env::join_paths(["/usr/bin", "/usr/local/bin", "/bin", "/usr/bin"]).unwrap();
+        let out = build_path(Some(h), Some(&existing), Some(Path::new("/n/bin")), None);
+        let got: Vec<PathBuf> = std::env::split_paths(&out).collect();
+        let want: Vec<PathBuf> = [
+            "/n/bin".into(),
+            "/opt/homebrew/bin".into(),
+            "/usr/local/bin".into(),
+            h.join(".local/bin"),
+            h.join(".volta/bin"),
+            h.join(".nvm/versions/node/v20.1.0/bin"),
+            "/usr/bin".into(),
+            "/bin".into(),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(got, want);
+    }
+
+    #[test]
+    fn build_path_without_inputs_keeps_existing() {
+        let existing = std::env::join_paths(["/a", "/b"]).unwrap();
+        let out = build_path(None, Some(&existing), None, None);
+        let got: Vec<PathBuf> = std::env::split_paths(&out).collect();
+        assert!(got.ends_with(&[PathBuf::from("/a"), PathBuf::from("/b")]));
+    }
 }
 
 #[cfg(test)]

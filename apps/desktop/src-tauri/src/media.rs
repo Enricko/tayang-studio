@@ -15,12 +15,14 @@ pub struct MediaTools {
 }
 
 impl MediaTools {
-    /// Uses `FFMPEG_PATH` / `FFPROBE_PATH` when set, else `ffmpeg` / `ffprobe` from PATH.
+    /// Uses `FFMPEG_PATH` / `FFPROBE_PATH` when set, else resolves `ffmpeg` / `ffprobe`
+    /// (falling back to the bare names).
     pub fn from_env_or_path() -> Self {
         let pick = |var: &str, default: &str| {
             std::env::var_os(var)
                 .filter(|v| !v.is_empty())
                 .map(PathBuf::from)
+                .or_else(|| crate::system::Exec::which(&crate::system::RealExec, default))
                 .unwrap_or_else(|| PathBuf::from(default))
         };
         Self { ffmpeg: pick("FFMPEG_PATH", "ffmpeg"), ffprobe: pick("FFPROBE_PATH", "ffprobe") }
@@ -31,6 +33,7 @@ impl MediaTools {
 #[allow(unused_mut)]
 fn command(program: impl AsRef<std::ffi::OsStr>) -> Command {
     let mut cmd = Command::new(program);
+    cmd.env("PATH", crate::system::augmented_path());
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;

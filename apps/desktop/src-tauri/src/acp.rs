@@ -222,6 +222,7 @@ fn spawn_agent(command: &[String], cwd: &Path) -> Result<Child> {
         .ok_or_else(|| AcpError("No agent command was given".into()))?;
     let mut cmd = Command::new(program);
     cmd.args(args)
+        .env("PATH", crate::system::augmented_path())
         .current_dir(cwd)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
