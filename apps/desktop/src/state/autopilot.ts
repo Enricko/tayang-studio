@@ -340,7 +340,10 @@ export async function pass(now: Date = new Date()): Promise<void> {
     for (const a of active) {
       for (const at of planSlots(a, now, PLAN_DAYS)) {
         if (have.has(`${a.id}|${at.getTime()}`)) continue;
-        slots.push(await upsertSlot(a.id, at.toISOString()));
+        // Rust refuses a new slot for an autopilot paused since the list above: skip it, go on with the rest.
+        const made = await upsertSlot(a.id, at.toISOString()).catch(() => null);
+        if (!made) continue;
+        slots.push(made);
         have.add(`${a.id}|${at.getTime()}`);
         changed = true;
       }

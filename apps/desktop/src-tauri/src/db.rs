@@ -875,15 +875,18 @@ impl Db {
             return Err(DbError(format!("No autopilot with id {autopilot_id}")));
         }
         let conn = self.conn();
+        // Only an active autopilot gets new slots (checked in the same statement, so a pause that lands
+        // during the engine's upkeep can't leave planned slots behind); an existing slot is returned as is.
         conn.execute(
-            "INSERT OR IGNORE INTO autopilot_slots (id, autopilot_id, due_at, status) VALUES (?1, ?2, ?3, 'planned')",
+            "INSERT OR IGNORE INTO autopilot_slots (id, autopilot_id, due_at, status) \
+             SELECT ?1, ?2, ?3, 'planned' WHERE EXISTS (SELECT 1 FROM autopilots WHERE id = ?2 AND status = 'active')",
             rusqlite::params![new_id(), autopilot_id, due],
         )?;
         let sql = format!("{SLOT_SELECT} WHERE autopilot_id = ?1 AND due_at = ?2");
         query_as::<AutopilotSlot>(&conn, &sql, &[&autopilot_id, &due])?
             .into_iter()
             .next()
-            .ok_or_else(|| DbError("The slot could not be saved".into()))
+            .ok_or_else(|| DbError("This autopilot is paused, so it gets no new slots".into()))
     }
 
     /// Changes a slot's status, project or error. Keys left out stay as they are; `null` clears.
@@ -1395,6 +1398,18 @@ mod tests {
         ok.length_sec = 180;
         ok.frequency = AutopilotFrequency::Weekly { days: vec![0, 6], time: "23:59".into() };
         assert!(db.save_autopilot(&ok).is_ok());
+    }
+
+    #[test]
+    fn a_paused_autopilot_gets_no_new_slots() {
+        let db = adb();
+        let a = db.save_autopilot(&input("A")).unwrap();
+        let kept = db.upsert_slot(&a.id, "2026-11-01T09:00:00Z").unwrap();
+        db.set_autopilot_status(&a.id, AutopilotStatus::Paused).unwrap();
+        assert!(db.upsert_slot(&a.id, "2026-12-05T09:00:00Z").is_err());
+        assert!(db.list_slots("2026-12-05T09:00:00Z", "2026-12-05T09:00:00Z").unwrap().is_empty());
+        // An existing slot is still returned as it is.
+        assert_eq!(db.upsert_slot(&a.id, "2026-11-01T09:00:00Z").unwrap(), kept);
     }
 
     #[test]

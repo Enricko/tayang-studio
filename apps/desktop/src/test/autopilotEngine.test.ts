@@ -710,6 +710,16 @@ describe('review fixes', () => {
     expect(db.slots.every((x) => x.status === 'planned')).toBe(true);
   });
 
+  it('a slot Rust refuses to plan (paused meanwhile) is skipped, and upkeep goes on', async () => {
+    respond = () => ({ hang: true });
+    vi.mocked(ipc.upsertSlot).mockRejectedValueOnce(new Error('This autopilot is paused, so it gets no new slots'));
+    await pass(NOW);
+    expect(db.slots).toHaveLength(6);
+    expect(db.slots.some((x) => x.dueAt === at(4, 9))).toBe(false);
+    // The next slot (tomorrow 09:00) is more than 24 h away, so nothing starts.
+    expect(currentSlot()).toBeNull();
+  });
+
   it('recovery also stops the agents of a slot left making', async () => {
     db.slots.push({ id: 'm', autopilotId: 'a1', dueAt: at(4, 7), status: 'making', projectId: 'p0', error: null });
     vi.mocked(ipc.agentStop).mockRejectedValueOnce(new Error('no agent'));
