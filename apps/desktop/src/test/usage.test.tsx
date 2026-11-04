@@ -55,8 +55,8 @@ describe('mergeUsage', () => {
   it('keeps the last good value when a refresh errors', () => {
     const err: AgentUsage = { ...claude, status: 'error', session: null, weekly: null, modelWeekly: null, message: 'Usage is busy, try again in a minute' };
     const out = mergeUsage([claude], [err]);
-    expect(out[0].session?.usedPercent).toBe(33);
-    expect(mergeUsage([], [err])[0].status).toBe('error');
+    expect(out[0]!.session?.usedPercent).toBe(33);
+    expect(mergeUsage([], [err])[0]!.status).toBe('error');
   });
 });
 
