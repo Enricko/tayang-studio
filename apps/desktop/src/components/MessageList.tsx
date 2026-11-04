@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef } from 'react';
 import { Check, File as FileIcon, Loader2, X } from 'lucide-react';
 import { formatTimecode, type ChatMessage, type MessagePart } from '@tayang/shared';
 import { Oyen } from '@/components/Oyen';
 import { AGENT_NAMES } from '@/lib/agents';
 import { useApp } from '@/state/app';
 import { useChat } from '@/state/chat';
+import { splitTopicJson } from '@tayang/skills';
 import { extractA2ui } from '@/a2ui/parse';
 import { A2uiSurface, type A2uiAction } from '@/a2ui/render';
 import { applyMessages, blockSurfaceId, emptySurfaces, type SurfaceSet } from '@/a2ui/surface';
@@ -113,6 +114,9 @@ function isUpdateOnly(text: string, messageId: string, a2ui: A2uiState): boolean
   });
 }
 
+/** A screen can take an A2UI action itself (return true) instead of sending it to the agent. */
+const ActionHandler = createContext<((a: A2uiAction) => boolean) | undefined>(undefined);
+
 function sendAction(chatId: string, a: A2uiAction) {
   const { summary, ...rest } = a;
   const action: MessagePart = { type: 'a2ui-action', summary, action: { version: 'v0.9', action: rest } };
@@ -122,7 +126,10 @@ function sendAction(chatId: string, a: A2uiAction) {
 
 /** An agent text part: prose, the surfaces it owns, and a placeholder for a block still streaming. */
 function AgentText({ text, messageId, a2ui }: { text: string; messageId: string; a2ui: A2uiState }) {
-  const { text: prose, blocks, pending } = useMemo(() => extractA2ui(text), [text]);
+  const { text: rawProse, blocks, pending } = useMemo(() => extractA2ui(text), [text]);
+  // Older agents answer topics with a ```json block: the screen shows cards for it, not the raw block.
+  const prose = useMemo(() => splitTopicJson(rawProse).text, [rawProse]);
+  const handle = useContext(ActionHandler);
   const ids: string[] = [];
   for (const b of blocks) {
     const sid = blockSurfaceId(b);
@@ -136,7 +143,9 @@ function AgentText({ text, messageId, a2ui }: { text: string; messageId: string;
           key={`${sid}:${a2ui.version[sid]}`}
           surface={a2ui.set.surfaces[sid]!}
           disabled={a2ui.answered[sid]}
-          onAction={(a) => sendAction(a2ui.chatId, a)}
+          onAction={(a) => {
+            if (!handle?.(a)) sendAction(a2ui.chatId, a);
+          }}
         />
       ))}
       {blocks.length > 0 && a2ui.set.notes.length > 0 && (
@@ -176,9 +185,12 @@ export function MessageList({
   messages,
   streaming,
   children,
+  onA2uiAction,
 }: {
   messages: ChatMessage[];
   streaming: boolean;
+  /** Return true when the screen handled the action itself. */
+  onA2uiAction?: (a: A2uiAction) => boolean;
   /** Extra blocks under the conversation (permission card, idea cards). */
   children?: React.ReactNode;
 }) {
@@ -190,6 +202,7 @@ export function MessageList({
   const a2ui = useMemo(() => deriveA2ui(messages), [messages]);
   const last = messages[messages.length - 1];
   return (
+    <ActionHandler.Provider value={onA2uiAction}>
     <div className="flex flex-col gap-6" role="log" aria-label="Conversation">
       {messages.map((m, i) => {
         if (m.role === 'user') {
@@ -246,6 +259,7 @@ export function MessageList({
       {children}
       <div ref={end} />
     </div>
+    </ActionHandler.Provider>
   );
 }
 

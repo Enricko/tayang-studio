@@ -2,11 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import type { MessagePart, Project, VideoKind } from '@tayang/shared';
-import { buildTopicIdeasPrompt, parseTopicIdeas } from '@tayang/skills';
+import { buildTopicIdeasPrompt } from '@tayang/skills';
 import { Button } from '@/components/Button';
 import { Oyen } from '@/components/Oyen';
 import { PermissionCard } from '@/components/PermissionCard';
-import { listProjects } from '@/lib/ipc';
+import { listProjects, listStyles } from '@/lib/ipc';
+import { ideasFromReply, startTopic, type TopicIdea } from '@/lib/topics';
 import { cn } from '@/lib/utils';
 import { useApp } from '@/state/app';
 import { headPermission, useChat } from '@/state/chat';
@@ -16,7 +17,7 @@ const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const NO_MESSAGES: never[] = [];
 
-type Idea = { title: string; kind: VideoKind; lengthSec: number };
+type Idea = TopicIdea;
 
 const pad = (n: number) => String(n).padStart(2, '0');
 export const dateKey = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -55,7 +56,6 @@ function agentText(parts: MessagePart[]) {
 export function Calendar({ today: todayProp }: { today?: Date } = {}) {
   const today = useMemo(() => todayProp ?? new Date(), [todayProp]);
   const settings = useApp((s) => s.settings);
-  const navigate = useApp((s) => s.navigate);
   const [cursor, setCursor] = useState({ y: today.getFullYear(), m: today.getMonth() });
   const [projects, setProjects] = useState<Project[]>([]);
   const cacheKey = weekKey(today);
@@ -95,7 +95,7 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
     if (last?.role !== 'agent') return;
     pending.current = false;
     setAsking(false);
-    const found = parseTopicIdeas(agentText(last.parts));
+    const found = ideasFromReply(agentText(last.parts));
     if (!found.length) {
       setError("Couldn't get ideas. Try again");
       return;
@@ -108,16 +108,27 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
     }
   }, [chatId, streaming, messages, cacheKey]);
 
+  const makeIdea = async (idea: Idea) => {
+    if (!settings) return;
+    try {
+      const styles = await listStyles().catch(() => []);
+      await startTopic(idea, { settings, agent: settings.defaultAgent, styles });
+    } catch {
+      setError("Couldn't start this video. Try again");
+    }
+  };
+
   const getIdeas = async () => {
     if (!settings || asking) return;
     setAsking(true);
     setError(null);
     try {
+      const styles = await listStyles().catch(() => []);
       const id = ideasChatId(today);
       setChatId(id);
       pending.current = true;
       const err = await useChat.getState().send(id, [{ type: 'text', text: 'Suggest video topics for this week' }], {
-        promptParts: [{ type: 'text', text: buildTopicIdeasPrompt(KINDS, settings.language) }],
+        promptParts: [{ type: 'text', text: buildTopicIdeasPrompt(KINDS, settings.language, styles.map((s) => ({ id: s.id, name: s.name }))) }],
       });
       if (err) throw new Error(err);
     } catch (e) {
@@ -247,7 +258,7 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
                   {i.kind[0]!.toUpperCase() + i.kind.slice(1)} · {i.lengthSec}s
                 </span>
               </div>
-              <Button variant="secondary" className="h-7 shrink-0 rounded-sm px-2 text-xs" onClick={() => navigate({ name: 'chat-new' })}>
+              <Button variant="secondary" className="h-7 shrink-0 rounded-sm px-2 text-xs" onClick={() => void makeIdea(i)}>
                 Make it
               </Button>
             </div>
