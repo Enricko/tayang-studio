@@ -10,7 +10,7 @@ import { ago } from '@/lib/time';
 import { cn } from '@/lib/utils';
 import { useApp } from '@/state/app';
 import { useStudy } from '@/state/study';
-import { refreshJobs } from '@/state/jobs';
+import { refreshJobs, useJobs } from '@/state/jobs';
 
 const COLUMNS: { name: string; mood: OyenMood; match(s: JobStatus): boolean }[] = [
   { name: 'Queued', mood: 'wink', match: (s) => s === 'queued' },
@@ -36,13 +36,10 @@ function JobCard({ job, project, onDismiss }: { job: Job; project: string; onDis
       if (starting || studyRunning) return;
       setStarting(true);
       // The old job goes away once the new study's job is written; a failed start leaves its own failed job.
-      void useStudy
-        .getState()
-        .start(job.sourceUrl, job.agentId, job.id)
-        .finally(() => {
-          setStarting(false);
-          navigate({ name: 'style' });
-        });
+      // `start` marks the study running right away: show it without waiting for the agent.
+      const started = useStudy.getState().start(job.sourceUrl, job.agentId, job.id);
+      navigate({ name: 'style' });
+      void started.finally(() => setStarting(false));
     } else if (!job.chatId) navigate({ name: 'style' });
     else if (failed && job.note === CLOSED_NOTE) navigate({ name: 'chat', chatId: job.chatId, draft: CLOSED_DRAFT });
     else navigate({ name: 'chat', chatId: job.chatId });
@@ -114,14 +111,12 @@ function JobCard({ job, project, onDismiss }: { job: Job; project: string; onDis
 
 export function Agents() {
   const navigate = useApp((s) => s.navigate);
-  const [jobs, setJobs] = useState<Job[]>([]);
+  const jobs = useJobs((s) => s.jobs);
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
 
   const load = useCallback(() => {
-    refreshJobs()
-      .then(setJobs)
-      .catch(() => {});
+    refreshJobs().catch(() => {});
   }, []);
 
   useEffect(() => {

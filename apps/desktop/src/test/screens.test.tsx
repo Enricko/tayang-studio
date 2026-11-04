@@ -169,6 +169,36 @@ describe('Style', () => {
     expect(screen.queryByRole('button', { name: 'Allow' })).not.toBeInTheDocument();
   });
 
+  it('shows a card only for a request auto mode could not approve, never for the ones it ran', async () => {
+    vi.mocked(ipc.studyDir).mockResolvedValue('/w/s');
+    render(<Style />);
+    await userEvent.type(screen.getByLabelText('Video link'), 'https://youtu.be/abc');
+    await userEvent.click(screen.getByRole('button', { name: 'Study video' }));
+    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
+    const chatId = vi.mocked(ipc.agentPrompt).mock.calls[0]![0];
+    // Rust answered this one itself: only the tool line reaches the UI.
+    act(() =>
+      updateHandlers.forEach((h) =>
+        h({ chatId, update: { kind: 'tool', toolCallId: 'auto-1', title: 'Ran without asking: ls -la', status: 'done' } }),
+      ),
+    );
+    expect(screen.queryByText('This request can\'t be allowed once')).not.toBeInTheDocument();
+    // This one had no allow-once option, so Rust forwarded it as a normal request.
+    act(() =>
+      permHandlers.forEach((h) =>
+        h({
+          chatId,
+          requestId: 'r1',
+          title: 'Delete files',
+          commands: ['rm -rf x'],
+          options: [{ id: 'no', label: 'Reject', kind: 'reject-once' }],
+        }),
+      ),
+    );
+    expect(await screen.findByText("This request can't be allowed once")).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Allow' })).not.toBeInTheDocument();
+  });
+
   it('saves the style on done and marks the job failed when the result is unreadable', async () => {
     vi.mocked(ipc.studyDir).mockResolvedValue('/w/s');
     const good = JSON.stringify({ name: 'Zoom cut', notes: { camera: 'Punch-in' }, prompt: 'Cut on every beat' });
@@ -341,6 +371,52 @@ describe('Failed job recovery', () => {
     const writeOrder = vi.mocked(ipc.upsertJob).mock.invocationCallOrder[0]!;
     expect(writeOrder).toBeLessThan(vi.mocked(ipc.deleteJob).mock.invocationCallOrder[0]!);
     expect(useApp.getState().route).toEqual({ name: 'style' });
+  });
+
+  it('Try again opens Style straight away, before the agent has started', async () => {
+    vi.mocked(ipc.studyDir).mockReturnValue(new Promise(() => {}));
+    vi.mocked(ipc.listJobs).mockResolvedValue([failed({})]);
+    useApp.setState({ route: { name: 'agents' } });
+    render(<Agents />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Try again' }));
+    expect(useApp.getState().route).toEqual({ name: 'style' });
+    expect(useStudy.getState().phase).toBe('running');
+  });
+
+  it('the board shows the new working card and drops the old failed one after Try again', async () => {
+    vi.mocked(ipc.studyDir).mockResolvedValue('/w/s');
+    const fresh: Job = failed({ id: 'study-new', status: 'working', note: null });
+    vi.mocked(ipc.listJobs).mockResolvedValueOnce([failed({})]).mockResolvedValue([fresh]);
+    useApp.setState({ route: { name: 'agents' } });
+    render(<Agents />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Try again' }));
+    const working = await screen.findByRole('region', { name: 'Working' });
+    expect(await within(working).findByRole('progressbar', { name: 'Working' })).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument());
+  });
+
+  it('keeps the old job when the new one could not be written', async () => {
+    vi.mocked(ipc.studyDir).mockResolvedValue('/w/s');
+    vi.mocked(ipc.upsertJob).mockRejectedValue(new Error('disk full'));
+    vi.mocked(ipc.listJobs).mockResolvedValue([failed({})]);
+    render(<Agents />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Try again' }));
+    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
+    expect(ipc.deleteJob).not.toHaveBeenCalled();
+    vi.mocked(ipc.upsertJob).mockResolvedValue(undefined);
+  });
+
+  it('deletes the old job once the new failed job is written, so there is one failed card', async () => {
+    vi.mocked(ipc.studyDir).mockRejectedValue(new Error('no folder'));
+    vi.mocked(ipc.listJobs).mockResolvedValue([failed({})]);
+    render(<Agents />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Try again' }));
+    await waitFor(() => expect(ipc.deleteJob).toHaveBeenCalledWith('study-s1'));
+    const last = vi.mocked(ipc.upsertJob).mock.calls.at(-1)![0];
+    expect(last.status).toBe('failed');
+    expect(vi.mocked(ipc.upsertJob).mock.invocationCallOrder.at(-1)!).toBeLessThan(
+      vi.mocked(ipc.deleteJob).mock.invocationCallOrder[0]!,
+    );
   });
 
   it('Try again is disabled while another study is running', async () => {

@@ -485,6 +485,21 @@ describe('ChatProject', () => {
     await waitFor(() => expect(ipc.agentStart).toHaveBeenCalledWith('c1', 'claude'));
   });
 
+  it('the agent picker waits while an Auto change is pending', async () => {
+    const user = userEvent.setup();
+    render(<ChatProject chatId="c1" />);
+    await user.type(await screen.findByRole('textbox', { name: 'Message' }), 'go');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(ipc.agentStart).toHaveBeenCalled());
+    await emit('c1', { kind: 'done', stopReason: 'end_turn' });
+    let finish!: () => void;
+    vi.mocked(ipc.agentSetAuto).mockReturnValueOnce(new Promise<void>((r) => (finish = r)));
+    await user.click(screen.getByRole('switch', { name: 'Auto' }));
+    expect(screen.getByRole('button', { name: /Claude Code/ })).toBeDisabled();
+    await act(async () => finish());
+    await waitFor(() => expect(screen.getByRole('button', { name: /Claude Code/ })).toBeEnabled());
+  });
+
   it('the Auto toggle follows Settings changes while it is open', async () => {
     render(<ChatProject chatId="c1" />);
     expect(await screen.findByRole('switch', { name: 'Auto' })).not.toBeChecked();

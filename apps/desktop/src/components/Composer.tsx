@@ -401,7 +401,7 @@ export function Composer({
                 <Paperclip size={16} strokeWidth={1.5} aria-hidden="true" />
               </button>
               {onAgentChange ? (
-                <AgentPicker agent={agent} disabled={disabled} onChange={onAgentChange} />
+                <AgentPicker agent={agent} disabled={disabled || autoBusy} onChange={onAgentChange} />
               ) : (
                 <button type="button" className={TRIGGER}>
                   <AgentLogo id={agent} size={14} />

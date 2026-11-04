@@ -54,9 +54,21 @@ let unlisten: Promise<() => void>[] = [];
 export const useStudy = create<StudyState>((set, get) => {
   let agent: AgentId = 'claude';
 
-  const writeJob = async (status: JobStatus, note: string | null) => {
+  /** A failed study's job that this one replaces: deleted once this study's own job is written. */
+  let staleJobId: string | null = null;
+
+  const dropStaleJob = async () => {
+    const old = staleJobId;
+    if (!old) return;
+    staleJobId = null;
+    await deleteJob(old).catch(() => {});
+    await refreshJobs().catch(() => {});
+  };
+
+  /** Resolves true when the job was written. */
+  const writeJob = async (status: JobStatus, note: string | null): Promise<boolean> => {
     const { studyId, url } = get();
-    if (!studyId) return;
+    if (!studyId) return false;
     const job: Job = {
       id: studyChatId(studyId),
       kind: 'study-style',
@@ -72,10 +84,12 @@ export const useStudy = create<StudyState>((set, get) => {
     };
     try {
       await upsertJob(job);
-      await refreshJobs();
     } catch {
       /* the job board is best effort */
+      return false;
     }
+    await refreshJobs().catch(() => {});
+    return true;
   };
 
   /** Answers every open request with null (cancelled) and empties the queue. */
@@ -97,7 +111,7 @@ export const useStudy = create<StudyState>((set, get) => {
     dropRequests();
     stopAgent();
     set({ phase: 'failed', error: message });
-    await writeJob('failed', message);
+    if (await writeJob('failed', message)) await dropStaleJob();
   };
 
   const finish = async () => {
@@ -155,14 +169,11 @@ export const useStudy = create<StudyState>((set, get) => {
       agent = agentId;
       const studyId = newId();
       set({ phase: 'running', url, studyId, toolCalls: 0, ranLog: [], request: null, queue: [], error: null });
+      staleJobId = replaceJobId ?? null;
       listen();
       try {
         const dir = await studyDir(studyId);
-        await writeJob('working', null);
-        if (replaceJobId) {
-          await deleteJob(replaceJobId).catch(() => {});
-          await refreshJobs().catch(() => {});
-        }
+        if (await writeJob('working', null)) await dropStaleJob();
         // Style studies always run in auto mode (the app enforces it too).
         await agentStart(studyChatId(studyId), agentId, true);
         await agentPrompt(studyChatId(studyId), [{ type: 'text', text: buildStudyStylePrompt(url, dir) }]);
