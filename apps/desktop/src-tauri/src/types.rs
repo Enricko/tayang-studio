@@ -844,7 +844,7 @@ pub struct BillingStatus {
     pub pending: Option<PendingPayment>,
 }
 
-/// Why a billing command failed; the command rejects with `billing:<code>`.
+/// Why a billing command failed; the command rejects with `billing:<code>` (kebab-case, `bad_link` as named).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum BillingError {
@@ -858,4 +858,11 @@ pub enum BillingError {
     Server,
     /// The payment provider (SumoPod) failed.
     PaymentProvider,
+    /// Payments aren't open (yet) on this API (`BILLING_MODE`).
+    Unavailable,
+    /// Too many checkouts in a short while.
+    RateLimited,
+    /// The payment link isn't a SumoPod page, so it isn't opened.
+    #[serde(rename = "bad_link")]
+    BadLink,
 }
