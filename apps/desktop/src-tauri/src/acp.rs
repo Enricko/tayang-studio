@@ -264,7 +264,10 @@ const PROTOCOL_VERSION: u64 = 1;
 const CRASH_MESSAGE: &str = "The agent stopped unexpectedly";
 /// How long a stopped agent gets to exit after SIGTERM before SIGKILL.
 const KILL_GRACE: Duration = Duration::from_millis(1500);
-const START_TIMEOUT: Duration = Duration::from_secs(120);
+/// The first `npx` run downloads the agent's ACP adapter, which can take minutes.
+const START_TIMEOUT: Duration = Duration::from_secs(300);
+const START_TIMEOUT_MESSAGE: &str =
+    "The agent took too long to start. Check your internet connection and try again";
 /// After the process exits, how long to keep reading output it already wrote.
 const DRAIN_GRACE: Duration = Duration::from_secs(2);
 
@@ -771,6 +774,7 @@ impl AgentSession {
         command: &[String],
         cwd: &Path,
         sink: Arc<dyn AcpSink>,
+        start_timeout: Duration,
     ) -> Result<AgentSession> {
         let cwd = std::path::absolute(cwd)
             .map_err(|e| AcpError(format!("Invalid working folder {}: {e}", cwd.display())))?;
@@ -802,7 +806,7 @@ impl AgentSession {
             kill_tx: Mutex::new(Some(kill_tx)),
             supervisor: Mutex::new(Some(supervisor)),
         };
-        match tokio::time::timeout(START_TIMEOUT, session.core.handshake()).await {
+        match tokio::time::timeout(start_timeout, session.core.handshake()).await {
             Ok(Ok(())) => Ok(session),
             Ok(Err(e)) => {
                 session.shutdown().await;
@@ -810,7 +814,7 @@ impl AgentSession {
             }
             Err(_) => {
                 session.shutdown().await;
-                Err(AcpError("The agent did not respond in time".into()))
+                Err(AcpError(START_TIMEOUT_MESSAGE.into()))
             }
         }
     }
@@ -839,16 +843,33 @@ impl Drop for AgentSession {
 }
 
 /// All agent sessions, keyed by chat id. Shared Tauri state.
-#[derive(Default)]
 pub struct AcpManager {
     sessions: Mutex<HashMap<String, Arc<AgentSession>>>,
     permissions: Arc<Permissions>,
     next_uid: AtomicU64,
+    start_timeout: Duration,
+}
+
+impl Default for AcpManager {
+    fn default() -> Self {
+        Self {
+            sessions: Mutex::default(),
+            permissions: Arc::default(),
+            next_uid: AtomicU64::default(),
+            start_timeout: START_TIMEOUT,
+        }
+    }
 }
 
 impl AcpManager {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// How long an agent gets to finish the ACP handshake (300 s by default).
+    pub fn with_start_timeout(mut self, timeout: Duration) -> Self {
+        self.start_timeout = timeout;
+        self
     }
 
     fn session(&self, chat_id: &str) -> Result<Arc<AgentSession>> {
@@ -872,8 +893,16 @@ impl AcpManager {
         let _ = self.stop(chat_id).await;
         let uid = self.next_uid.fetch_add(1, Ordering::SeqCst);
         let session =
-            AgentSession::launch(uid, self.permissions.clone(), chat_id, command, cwd, sink)
-                .await?;
+            AgentSession::launch(
+                uid,
+                self.permissions.clone(),
+                chat_id,
+                command,
+                cwd,
+                sink,
+                self.start_timeout,
+            )
+            .await?;
         let previous = self
             .sessions
             .lock()

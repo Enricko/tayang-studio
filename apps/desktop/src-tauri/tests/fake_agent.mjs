@@ -14,6 +14,7 @@
 //   fail       -> session/prompt error -32603 "Internal error" with data.details "quota exceeded"
 //   any prompt with an image block -> text "image <mimeType> <data>"
 //
+// With the --hang argument, initialize is never answered.
 // With the --needs-auth argument, session/new fails with -32000 "Authentication required".
 import { createInterface } from "node:readline";
 import path from "node:path";
@@ -145,6 +146,7 @@ function handle(msg) {
   const { id, method, params } = msg;
   switch (method) {
     case "initialize": {
+      if (process.argv.includes("--hang")) return;
       const caps = params?.clientCapabilities ?? {};
       const ok =
         params?.protocolVersion === 1 &&

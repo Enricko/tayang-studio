@@ -374,6 +374,22 @@ async fn prompt_error_carries_the_agent_message() {
 }
 
 #[tokio::test]
+async fn slow_start_times_out_with_a_helpful_message() {
+    let ws = workspace();
+    let manager = AcpManager::new().with_start_timeout(Duration::from_millis(500));
+    let mut cmd = fake_agent();
+    cmd.push("--hang".into());
+    let err = manager
+        .start("c1", &cmd, &ws.cwd, Arc::new(RecordingSink::default()))
+        .await
+        .unwrap_err();
+    assert_eq!(
+        err.0,
+        "The agent took too long to start. Check your internet connection and try again"
+    );
+}
+
+#[tokio::test]
 async fn unknown_chat_and_bad_command_are_errors() {
     let ws = workspace();
     let manager = AcpManager::new();
