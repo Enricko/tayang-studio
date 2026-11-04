@@ -1,5 +1,5 @@
-import type { Project, Settings, Style, VideoKind } from '@tayang/shared';
-import { buildProjectBrief, splitTopicJson, topicIdeaFromAction } from '@tayang/skills';
+import type { MessagePart, Project, Settings, Style, VideoKind } from '@tayang/shared';
+import { buildProjectBrief, SKIP_FRAME_CHECK, splitTopicJson, topicIdeaFromAction } from '@tayang/skills';
 import { extractA2ui } from '@/a2ui/parse';
 import { createChat, createProject, installStyleTemplate, listStyles, syncStyles, writeBrief } from '@/lib/ipc';
 import { useApp } from '@/state/app';
@@ -119,10 +119,11 @@ export async function startTopic(
     }
   }
   useApp.getState().navigate({ name: 'chat', chatId: chat.id });
-  void useChat
-    .getState()
-    .send(chat.id, [{ type: 'text', text: `Write the script for "${idea.title}", about ${idea.lengthSec} seconds.` }], {
-      agentId: agent,
-      job: { projectId: project.id, title: project.title },
-    });
+  const ask: MessagePart[] = [{ type: 'text', text: `Write the script for "${idea.title}", about ${idea.lengthSec} seconds.` }];
+  void useChat.getState().send(chat.id, ask, {
+    agentId: agent,
+    job: { projectId: project.id, title: project.title },
+    // Same as every later message in the project chat when the check is off in Settings.
+    ...(settings.frameCheck === false ? { promptParts: [{ type: 'text', text: SKIP_FRAME_CHECK }, ...ask] } : {}),
+  });
 }

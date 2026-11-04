@@ -273,6 +273,29 @@ describe('topic ideas in a new chat', () => {
     expect(sent.some((m) => m.role === 'user' && m.parts.some((p) => p.type === 'a2ui-action'))).toBe(false);
   });
 
+  it('asks for the script with the skip line when the frame check is off', async () => {
+    useApp.setState({ settings: { ...settings, frameCheck: false } });
+    await askTopics(reply('atlas-journey'));
+    vi.mocked(ipc.agentPrompt).mockClear();
+    await userEvent.click(screen.getByRole('button', { name: 'Make this' }));
+    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
+    const parts = vi.mocked(ipc.agentPrompt).mock.calls[0]![1];
+    const texts = parts.map((p) => (p.type === 'text' ? p.text : ''));
+    expect(texts.indexOf('Skip the frame check this time.')).toBeGreaterThanOrEqual(0);
+    expect(texts.indexOf('Skip the frame check this time.')).toBeLessThan(texts.findIndex((t) => t.startsWith('Write the script')));
+    // The visible message is only the ask.
+    const user = useChat.getState().messages['chat-1']!.filter((m) => m.role === 'user').at(-1)!;
+    expect(JSON.stringify(user.parts)).not.toContain('Skip the frame check');
+  });
+
+  it('asks for the script without the skip line when the frame check is on', async () => {
+    await askTopics(reply('atlas-journey'));
+    vi.mocked(ipc.agentPrompt).mockClear();
+    await userEvent.click(screen.getByRole('button', { name: 'Make this' }));
+    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
+    expect(JSON.stringify(vi.mocked(ipc.agentPrompt).mock.calls[0]![1])).not.toContain('Skip the frame check');
+  });
+
   it('leaves styleId out when it is not a synced style', async () => {
     await askTopics(reply('unknown-style'));
     await userEvent.click(await screen.findByRole('button', { name: 'Make this' }));

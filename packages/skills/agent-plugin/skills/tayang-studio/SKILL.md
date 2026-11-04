@@ -36,7 +36,7 @@ Tayang Studio is a desktop app that turns a topic into a short motion video. You
 
 ## Check the frames
 
-Before you say a video is done:
+Before you say a video is done, unless the project brief or the message says to skip the frame check:
 
 1. Render a still of every scene.
 2. Look for overlapping elements, text that is cut off or outside the safe area, and timing that does not match the voice or captions.
