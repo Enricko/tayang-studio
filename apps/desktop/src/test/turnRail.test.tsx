@@ -159,7 +159,21 @@ describe('TurnRail fix round 1', () => {
     render(<Harness messages={MSGS} tops={TOPS} />);
     const btn = screen.getByRole('button', { name: 'Jump to: First prompt' });
     expect(btn.className).toContain('focus-visible:outline-2');
+    expect(btn.className).toContain('focus-visible:outline-solid');
     expect(btn.firstElementChild!.className).not.toMatch(/ring|outline/);
+  });
+
+  it('drops the card when its tick has scrolled out of the strip', () => {
+    render(<Harness messages={MSGS} tops={TOPS} />);
+    const tick = screen.getByRole('button', { name: 'Jump to: Second prompt' });
+    const rect = (top: number, h: number) => ({ top, height: h, bottom: top + h, left: 0, right: 0, width: 0, x: 0, y: top, toJSON() {} });
+    tick.parentElement!.getBoundingClientRect = () => rect(0, 100);
+    tick.getBoundingClientRect = () => rect(50, 10);
+    fireEvent.mouseEnter(tick);
+    expect(screen.getByRole('tooltip')).toBeInTheDocument();
+    tick.getBoundingClientRect = () => rect(-40, 10);
+    fireEvent.scroll(tick.parentElement!);
+    expect(screen.queryByRole('tooltip')).toBeNull();
   });
 
   it('moves the preview card when the strip scrolls', () => {

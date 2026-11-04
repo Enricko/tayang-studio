@@ -413,6 +413,26 @@ describe('ChatProject', () => {
     expect(ipc.addMessage).toHaveBeenCalledWith('c1', 'agent', parts);
   });
 
+  it('settles tools the agent never finished: done after a normal end, failed after a cancel or error', async () => {
+    const run = async (end: AgentUpdate) => {
+      useChat.getState().reset();
+      const user = userEvent.setup();
+      const view = render(<ChatProject chatId="c1" />);
+      await user.type(await screen.findByRole('textbox', { name: 'Message' }), 'go');
+      await user.click(screen.getByRole('button', { name: 'Send' }));
+      await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
+      await emit('c1', { kind: 'tool', toolCallId: 't1', title: 'Run x', status: 'running', toolKind: 'execute' });
+      await emit('c1', end);
+      const msg = useChat.getState().messages.c1!.find((m) => m.role === 'agent')!;
+      view.unmount();
+      vi.clearAllMocks();
+      return msg.parts.find((p) => p.type === 'tool') as { status: string };
+    };
+    expect((await run({ kind: 'done', stopReason: 'end_turn' })).status).toBe('done');
+    expect((await run({ kind: 'done', stopReason: 'cancelled' })).status).toBe('failed');
+    expect((await run({ kind: 'error', message: 'boom' })).status).toBe('failed');
+  });
+
   it('starts with auto mode when Settings has it on, and the Auto toggle switches the running session', async () => {
     const user = userEvent.setup();
     useApp.setState({ settings: { ...settings, autoMode: true } });

@@ -1,3 +1,5 @@
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 import { useRef } from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -65,7 +67,7 @@ describe('inline activity', () => {
     expect(screen.getByText('Run')).toBeInTheDocument();
     expect(screen.getByText('Edit')).toBeInTheDocument();
     expect(screen.getByText('App.tsx')).toBeInTheDocument();
-    expect(screen.getByText('Read').closest('li')).toHaveClass('text-destructive');
+    expect(screen.getByText('Read').closest('li')).toHaveClass('text-error');
     expect(screen.queryByText('deep thoughts')).toBeNull();
     await userEvent.click(screen.getByRole('button', { name: 'Thought process' }));
     expect(screen.getByText('deep thoughts')).toBeInTheDocument();
@@ -115,5 +117,88 @@ describe('ScrollToBottom', () => {
     fireEvent.scroll(box);
     await userEvent.click(screen.getByRole('button', { name: 'Scroll to bottom' }));
     expect(box.scrollTo).toHaveBeenCalledWith({ top: 2000, behavior: 'smooth' });
+  });
+});
+
+describe('fix round', () => {
+  it('shows auto-approved runs as muted notes, not tools', async () => {
+    const m = agent([
+      tool('1', 'Run npm test', { toolKind: 'execute' }),
+      tool('auto-9', 'Ran without asking: npm test'),
+    ]);
+    render(<MessageList streaming={false} messages={[m]} />);
+    expect(screen.getByRole('button')).toHaveTextContent(/^Ran 1 command$/);
+    await userEvent.click(screen.getByRole('button'));
+    const note = screen.getByText('Ran without asking: npm test');
+    expect(note).toHaveClass('font-mono', 'truncate', 'text-text-3');
+  });
+
+  it('uses the error token for failed rows, their chip and the summary', async () => {
+    const m = agent([tool('1', 'Read x', { toolKind: 'read', path: '/w/x.md', status: 'failed' })]);
+    render(<MessageList streaming={false} messages={[m]} />);
+    expect(screen.getByText('1 failed')).toHaveClass('text-error');
+    await userEvent.click(screen.getByRole('button'));
+    const li = screen.getByText('Read').closest('li')!;
+    expect(li).toHaveClass('text-error');
+    expect(screen.getByText('x.md').parentElement).toHaveClass('text-current');
+  });
+
+  it('draws no avatar for a reply that only loaded a skill', () => {
+    const { container } = render(<MessageList streaming={false} messages={[agent([tool('1', 'Load skill: x')])]} />);
+    expect(container.querySelector('[data-testid="agent-message"]')).toBeNull();
+  });
+
+  it('the pill turns stick-to-bottom back on', async () => {
+    const spy = vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(() => {});
+    function Both({ n }: { n: number }) {
+      const ref = useRef<HTMLDivElement>(null);
+      return (
+        <div>
+          <div
+            data-testid="box"
+            ref={(el) => {
+              ref.current = el;
+              if (el) {
+                Object.defineProperty(el, 'clientHeight', { configurable: true, value: 500 });
+                Object.defineProperty(el, 'scrollHeight', { configurable: true, value: 2000 });
+                el.scrollTo = vi.fn() as unknown as typeof el.scrollTo;
+              }
+            }}
+          >
+            <MessageList streaming={false} messages={Array.from({ length: n }, (_, i) => agent([text(`m${i}`)]))} scrollRef={ref} />
+          </div>
+          <ScrollToBottom scrollRef={ref} />
+        </div>
+      );
+    }
+    const view = render(<Both n={1} />);
+    const box = screen.getByTestId('box');
+    box.scrollTop = 100;
+    fireEvent.scroll(box);
+    spy.mockClear();
+    view.rerender(<Both n={2} />);
+    expect(spy).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole('button', { name: 'Scroll to bottom' }));
+    box.scrollTop = 100; // a chunk landed mid-animation, still far away
+    view.rerender(<Both n={3} />);
+    expect(spy).toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it('never pairs outline-none with a focus outline width but no outline style', () => {
+    const bad: string[] = [];
+    const walk = (dir: string) => {
+      for (const f of readdirSync(dir)) {
+        const path = join(dir, f);
+        if (statSync(path).isDirectory()) walk(path);
+        else if (/\.tsx$/.test(f) && !/\.test\./.test(f)) {
+          for (const m of readFileSync(path, 'utf8').matchAll(/"[^"]*\boutline-none\b[^"]*"/g)) {
+            if (/focus-visible:outline-\d/.test(m[0]) && !m[0].includes('focus-visible:outline-solid')) bad.push(`${path}: ${m[0]}`);
+          }
+        }
+      }
+    };
+    walk(join(__dirname, '..'));
+    expect(bad).toEqual([]);
   });
 });
