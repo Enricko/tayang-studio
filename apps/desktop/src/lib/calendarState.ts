@@ -8,9 +8,9 @@ export type CalendarState = 'making' | 'needs-review' | 'ready' | 'posted' | 'dr
  * that depend on time later; none of today's states do.
  */
 export function calendarState(project: Project, _now: Date = new Date()): CalendarState {
-  if (project.status === 'building') return 'making';
   if (project.reviewState === 'pending') return 'needs-review';
   if (project.postedAt) return 'posted';
+  if (project.status === 'building') return 'making';
   if (project.status === 'rendered' || project.status === 'scheduled') return 'ready';
   return 'draft';
 }

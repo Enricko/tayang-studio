@@ -26,7 +26,9 @@ const now = new Date(2026, 10, 4);
 describe('calendarState', () => {
   it.each([
     [{ status: 'building' }, 'making'],
-    [{ status: 'building', reviewState: 'pending' }, 'making'],
+    // Building no longer hides a review or a post (a status moves on by itself now).
+    [{ status: 'building', reviewState: 'pending' }, 'needs-review'],
+    [{ status: 'building', postedAt: '2026-11-05T00:00:00Z' }, 'posted'],
     [{ status: 'rendered', reviewState: 'pending' }, 'needs-review'],
     [{ status: 'rendered', reviewState: 'pending', postedAt: '2026-11-05T00:00:00Z' }, 'needs-review'],
     [{ status: 'rendered', postedAt: '2026-11-05T00:00:00Z' }, 'posted'],
