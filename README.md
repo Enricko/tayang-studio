@@ -52,9 +52,9 @@ To turn it off, open Settings › Account and switch off "Share anonymous instal
 
 To show your Claude usage, Tayang reads the login Claude Code already stores on this computer and sends it only to Anthropic to fetch your usage numbers.
 
-The Style screen loads YouTube thumbnails from i.ytimg.com for styles copied from YouTube, and built-in style previews from api.tayang.app. A style copied from a video keeps a short silent preview clip and a poster frame on this computer; the video itself is deleted after the study.
+The Style screen loads YouTube thumbnails from i.ytimg.com for styles copied from YouTube, and built-in style previews from the Tayang API at studio.tayang.app/api. A style copied from a video keeps a short silent preview clip and a poster frame on this computer; the video itself is deleted after the study.
 
-For the owner: set the secret with `wrangler secret put ADMIN_TOKEN`, then `GET /v1/stats` with `Authorization: Bearer <ADMIN_TOKEN>` returns the counts. `pnpm --filter @tayang/api stats -- --remote` prints the same table straight from D1 (use `--local` for the dev database). Set `TAYANG_API_URL` when starting the desktop app to point it at another API; it is used instead of the saved API URL and never stored.
+For the owner: set the secret with `wrangler secret put ADMIN_TOKEN`, then `GET https://studio.tayang.app/api/v1/stats` with `Authorization: Bearer <ADMIN_TOKEN>` returns the counts. `pnpm --filter @tayang/api stats -- --remote` prints the same table straight from D1 (use `--local` for the dev database). Set `TAYANG_API_URL` when starting the desktop app to point it at another API (a base with the path, e.g. `http://localhost:8787/api`); it is used as given instead of the saved API URL and never stored.
 
 ## Credits
 

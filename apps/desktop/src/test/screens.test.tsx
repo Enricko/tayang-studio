@@ -1637,6 +1637,8 @@ describe('Settings', () => {
     const input = await screen.findByLabelText('API address');
     expect(input).toHaveValue('https://studio.tayang.app/api');
     expect(screen.getByText('Used for built-in styles and install stats')).toBeInTheDocument();
+    expect(screen.getByText('Leave it empty to use https://studio.tayang.app/api')).toBeInTheDocument();
+    expect(input).toHaveAttribute('placeholder', 'https://studio.tayang.app/api');
     await userEvent.clear(input);
     await userEvent.type(input, 'http://localhost:8787/api');
     await userEvent.tab();

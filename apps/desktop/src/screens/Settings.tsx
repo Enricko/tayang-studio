@@ -459,6 +459,7 @@ export function Settings() {
               id="api-url"
               key={settings.apiUrl}
               defaultValue={settings.apiUrl}
+              placeholder={DEFAULT_SETTINGS.apiUrl}
               spellCheck={false}
               className="h-8 w-[260px] bg-background font-mono text-xs"
               aria-invalid={apiError ? true : undefined}
