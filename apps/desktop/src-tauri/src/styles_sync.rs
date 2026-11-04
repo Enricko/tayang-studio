@@ -53,6 +53,18 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
 
+/// `TAYANG_API_URL` (when set and non-empty) wins over the stored `apiUrl`; never stored.
+pub fn effective_api_url(settings: &crate::types::Settings) -> String {
+    resolve_api_url(std::env::var("TAYANG_API_URL").ok(), settings)
+}
+
+fn resolve_api_url(env: Option<String>, settings: &crate::types::Settings) -> String {
+    match env.map(|e| e.trim().to_string()).filter(|e| !e.is_empty()) {
+        Some(e) => e,
+        None => settings.api_url.clone(),
+    }
+}
+
 fn endpoint(api_url: &str, path: &str) -> String {
     format!("{}{}", api_url.trim_end_matches('/'), path)
 }
@@ -275,6 +287,37 @@ mod tests {
             "https://api.test/v1/styles".into(),
             (200, serde_json::to_vec(&serde_json::json!({ "styles": styles })).unwrap()),
         )
+    }
+
+    #[test]
+    fn env_overrides_api_url_without_storing_it() {
+        let db = Db::open_in_memory().unwrap();
+        let home = std::path::PathBuf::from("/home/u");
+        let mut s = db.get_settings(&home);
+        assert_eq!(resolve_api_url(None, &s), "https://api.tayang.app");
+        assert_eq!(resolve_api_url(Some("  ".into()), &s), "https://api.tayang.app");
+        assert_eq!(resolve_api_url(Some("http://localhost:8787".into()), &s), "http://localhost:8787");
+        assert_eq!(db.get_settings(&home).api_url, "https://api.tayang.app", "not stored");
+        s = db.update_settings(serde_json::json!({"apiUrl": "https://mine.test"})).unwrap();
+        assert_eq!(resolve_api_url(None, &s), "https://mine.test");
+        assert_eq!(resolve_api_url(Some("http://x".into()), &s), "http://x");
+        assert_eq!(db.get_settings(&home).api_url, "https://mine.test");
+    }
+
+    #[test]
+    fn old_db_without_api_url_key_gets_default() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("t.db");
+        {
+            let c = rusqlite::Connection::open(&path).unwrap();
+            c.execute_batch(
+                "CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+                 INSERT INTO settings VALUES ('fps','60');",
+            )
+            .unwrap();
+        }
+        let s = Db::open(&path).unwrap().get_settings(std::path::Path::new("/h"));
+        assert_eq!((s.fps, s.api_url.as_str()), (60, "https://api.tayang.app"));
     }
 
     #[tokio::test]
