@@ -76,6 +76,8 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
   useEffect(() => {
     if (!chatId || streaming || !pending.current) return;
     const last = messages[messages.length - 1];
+    // The ideas agent has nothing left to do once its turn ends.
+    if (last?.role === 'system' || last?.role === 'agent') void useChat.getState().stop(chatId);
     if (last?.role === 'system') {
       pending.current = false;
       setAsking(false);

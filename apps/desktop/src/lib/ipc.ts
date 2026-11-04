@@ -59,6 +59,7 @@ export const agentStart = (chatId: string, agentId: AgentId) =>
 export const agentPrompt = (chatId: string, parts: MessagePart[]) =>
   invoke<void>('agent_prompt', { chatId, parts });
 export const agentCancel = (chatId: string) => invoke<void>('agent_cancel', { chatId });
+export const agentStop = (chatId: string) => invoke<void>('agent_stop', { chatId });
 export const agentRespondPermission = (requestId: string, optionId: string | null) =>
   invoke<void>('agent_respond_permission', { requestId, optionId });
 

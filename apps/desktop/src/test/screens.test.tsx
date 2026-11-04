@@ -18,6 +18,7 @@ vi.mock('@/lib/ipc', () => ({
   agentStart: vi.fn(),
   agentPrompt: vi.fn(),
   agentCancel: vi.fn(),
+  agentStop: vi.fn().mockResolvedValue(undefined),
   agentRespondPermission: vi.fn(),
   getSettings: vi.fn(),
   updateSettings: vi.fn(),
@@ -150,6 +151,7 @@ describe('Style', () => {
       const chatId = vi.mocked(ipc.agentPrompt).mock.calls[i]![0];
       updateHandlers.forEach((h) => h({ chatId, update: { kind: 'done', stopReason: 'end_turn' } }));
       await waitFor(() => expect(vi.mocked(ipc.upsertJob).mock.calls.at(-1)![0].status).toBe(last));
+      expect(ipc.agentStop).toHaveBeenCalledWith(chatId);
       if (last === 'done') expect(ipc.saveStyle).toHaveBeenCalledWith(expect.objectContaining({ name: 'Zoom cut', source: 'copied' }));
       else expect(vi.mocked(ipc.upsertJob).mock.calls.at(-1)![0].note).toBeTruthy();
       unmount();

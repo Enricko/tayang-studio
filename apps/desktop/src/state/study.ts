@@ -6,6 +6,7 @@ import {
   agentPrompt,
   agentRespondPermission,
   agentStart,
+  agentStop,
   readStyleResult,
   saveStyle,
   studyDir,
@@ -79,8 +80,15 @@ export const useStudy = create<StudyState>((set, get) => {
     }
   };
 
+  /** The study's agent has nothing left to do once it ends, however it ends. */
+  const stopAgent = () => {
+    const { studyId } = get();
+    if (studyId) void agentStop(studyChatId(studyId)).catch(() => {});
+  };
+
   const fail = async (message: string) => {
     dropRequests();
+    stopAgent();
     set({ phase: 'failed', error: message });
     await writeJob('failed', message);
   };
@@ -89,6 +97,7 @@ export const useStudy = create<StudyState>((set, get) => {
     const { studyId, url } = get();
     if (!studyId) return;
     dropRequests();
+    stopAgent();
     try {
       const raw = await readStyleResult(studyId);
       const parsed = raw ? parseStyleResult(raw, url) : null;

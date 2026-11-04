@@ -15,6 +15,7 @@ vi.mock('@/lib/ipc', () => ({
   agentStart: vi.fn(),
   agentPrompt: vi.fn(),
   agentCancel: vi.fn(),
+  agentStop: vi.fn().mockResolvedValue(undefined),
   agentRespondPermission: vi.fn(),
   getSettings: vi.fn(),
   listStyles: vi.fn(),

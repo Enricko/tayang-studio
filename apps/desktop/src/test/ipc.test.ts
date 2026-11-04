@@ -47,4 +47,13 @@ describe('ipc', () => {
     expect(await ipc.getChat('c1')).toBeNull();
     expect(calls).toEqual([{ cmd: 'get_chat', args: { chatId: 'c1' } }]);
   });
+
+  it('agentStop sends chatId', async () => {
+    const calls: { cmd: string; args: unknown }[] = [];
+    mockIPC((cmd, args) => {
+      calls.push({ cmd, args });
+    });
+    await ipc.agentStop('study-x');
+    expect(calls).toEqual([{ cmd: 'agent_stop', args: { chatId: 'study-x' } }]);
+  });
 });

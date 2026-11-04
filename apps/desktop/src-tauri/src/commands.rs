@@ -482,6 +482,13 @@ pub async fn agent_cancel(state: State<'_, AppState>, chat_id: String) -> CmdRes
     state.acp.cancel(&chat_id).await.map_err(err)
 }
 
+/// Stops the agent process of this chat. Stopping a chat with no agent is fine.
+#[tauri::command]
+pub async fn agent_stop(state: State<'_, AppState>, chat_id: String) -> CmdResult<()> {
+    let _ = state.acp.stop(&chat_id).await;
+    Ok(())
+}
+
 #[tauri::command]
 pub fn agent_respond_permission(
     state: State<'_, AppState>,
