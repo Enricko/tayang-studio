@@ -1,30 +1,109 @@
 //! Project folders on disk plus the slug helpers shared with the TS side.
 
+use std::fs;
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
+use unicode_normalization::UnicodeNormalization;
 
-pub fn slugify(_title: &str) -> String {
-    todo!()
+/// Port of `slugify` in `packages/shared/src/helpers.ts`.
+pub fn slugify(title: &str) -> String {
+    let mut out = String::new();
+    let mut pending_dash = false;
+    for c in title.nfkd() {
+        if ('\u{300}'..='\u{36f}').contains(&c) {
+            continue;
+        }
+        for l in c.to_lowercase() {
+            if l.is_ascii_lowercase() || l.is_ascii_digit() {
+                if pending_dash && !out.is_empty() {
+                    out.push('-');
+                }
+                pending_dash = false;
+                out.push(l);
+            } else {
+                pending_dash = true;
+            }
+        }
+    }
+    out.truncate(48);
+    let out = out.trim_end_matches('-');
+    if out.is_empty() {
+        "video".to_string()
+    } else {
+        out.to_string()
+    }
 }
 
-pub fn unique_slug(_base: &str, _taken: &[String]) -> String {
-    todo!()
+/// Port of `uniqueSlug`: `base`, then `base-2`, `base-3`, ...
+pub fn unique_slug(base: &str, taken: &[String]) -> String {
+    if !taken.iter().any(|t| t == base) {
+        return base.to_string();
+    }
+    let mut n = 2;
+    loop {
+        let candidate = format!("{base}-{n}");
+        if !taken.iter().any(|t| *t == candidate) {
+            return candidate;
+        }
+        n += 1;
+    }
 }
 
+/// Creates `<working>/<slug>/` with a placeholder `AGENTS.md`. A folder that already
+/// exists on disk counts as taken even if the caller does not list it.
 pub fn create_project_folder(
-    _working: &Path,
-    _title: &str,
-    _existing_slugs: &[String],
+    working: &Path,
+    title: &str,
+    existing_slugs: &[String],
 ) -> io::Result<(String, PathBuf)> {
-    todo!()
+    fs::create_dir_all(working)?;
+    let base = slugify(title);
+    let mut taken = existing_slugs.to_vec();
+    let mut slug = unique_slug(&base, &taken);
+    while working.join(&slug).exists() {
+        taken.push(slug);
+        slug = unique_slug(&base, &taken);
+    }
+    let dir = working.join(&slug);
+    fs::create_dir(&dir)?;
+    fs::write(dir.join("AGENTS.md"), format!("# {title}\n"))?;
+    Ok((slug, dir))
 }
 
-pub fn write_project_brief(_folder: &Path, _brief: &str) -> io::Result<()> {
-    todo!()
+/// Writes the same brief to `AGENTS.md` and `CLAUDE.md`.
+pub fn write_project_brief(folder: &Path, brief: &str) -> io::Result<()> {
+    fs::write(folder.join("AGENTS.md"), brief)?;
+    fs::write(folder.join("CLAUDE.md"), brief)
 }
 
-pub fn ensure_inside(_working: &Path, _p: &Path) -> bool {
-    todo!()
+fn normalize(p: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for c in p.components() {
+        match c {
+            Component::ParentDir => {
+                if !out.pop() {
+                    out.push("..");
+                }
+            }
+            Component::CurDir => {}
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
+}
+
+/// True when `p` (relative paths resolve against `working`) stays inside `working`.
+/// Resolves `..` lexically, then follows symlinks for paths that already exist.
+pub fn ensure_inside(working: &Path, p: &Path) -> bool {
+    let w = normalize(working);
+    let target = normalize(&if p.is_absolute() { p.to_path_buf() } else { w.join(p) });
+    if !target.starts_with(&w) {
+        return false;
+    }
+    match (fs::canonicalize(&w), fs::canonicalize(&target)) {
+        (Ok(cw), Ok(ct)) => ct.starts_with(cw),
+        _ => true,
+    }
 }
 
 #[cfg(test)]
