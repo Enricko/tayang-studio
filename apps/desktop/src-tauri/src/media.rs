@@ -175,7 +175,7 @@ pub fn thumbnails(
         .collect()
 }
 
-/// Arguments for `npx`, run with `folder` as the working directory.
+/// Arguments for `npx` (pinned, non-interactive), run with `folder` as the working directory.
 /// `--output` pins the file into `<folder>/renders/`.
 pub fn render_args(folder: &Path) -> Vec<String> {
     let secs = std::time::SystemTime::now()
@@ -184,7 +184,8 @@ pub fn render_args(folder: &Path) -> Vec<String> {
         .unwrap_or(0);
     let out = folder.join("renders").join(format!("render-{secs}.mp4"));
     vec![
-        "hyperframes".into(),
+        "-y".into(),
+        "hyperframes@0.9.10".into(),
         "render".into(),
         "--output".into(),
         out.to_string_lossy().into_owned(),
@@ -194,7 +195,9 @@ pub fn render_args(folder: &Path) -> Vec<String> {
 
 pub fn render(folder: &Path) -> Result<PathBuf> {
     std::fs::create_dir_all(folder.join("renders")).map_err(|e| e.to_string())?;
-    let npx = if cfg!(windows) { "npx.cmd" } else { "npx" };
+    // GUI apps can start with a minimal PATH, so resolve npx the way detection does.
+    let npx = crate::system::Exec::which(&crate::system::RealExec, "npx")
+        .unwrap_or_else(|| PathBuf::from(if cfg!(windows) { "npx.cmd" } else { "npx" }));
     let mut cmd = command(npx);
     cmd.args(render_args(folder)).current_dir(folder);
     run(cmd, "hyperframes render")?;
@@ -323,7 +326,7 @@ mod tests {
     fn render_args_sets_output_into_renders() {
         let folder = Path::new("proj dir");
         let args = render_args(folder);
-        assert_eq!(&args[..2], ["hyperframes", "render"]);
+        assert_eq!(&args[..3], ["-y", "hyperframes@0.9.10", "render"]);
         let i = args.iter().position(|a| a == "--output").unwrap();
         assert!(Path::new(&args[i + 1]).starts_with(folder.join("renders")));
         assert!(args[i + 1].ends_with(".mp4"));

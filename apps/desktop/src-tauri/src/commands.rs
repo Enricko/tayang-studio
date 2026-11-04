@@ -4,6 +4,7 @@ use crate::db::Db;
 use crate::media::MediaTools;
 use crate::system::{self, RealExec};
 use crate::types::*;
+use crate::media;
 use crate::acp::{AcpManager, AcpSink, PromptPart};
 use crate::projects;
 use std::path::{Path, PathBuf};
@@ -395,6 +396,90 @@ pub fn agent_respond_permission(
     option_id: Option<String>,
 ) -> CmdResult<()> {
     state.acp.respond_permission(&request_id, option_id).map_err(err)
+}
+
+// ---- media ----
+
+fn project_folder(state: &AppState, project_id: &str) -> CmdResult<PathBuf> {
+    state
+        .db
+        .get_project(project_id)
+        .map_err(err)?
+        .map(|p| PathBuf::from(p.folder))
+        .ok_or_else(|| "That project no longer exists".to_string())
+}
+
+fn path_string(p: &Path) -> String {
+    p.to_string_lossy().into_owned()
+}
+
+#[tauri::command]
+pub fn media_latest_render(
+    state: State<'_, AppState>,
+    project_id: String,
+) -> CmdResult<Option<String>> {
+    let folder = project_folder(&state, &project_id)?;
+    Ok(media::latest_render(&folder).map(|p| path_string(&p)))
+}
+
+#[tauri::command]
+pub async fn media_probe(
+    state: State<'_, AppState>,
+    project_id: String,
+) -> CmdResult<Option<MediaInfo>> {
+    let folder = project_folder(&state, &project_id)?;
+    let tools = state.media.clone();
+    tauri::async_runtime::spawn_blocking(move || match media::latest_render(&folder) {
+        Some(video) => media::probe(&tools, &video).map(Some),
+        None => Ok(None),
+    })
+    .await
+    .map_err(err)?
+}
+
+#[tauri::command]
+pub async fn media_extract_frame(
+    state: State<'_, AppState>,
+    project_id: String,
+    time_sec: f64,
+) -> CmdResult<String> {
+    let folder = project_folder(&state, &project_id)?;
+    let tools = state.media.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let video = media::latest_render(&folder).ok_or("This project has no render yet")?;
+        let out = folder.join(".tayang").join("frames");
+        media::extract_frame(&tools, &video, time_sec, &out).map(|p| path_string(&p))
+    })
+    .await
+    .map_err(err)?
+}
+
+#[tauri::command]
+pub async fn media_thumbnails(
+    state: State<'_, AppState>,
+    project_id: String,
+    count: u32,
+) -> CmdResult<Vec<String>> {
+    let folder = project_folder(&state, &project_id)?;
+    let tools = state.media.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let video = media::latest_render(&folder).ok_or("This project has no render yet")?;
+        let out = folder.join(".tayang").join("thumbs");
+        media::thumbnails(&tools, &video, count, &out)
+            .map(|v| v.iter().map(|p| path_string(p)).collect())
+    })
+    .await
+    .map_err(err)?
+}
+
+#[tauri::command]
+pub async fn media_render(state: State<'_, AppState>, project_id: String) -> CmdResult<String> {
+    let folder = project_folder(&state, &project_id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        media::render(&folder).map(|p| path_string(&p))
+    })
+    .await
+    .map_err(err)?
 }
 
 #[cfg(test)]
