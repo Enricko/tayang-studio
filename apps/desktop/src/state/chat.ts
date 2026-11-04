@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { buildSessionPreamble } from '@tayang/skills';
+import { buildSessionPreamble, languageHint } from '@tayang/skills';
 import type { AgentId, AgentUpdate, ChatMessage, JobStatus, MessagePart, PermissionRequest } from '@tayang/shared';
 import {
   addMessage,
@@ -372,7 +372,11 @@ export const useChat = create<ChatState>((set, get) => {
         const lead: MessagePart[] = [];
         // Claude loads the Tayang plugin itself (unless the app shipped without it); other agents get
         // the skills as text, once per session.
-        if (fresh && !isInternalChat(chatId) && (agent !== 'claude' || noPlugin)) lead.push({ type: 'text', text: buildSessionPreamble() });
+        const uiLang = useApp.getState().settings?.uiLanguage;
+        if (fresh && !isInternalChat(chatId)) {
+          if (agent !== 'claude' || noPlugin) lead.push({ type: 'text', text: buildSessionPreamble(uiLang) });
+          else if (languageHint(uiLang)) lead.push({ type: 'text', text: languageHint(uiLang) });
+        }
         const recap = pendingRecap.get(chatId);
         if (recap) {
           lead.push({ type: 'text', text: `Earlier in this chat, with another agent:\n${recap}\n\nContinue from here.` });

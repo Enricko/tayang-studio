@@ -50,6 +50,7 @@ const settings: Settings = {
   shareInstallStats: true,
   autoMode: false,
   lastPingAt: null,
+  uiLanguage: null,
 };
 
 const tool = (id: ToolStatus['id'], name: string, required: boolean, ok: boolean): ToolStatus => ({

@@ -57,6 +57,7 @@ const settings: Settings = {
   shareInstallStats: true,
   autoMode: false,
   lastPingAt: null,
+  uiLanguage: null,
 };
 
 const atlas: Style = {

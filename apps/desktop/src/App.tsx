@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/Button';
 import { Sidebar, type SidebarKey } from '@/components/Sidebar';
-import { getSettings, syncStyles } from '@/lib/ipc';
+import { detectUiLanguage, setUiLanguage } from '@/i18n';
+import { getSettings, syncStyles, updateSettings } from '@/lib/ipc';
 import { useWindowDrag } from '@/lib/windowDrag';
 import { Agents } from '@/screens/Agents';
 import { Calendar } from '@/screens/Calendar';
@@ -37,6 +39,7 @@ function Onboarding({ name }: { name: Route['name'] }) {
 export default function App() {
   const route = useApp((s) => s.route);
   const settings = useApp((s) => s.settings);
+  const { t } = useTranslation();
   useWindowDrag();
 
   const [loadError, setLoadError] = useState(false);
@@ -47,6 +50,14 @@ export default function App() {
     getSettings()
       .then((st) => {
         useApp.getState().setSettings(st);
+        // First run has no saved language: follow the system's, then remember it.
+        setUiLanguage(st.uiLanguage ?? detectUiLanguage());
+        if (!st.uiLanguage) {
+          void Promise.resolve()
+            .then(() => updateSettings({ uiLanguage: detectUiLanguage() }))
+            .then((next) => useApp.getState().setSettings(next))
+            .catch(() => {});
+        }
         // Built-in styles in the background, like the install ping: never blocks, failures are ignored.
         void Promise.resolve()
           .then(syncStyles)
@@ -68,9 +79,9 @@ export default function App() {
       <div data-tauri-drag-region className="flex h-full flex-col items-center justify-center gap-4 bg-background">
         {loadError && (
           <>
-            <p className="m-0 text-sm text-text-2">Tayang couldn't load your settings.</p>
+            <p className="m-0 text-sm text-text-2">{t('app.settingsFailed')}</p>
             <Button variant="secondary" onClick={load}>
-              Try again
+              {t('common.tryAgain')}
             </Button>
           </>
         )}

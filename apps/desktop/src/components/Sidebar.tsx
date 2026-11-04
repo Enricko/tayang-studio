@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Calendar, LayoutPanelLeft, MessageCircle, Palette, Plus, Smartphone, SlidersHorizontal } from 'lucide-react';
 import type { Project } from '@tayang/shared';
 import logo from '@/assets/brand/tayang-horizontal-reversed-color.svg';
@@ -11,12 +12,12 @@ import { cn } from '@/lib/utils';
 
 export type SidebarKey = 'chat' | 'videos' | 'style' | 'agents' | 'calendar' | 'settings';
 
-const NAV: { key: SidebarKey; label: string; icon: typeof Calendar; route: Route }[] = [
-  { key: 'chat', label: 'Chat', icon: MessageCircle, route: { name: 'chat-new' } },
-  { key: 'videos', label: 'Videos', icon: Smartphone, route: { name: 'videos' } },
-  { key: 'style', label: 'Style', icon: Palette, route: { name: 'style' } },
-  { key: 'agents', label: 'Agents', icon: LayoutPanelLeft, route: { name: 'agents' } },
-  { key: 'calendar', label: 'Calendar', icon: Calendar, route: { name: 'calendar' } },
+const NAV: { key: SidebarKey; icon: typeof Calendar; route: Route }[] = [
+  { key: 'chat', icon: MessageCircle, route: { name: 'chat-new' } },
+  { key: 'videos', icon: Smartphone, route: { name: 'videos' } },
+  { key: 'style', icon: Palette, route: { name: 'style' } },
+  { key: 'agents', icon: LayoutPanelLeft, route: { name: 'agents' } },
+  { key: 'calendar', icon: Calendar, route: { name: 'calendar' } },
 ];
 
 function NavItem({
@@ -56,6 +57,7 @@ function NavItem({
 }
 
 export function Sidebar({ active }: { active: SidebarKey }) {
+  const { t } = useTranslation();
   const navigate = useApp((s) => s.navigate);
   const needsYou = useApp((s) => s.needsYouCount);
   const version = useApp((s) => s.projectsVersion);
@@ -84,17 +86,17 @@ export function Sidebar({ active }: { active: SidebarKey }) {
 
   return (
     <nav
-      aria-label="Main"
+      aria-label={t('sidebar.main')}
       className="flex h-full w-full flex-col border-r border-border bg-sidebar px-3 pb-4 pt-4 text-foreground"
     >
       <div className="flex items-center gap-2 px-2 pb-5 pt-6" data-tauri-drag-region>
         <img src={logo} alt="Tayang" className="block h-7 w-auto" />
-        <span className="mt-1 text-[13px] text-text-3">Studio</span>
+        <span className="mt-1 text-[13px] text-text-3">{t('sidebar.studio')}</span>
       </div>
 
       <Button variant="secondary" className="mb-4 w-full" onClick={() => navigate({ name: 'chat-new' })}>
         <Plus size={16} strokeWidth={1.5} aria-hidden="true" />
-        New chat
+        {t('sidebar.newChat')}
       </Button>
 
       <div className="flex flex-col gap-1">
@@ -102,7 +104,7 @@ export function Sidebar({ active }: { active: SidebarKey }) {
           <NavItem
             key={n.key}
             active={active === n.key}
-            label={n.label}
+            label={t(`sidebar.${n.key}` as 'sidebar.chat')}
             icon={n.icon}
             onClick={() => navigate(n.route)}
             count={n.key === 'agents' && needsYou > 0 ? needsYou : undefined}
@@ -111,7 +113,7 @@ export function Sidebar({ active }: { active: SidebarKey }) {
       </div>
 
       <div className="mt-6 flex flex-col gap-1">
-        <span className="px-3 pb-1 text-xs text-text-3">Recent</span>
+        <span className="px-3 pb-1 text-xs text-text-3">{t('sidebar.recent')}</span>
         {recent.map((p, i) => (
           <a
             key={p.id}
@@ -134,7 +136,7 @@ export function Sidebar({ active }: { active: SidebarKey }) {
       <div className="mt-auto flex flex-col gap-3">
         <NavItem
           active={active === 'settings'}
-          label="Settings"
+          label={t('sidebar.settings')}
           icon={SlidersHorizontal}
           onClick={() => navigate({ name: 'settings' })}
         />

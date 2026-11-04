@@ -74,6 +74,7 @@ const settings: Settings = {
   shareInstallStats: true,
   autoMode: false,
   lastPingAt: null,
+  uiLanguage: null,
 };
 
 const mk = (id: string, title: string): Project => ({

@@ -72,6 +72,7 @@ const settings: Settings = {
   shareInstallStats: true,
   autoMode: false,
   lastPingAt: null,
+  uiLanguage: null,
 };
 
 const project = (id: string, title: string, status: Project['status'], scheduledAt: string | null = null): Project => ({

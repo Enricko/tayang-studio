@@ -26,6 +26,7 @@ const base: Settings = {
   shareInstallStats: true,
   autoMode: false,
   lastPingAt: null,
+  uiLanguage: null,
 };
 
 describe('App start', () => {
