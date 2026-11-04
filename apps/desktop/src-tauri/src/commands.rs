@@ -441,6 +441,16 @@ pub fn build_prompt(
     out
 }
 
+pub const MAX_ATTACHMENT: u64 = 50 * 1024 * 1024;
+
+pub fn copy_attachment(_cwd: &Path, _source: &Path, _max: u64) -> CmdResult<MessagePart> {
+    todo!()
+}
+
+pub fn check_file_parts(_cwd: &Path, _parts: &[MessagePart]) -> CmdResult<()> {
+    todo!()
+}
+
 /// Frame images must live inside the working folder or inside the recorded folder of
 /// the frame's own (known, existing) project.
 pub fn check_frame_images(
@@ -783,6 +793,118 @@ mod tests {
                 ),
             ]
         );
+    }
+
+    #[test]
+    fn attach_copies_into_attachments_folder() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cwd = tmp.path().join("cwd");
+        std::fs::create_dir_all(&cwd).unwrap();
+        let src = tmp.path().join("notes.pdf");
+        std::fs::write(&src, b"hello").unwrap();
+        let part = copy_attachment(&cwd, &src, MAX_ATTACHMENT).unwrap();
+        let dest = cwd.join("attachments").join("notes.pdf");
+        assert_eq!(std::fs::read(&dest).unwrap(), b"hello");
+        assert_eq!(
+            part,
+            MessagePart::File {
+                path: dest.to_string_lossy().into_owned(),
+                name: "notes.pdf".into(),
+                mime: "application/pdf".into(),
+                size: 5,
+            }
+        );
+    }
+
+    #[test]
+    fn attach_names_collisions_uniquely() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cwd = tmp.path().join("cwd");
+        std::fs::create_dir_all(&cwd).unwrap();
+        let src = tmp.path().join("a.png");
+        std::fs::write(&src, b"1").unwrap();
+        copy_attachment(&cwd, &src, MAX_ATTACHMENT).unwrap();
+        std::fs::write(&src, b"22").unwrap();
+        let MessagePart::File { name, path, mime, .. } =
+            copy_attachment(&cwd, &src, MAX_ATTACHMENT).unwrap()
+        else {
+            panic!("not a file part")
+        };
+        assert_eq!(name, "a-2.png");
+        assert_eq!(mime, "image/png");
+        assert_eq!(std::fs::read(path).unwrap(), b"22");
+        assert_eq!(std::fs::read(cwd.join("attachments").join("a.png")).unwrap(), b"1");
+    }
+
+    #[test]
+    fn attach_rejects_big_files_and_non_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cwd = tmp.path().join("cwd");
+        std::fs::create_dir_all(&cwd).unwrap();
+        let src = tmp.path().join("big.bin");
+        std::fs::write(&src, vec![0u8; 11]).unwrap();
+        let e = copy_attachment(&cwd, &src, 10).unwrap_err();
+        assert_eq!(e, "That file is larger than 50 MB");
+        assert!(copy_attachment(&cwd, tmp.path(), 10).is_err());
+        assert!(copy_attachment(&cwd, &tmp.path().join("missing"), 10).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn attach_rejects_a_destination_outside_the_cwd() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cwd = tmp.path().join("cwd");
+        let outside = tmp.path().join("outside");
+        std::fs::create_dir_all(&cwd).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::os::unix::fs::symlink(&outside, cwd.join("attachments")).unwrap();
+        let src = tmp.path().join("a.txt");
+        std::fs::write(&src, b"x").unwrap();
+        assert!(copy_attachment(&cwd, &src, MAX_ATTACHMENT).is_err());
+        assert!(!outside.join("a.txt").exists());
+    }
+
+    #[test]
+    fn file_parts_become_images_or_text() {
+        let parts = vec![
+            MessagePart::File {
+                path: "/w/c/attachments/shot.PNG".into(),
+                name: "shot.PNG".into(),
+                mime: "image/png".into(),
+                size: 10,
+            },
+            MessagePart::File {
+                path: "/w/c/attachments/brief.pdf".into(),
+                name: "brief.pdf".into(),
+                mime: "application/pdf".into(),
+                size: 2048,
+            },
+        ];
+        assert_eq!(
+            build_prompt(&parts, 30, |_| None, |_| None),
+            vec![
+                PromptPart::Image { path: PathBuf::from("/w/c/attachments/shot.PNG") },
+                PromptPart::Text("Attached image: attachments/shot.PNG (shot.PNG, 10 B)".into()),
+                PromptPart::Text(
+                    "Attached file: attachments/brief.pdf (brief.pdf, 2.0 KB)".into()
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn file_parts_must_be_inside_the_chat_folder() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cwd = tmp.path().join("cwd");
+        std::fs::create_dir_all(&cwd).unwrap();
+        let file = |p: PathBuf| MessagePart::File {
+            path: p.to_string_lossy().into_owned(),
+            name: "x".into(),
+            mime: "text/plain".into(),
+            size: 1,
+        };
+        assert!(check_file_parts(&cwd, &[file(cwd.join("attachments").join("x"))]).is_ok());
+        assert!(check_file_parts(&cwd, &[file(tmp.path().join("secret"))]).is_err());
     }
 }
 
