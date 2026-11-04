@@ -449,6 +449,53 @@ describe('Style popup', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
+  it('Delete moves focus to the neighbouring card', async () => {
+    const copied: StyleT = { id: 'c1', name: 'Zoom cut', source: 'copied', sourceUrl: null, notes: {}, prompt: 'Zoom.', createdAt: '2026-11-04T00:00:00Z' };
+    vi.mocked(ipc.syncStyles).mockResolvedValue({ styles: [atlas], offline: false });
+    vi.mocked(ipc.listStyles).mockResolvedValue([atlas, copied]);
+    vi.mocked(ipc.deleteStyle).mockResolvedValue(undefined);
+    render(<Style />);
+    const dialog = await openCard('Zoom cut');
+    vi.mocked(ipc.listStyles).mockResolvedValue([atlas]);
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: /^Atlas journey/ })).toHaveFocus());
+  });
+
+  it('Escape and a click outside keep the dialog open while the prompt has unsaved edits, with a hint', async () => {
+    mocks();
+    render(<Style />);
+    const dialog = await openCard('Atlas journey');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Edit prompt' }));
+    // Nothing changed yet: closing is fine elsewhere, but typing makes it dirty.
+    await userEvent.type(within(dialog).getByRole('textbox', { name: 'Prompt your agent gets' }), ' More');
+    await userEvent.keyboard('{Escape}');
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByText('You have unsaved changes. Save or cancel first')).toBeInTheDocument();
+    await userEvent.click(document.querySelector('[data-slot="dialog-overlay"]')!);
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByText('You have unsaved changes. Save or cancel first')).toBeNull();
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('opening Edit without changing anything still closes with Escape', async () => {
+    mocks();
+    render(<Style />);
+    const dialog = await openCard('Atlas journey');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Edit prompt' }));
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('turns the open and close animation off under reduced motion', async () => {
+    mocks();
+    render(<Style />);
+    const dialog = await openCard('Atlas journey');
+    expect(dialog.className).toContain('motion-reduce:animate-none');
+    expect(document.querySelector('[data-slot="dialog-overlay"]')!.className).toContain('motion-reduce:animate-none');
+  });
+
   it('built-in styles have no Delete', async () => {
     mocks();
     render(<Style />);
