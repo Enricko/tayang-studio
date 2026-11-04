@@ -241,7 +241,6 @@ Before planning, this document gets a builder check: a fresh reader looks for ga
 
 ## Autopilot and Calendar
 
-
 ### Owner decisions (2026-11-04)
 - Autopilot = niche + style + frequency ("2 videos a day or etc"); the user can have **many autopilots**, each can be **paused/resumed**.
 - Each autopilot chooses **automatic** (finished videos go straight to "Ready") or **review first** (finished videos wait for Approve).
