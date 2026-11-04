@@ -26,6 +26,7 @@ fn error_for(status: u16) -> BillingError {
     match status {
         401 => BillingError::SignedOut,
         400 => BillingError::InvalidPlan,
+        409 => BillingError::DowngradeNotAllowed,
         429 => BillingError::RateLimited,
         503 => BillingError::Unavailable,
         502 => BillingError::PaymentProvider,
@@ -122,6 +123,7 @@ mod tests {
         let f = fake(|_, _| (200, CHECKOUT.replace("https://pay.sumopod.com/p/1", "https://pay.example/p/1"))).await;
         assert_eq!(checkout(&http_client().unwrap(), &f.base, "tyg_abc", "lite").await, Err(BillingError::BadLink));
         assert_eq!(serde_json::to_value(BillingError::BadLink).unwrap(), "bad_link");
+        assert_eq!(serde_json::to_value(BillingError::DowngradeNotAllowed).unwrap(), "downgrade_not_allowed");
     }
 
     #[tokio::test]
@@ -143,6 +145,7 @@ mod tests {
             (200, r#"{"orderId":"x","paymentLinkUrl":"file:///etc/passwd","expiresAt":"x","amount":1}"#, BillingError::BadLink),
             (503, r#"{"error":"billing_unavailable"}"#, BillingError::Unavailable),
             (429, r#"{"error":"rate_limited"}"#, BillingError::RateLimited),
+            (409, r#"{"error":"downgrade_not_allowed"}"#, BillingError::DowngradeNotAllowed),
         ] {
             let f = fake(move |_, _| (status, body.into())).await;
             assert_eq!(checkout(&http_client().unwrap(), &f.base, "tyg_abc", "lite").await, Err(want), "{status} {body}");

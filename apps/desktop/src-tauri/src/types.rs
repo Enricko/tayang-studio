@@ -865,4 +865,7 @@ pub enum BillingError {
     /// The payment link isn't a SumoPod page, so it isn't opened.
     #[serde(rename = "bad_link")]
     BadLink,
+    /// A lower plan while a higher one runs (the API's 409).
+    #[serde(rename = "downgrade_not_allowed")]
+    DowngradeNotAllowed,
 }
