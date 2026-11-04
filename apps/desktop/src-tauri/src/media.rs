@@ -111,20 +111,21 @@ fn plain_dir(path: &Path) -> bool {
 }
 
 /// Where a render lands, in this order: `renders/`, the project root, `out/`, then each `runs/<run>/out/`
-/// (a template pipeline's). Symlinks, dot folders, `node_modules` and `.git` are never looked in.
+/// and `runs/<run>/<version>/out/` (a template pipeline's, also with one folder per version). Symlinks, dot folders, `node_modules` and `.git` are never looked in.
 fn render_dirs(folder: &Path) -> Vec<PathBuf> {
     let mut dirs = vec![folder.join("renders"), folder.to_path_buf(), folder.join("out")];
     dirs.retain(|d| d == folder || plain_dir(d));
     let runs = folder.join("runs");
     if plain_dir(&runs) {
         if let Ok(entries) = std::fs::read_dir(&runs) {
-            let mut outs: Vec<PathBuf> = entries
-                .flatten()
-                .map(|e| e.path())
-                .filter(|run| plain_dir(run))
-                .map(|run| run.join("out"))
-                .filter(|out| plain_dir(out))
-                .collect();
+            let mut outs: Vec<PathBuf> = Vec::new();
+            for run in entries.flatten().map(|e| e.path()).filter(|run| plain_dir(run)) {
+                outs.push(run.join("out"));
+                if let Ok(versions) = std::fs::read_dir(&run) {
+                    outs.extend(versions.flatten().map(|e| e.path()).filter(|v| plain_dir(v)).map(|v| v.join("out")));
+                }
+            }
+            outs.retain(|out| plain_dir(out));
             outs.sort();
             dirs.extend(outs);
         }
@@ -1705,7 +1706,7 @@ mod tests {
 
     #[test]
     fn latest_render_finds_each_place_a_render_lands() {
-        for rel in ["renders/a.mp4", "a.mp4", "out/a.mp4", "runs/jalur-rempah/out/a.mp4"] {
+        for rel in ["renders/a.mp4", "a.mp4", "out/a.mp4", "runs/jalur-rempah/out/a.mp4", "runs/jalur-rempah/v3/out/video.mp4"] {
             let (tmp, w) = render_tree();
             w(rel, b"x", 0);
             assert_eq!(latest_render(tmp.path()), Some(tmp.path().join(rel)), "{rel}");
@@ -1739,7 +1740,10 @@ mod tests {
             "src/x.mp4",
             "renders/sub/deeper.mp4",
             "out/sub/deeper.mp4",
-            "runs/a/b/out/too-deep.mp4",
+            "runs/a/b/c/out/too-deep.mp4",
+            "runs/a/b/out/sub/too-deep.mp4",
+            "runs/a/node_modules/out/dep.mp4",
+            "runs/a/.cache/out/dot.mp4",
             "runs/a/out/sub/too-deep.mp4",
             "runs/a/video.mp4",
             "runs/node_modules/out/dep.mp4",
@@ -1769,6 +1773,9 @@ mod tests {
         std::os::unix::fs::symlink(o.join("out"), root.join("out")).unwrap();
         std::os::unix::fs::symlink(o, root.join("runs/linked")).unwrap();
         std::os::unix::fs::symlink(o.join("out"), root.join("runs/a/out")).unwrap();
+        std::os::unix::fs::symlink(o, root.join("runs/a/v1")).unwrap();
+        std::fs::create_dir_all(root.join("runs/a/v2")).unwrap();
+        std::os::unix::fs::symlink(o.join("out"), root.join("runs/a/v2/out")).unwrap();
         std::os::unix::fs::symlink(o.join("v.mp4"), root.join("v.mp4")).unwrap();
         assert_eq!(latest_render(root), None);
         assert_eq!(newest_video_info(root), None);
@@ -1788,6 +1795,9 @@ mod tests {
         assert_eq!(info.size, 0, "a render that just started is still empty");
         // The finished-render lookup never takes an empty file.
         assert_eq!(render_name(root).as_deref(), Some("old.mp4"));
+        // The owner's layout: one folder per version under the run.
+        w("runs/jalur-rempah/v3/out/video.mp4", b"", 20);
+        assert_eq!(newest_video_info(root).unwrap().path, root.join("runs/jalur-rempah/v3/out/video.mp4").to_string_lossy());
     }
 
     #[test]
