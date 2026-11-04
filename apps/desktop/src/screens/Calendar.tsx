@@ -75,6 +75,7 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
   const { t } = useTranslation();
   const today = useMemo(() => todayProp ?? new Date(), [todayProp]);
   const settings = useApp((s) => s.settings);
+  const blocked = useApp((s) => s.notificationsBlocked);
   const [cursor, setCursor] = useState({ y: today.getFullYear(), m: today.getMonth() });
   const [projects, setProjects] = useState<Project[]>([]);
   const cacheKey = weekKey(today);
@@ -226,6 +227,11 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
             <ChevronRight size={16} strokeWidth={1.5} aria-hidden="true" />
           </Button>
         </div>
+        {blocked && (
+          <p role="status" className="m-0 rounded-xl border border-border bg-card px-4 py-3 text-xs text-text-2">
+            {t('reminders.blocked')}
+          </p>
+        )}
         {gridError && (
           <p role="alert" className="m-0 text-xs text-orange-light">
             {gridError}

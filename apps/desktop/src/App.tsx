@@ -5,6 +5,7 @@ import { Sidebar, type SidebarKey } from '@/components/Sidebar';
 import { setUiLanguage } from '@/i18n';
 import { systemLanguage } from '@/lib/language';
 import { getSettings, syncStyles, updateSettings } from '@/lib/ipc';
+import { startScheduler } from '@/lib/scheduler';
 import { useWindowDrag } from '@/lib/windowDrag';
 import { Agents } from '@/screens/Agents';
 import { Calendar } from '@/screens/Calendar';
@@ -77,6 +78,21 @@ export default function App() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Once set up, the scheduler listens for the Rust tick (reminders now, autopilots later).
+  const onboarded = settings?.onboarded ?? false;
+  useEffect(() => {
+    if (!onboarded) return;
+    let off: (() => void) | undefined;
+    let gone = false;
+    startScheduler()
+      .then((un) => (gone ? un() : (off = un)))
+      .catch(() => {});
+    return () => {
+      gone = true;
+      off?.();
+    };
+  }, [onboarded]);
 
   if (!settings) {
     return (
