@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { AgentId, AgentUpdate, PermissionRequest, SystemInfo, ToolId, ToolStatus } from '@tayang/shared';
 import { buildInstallPrompt } from '@tayang/skills';
 import { agentCancel, agentPrompt, agentRespondPermission, agentStart, checkTools } from '@/lib/ipc';
+import { agentErrorText } from '@/lib/agents';
 import { onAgentUpdate, onPermission } from '@/lib/events';
 
 /** Every install runs in one shared agent chat. */
@@ -102,7 +103,7 @@ export const useInstall = create<InstallState>((set, get) => {
       const promote = cur?.status === 'confirm' && !get().request && update.status !== 'pending';
       patch(tool, { log, ...(promote ? { status: 'running' as const } : {}) });
     } else if (update.kind === 'error') {
-      fail(tool, update.message);
+      fail(tool, agentErrorText(update.message, get().agent ?? 'claude'));
     } else if (update.kind === 'done') {
       // The turn is over: nothing still queued can run.
       dropRequests();
@@ -147,7 +148,7 @@ export const useInstall = create<InstallState>((set, get) => {
         const text = buildInstallPrompt(tool, opts.sys, opts.agent, { elevenLabsKey: opts.elevenLabsKey });
         await agentPrompt(SETUP_CHAT, [{ type: 'text', text }]);
       } catch (e) {
-        if (get().active === tool) fail(tool, e instanceof Error ? e.message : String(e));
+        if (get().active === tool) fail(tool, agentErrorText(e instanceof Error ? e.message : String(e), opts.agent));
       }
     },
 

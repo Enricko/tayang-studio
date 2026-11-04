@@ -54,6 +54,8 @@ const INVALID_PARAMS: i64 = -32602;
 const METHOD_NOT_FOUND: i64 = -32601;
 const INTERNAL_ERROR: i64 = -32603;
 const RESOURCE_NOT_FOUND: i64 = -32002;
+/// ACP's "authentication required".
+const AUTH_REQUIRED: i64 = -32000;
 /// Local-only code for "the connection is gone"; never sent over the wire.
 const CONNECTION_CLOSED: i64 = -1;
 
@@ -87,6 +89,22 @@ enum Incoming {
     Response { id: u64, result: RpcResult },
 }
 
+/// A JSON-RPC error's message plus its `data` detail when the agent sent one.
+fn error_text(err: &Value) -> String {
+    let message = err.get("message").and_then(Value::as_str).unwrap_or("agent error").trim();
+    let detail = match err.get("data") {
+        Some(Value::String(s)) => Some(s.as_str()),
+        Some(d) => ["message", "details", "error"].iter().find_map(|k| d.get(*k)?.as_str()),
+        None => None,
+    }
+    .map(str::trim)
+    .filter(|d| !d.is_empty() && *d != message);
+    match detail {
+        Some(d) => format!("{message} ({d})"),
+        None => message.to_string(),
+    }
+}
+
 fn parse_message(line: &str) -> Option<Incoming> {
     let mut v: Value = serde_json::from_str(line).ok()?;
     let obj = v.as_object_mut()?;
@@ -101,7 +119,7 @@ fn parse_message(line: &str) -> Option<Incoming> {
             let result = match obj.remove("error") {
                 Some(err) if !err.is_null() => Err(RpcError::new(
                     err.get("code").and_then(Value::as_i64).unwrap_or(INTERNAL_ERROR),
-                    err.get("message").and_then(Value::as_str).unwrap_or("agent error"),
+                    error_text(&err),
                 )),
                 _ => Ok(obj.remove("result").unwrap_or(Value::Null)),
             };
@@ -581,7 +599,8 @@ impl SessionCore {
                     AgentUpdate::Error { message: CRASH_MESSAGE.into() }
                 }
             }
-            Err(e) => AgentUpdate::Error { message: e.message },
+            Err(e) if e.code == AUTH_REQUIRED => AgentUpdate::Error { message: auth_message(&e) },
+            Err(e) => AgentUpdate::Error { message: format!("The agent reported an error: {}", e.message) },
         };
         self.emit(update);
     }
@@ -634,9 +653,16 @@ fn slice_lines(content: &str, line: Option<u64>, limit: Option<u64>) -> String {
     }
 }
 
+/// The UI turns any message mentioning sign in into "how to sign in" copy.
+fn auth_message(e: &RpcError) -> String {
+    format!("The agent needs you to sign in first ({})", e.message)
+}
+
 fn start_error(e: RpcError) -> AcpError {
     if e.is_closed() {
         AcpError("The agent exited before it was ready".into())
+    } else if e.code == AUTH_REQUIRED {
+        AcpError(auth_message(&e))
     } else {
         AcpError(format!("The agent could not start a session: {}", e.message))
     }

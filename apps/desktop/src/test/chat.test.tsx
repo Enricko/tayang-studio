@@ -208,9 +208,20 @@ describe('ChatProject', () => {
     await user.type(box, 'faster');
     await user.click(screen.getByRole('button', { name: 'Send' }));
     await waitFor(() => expect(box).toBeDisabled());
-    await emit('c1', { kind: 'error', message: 'boom' });
-    expect(await screen.findByText('The agent stopped unexpectedly')).toBeInTheDocument();
+    await emit('c1', { kind: 'error', message: 'The agent reported an error: boom' });
+    expect(await screen.findByText('The agent reported an error: boom')).toBeInTheDocument();
     expect(box).toBeEnabled();
+  });
+
+  it('tells the user how to sign in when the agent needs auth', async () => {
+    const user = userEvent.setup();
+    vi.mocked(ipc.agentStart).mockRejectedValue(new Error('The agent needs you to sign in first (Authentication required)'));
+    render(<ChatProject chatId="c1" />);
+    await user.type(await screen.findByRole('textbox', { name: 'Message' }), 'go');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+    expect(
+      await screen.findByText('Sign in to Claude Code: open a terminal and run `claude` once, then try again'),
+    ).toBeInTheDocument();
   });
 
   it('renders a permission card and Allow sends the allow option id', async () => {

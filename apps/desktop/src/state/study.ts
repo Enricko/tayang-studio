@@ -11,6 +11,7 @@ import {
   studyDir,
   upsertJob,
 } from '@/lib/ipc';
+import { agentErrorText } from '@/lib/agents';
 import { onAgentUpdate, onPermission } from '@/lib/events';
 import { refreshJobs } from '@/state/jobs';
 
@@ -107,7 +108,7 @@ export const useStudy = create<StudyState>((set, get) => {
         const id = get().studyId;
         if (!id || chatId !== studyChatId(id) || get().phase !== 'running') return;
         if (update.kind === 'tool') set((s) => ({ toolCalls: s.toolCalls + (update.status === 'done' ? 1 : 0) }));
-        else if (update.kind === 'error') void fail(update.message);
+        else if (update.kind === 'error') void fail(agentErrorText(update.message, agent));
         else if (update.kind === 'done') void finish();
       }),
       onPermission((req) => {
@@ -141,7 +142,7 @@ export const useStudy = create<StudyState>((set, get) => {
         await agentStart(studyChatId(studyId), agentId);
         await agentPrompt(studyChatId(studyId), [{ type: 'text', text: buildStudyStylePrompt(url, dir) }]);
       } catch (e) {
-        await fail(e instanceof Error ? e.message : String(e));
+        await fail(agentErrorText(e instanceof Error ? e.message : String(e), agentId));
       }
     },
 

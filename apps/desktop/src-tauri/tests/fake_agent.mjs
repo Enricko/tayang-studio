@@ -11,7 +11,10 @@
 //   fs-outside -> fs/write_text_file to a path outside cwd, reports "fs-ok" or "fs-error: <message>"
 //   fs-inside  -> writes then reads line 2 of notes/inside.txt, reports "read: <JSON content>"
 //   pids       -> starts a long-lived helper process, reports "pids <agent pid> <helper pid>"
+//   fail       -> session/prompt error -32603 "Internal error" with data.details "quota exceeded"
 //   any prompt with an image block -> text "image <mimeType> <data>"
+//
+// With the --needs-auth argument, session/new fails with -32000 "Authentication required".
 import { createInterface } from "node:readline";
 import path from "node:path";
 import { spawn } from "node:child_process";
@@ -163,6 +166,10 @@ function handle(msg) {
       return;
     }
     case "session/new":
+      if (process.argv.includes("--needs-auth")) {
+        send({ id, error: { code: -32000, message: "Authentication required" } });
+        return;
+      }
       if (typeof params?.cwd !== "string" || !Array.isArray(params?.mcpServers)) {
         send({ id, error: { code: -32602, message: "bad session/new params" } });
         return;
@@ -174,6 +181,10 @@ function handle(msg) {
     case "session/prompt":
       if (params?.sessionId !== sessionId) {
         send({ id, error: { code: -32602, message: "unknown session" } });
+        return;
+      }
+      if (params.prompt?.some((b) => b.type === "text" && b.text.trim() === "fail")) {
+        send({ id, error: { code: -32603, message: "Internal error", data: { details: "quota exceeded" } } });
         return;
       }
       runPrompt(params).then((stopReason) => send({ id, result: { stopReason } }));

@@ -1,10 +1,11 @@
 import { create } from 'zustand';
-import type { AgentUpdate, ChatMessage, MessagePart, PermissionRequest } from '@tayang/shared';
+import type { AgentId, AgentUpdate, ChatMessage, MessagePart, PermissionRequest } from '@tayang/shared';
 import { addMessage, agentRespondPermission, agentPrompt, agentStart, listMessages } from '@/lib/ipc';
 import { onAgentUpdate, onPermission } from '@/lib/events';
+import { agentErrorText } from '@/lib/agents';
 import { useApp } from '@/state/app';
 
-export const AGENT_STOPPED = 'The agent stopped unexpectedly';
+export { AGENT_STOPPED } from '@/lib/agents';
 
 export interface SendOpts {
   /** What the agent receives instead of the visible message (extra context, topic prompts). */
@@ -38,6 +39,8 @@ export const isScratchChat = (chatId: string) =>
 
 /** Chats this store loaded or sent to; updates for any other chat id are not ours. */
 const tracked = new Set<string>();
+/** The agent each chat last started with, for error copy. */
+const chatAgent = new Map<string, AgentId>();
 let seq = 0;
 const localMessage = (chatId: string, role: ChatMessage['role'], parts: MessagePart[]): ChatMessage => ({
   id: `local-${++seq}`,
@@ -125,7 +128,8 @@ export const useChat = create<ChatState>((set, get) => {
     // error: the session is gone, so the next send must start a new one
     finish(chatId);
     set((s) => ({ started: { ...s.started, [chatId]: false } }));
-    const sys = localMessage(chatId, 'system', [{ type: 'text', text: AGENT_STOPPED }]);
+    const text = agentErrorText(u.message, chatAgent.get(chatId) ?? 'claude');
+    const sys = localMessage(chatId, 'system', [{ type: 'text', text }]);
     append(chatId, sys);
     void persist(chatId, sys);
   };
@@ -160,15 +164,18 @@ export const useChat = create<ChatState>((set, get) => {
       append(chatId, user);
       void persist(chatId, user);
       try {
+        const agent = useApp.getState().settings?.defaultAgent ?? 'claude';
+        chatAgent.set(chatId, agent);
         if (!get().started[chatId]) {
-          await agentStart(chatId, useApp.getState().settings?.defaultAgent ?? 'claude');
+          await agentStart(chatId, agent);
           set((s) => ({ started: { ...s.started, [chatId]: true } }));
         }
         await agentPrompt(chatId, opts?.promptParts ? [...attached, ...opts.promptParts] : visible);
         return null;
       } catch (e) {
-        onUpdate(chatId, { kind: 'error', message: 'send failed' });
-        return e instanceof Error ? e.message : String(e);
+        const message = e instanceof Error ? e.message : String(e);
+        onUpdate(chatId, { kind: 'error', message });
+        return agentErrorText(message, chatAgent.get(chatId) ?? 'claude');
       }
     },
 
@@ -204,6 +211,7 @@ export const useChat = create<ChatState>((set, get) => {
       unlisten.forEach((p) => void p.then((fn) => fn()));
       unlisten = [];
       tracked.clear();
+      chatAgent.clear();
       set({ messages: {}, streaming: {}, permissions: {}, attachments: {}, started: {} });
     },
   };

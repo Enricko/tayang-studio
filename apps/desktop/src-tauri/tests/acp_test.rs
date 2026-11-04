@@ -346,6 +346,34 @@ async fn sessions_are_independent_per_chat() {
 }
 
 #[tokio::test]
+async fn auth_required_on_session_new_says_sign_in() {
+    let ws = workspace();
+    let manager = AcpManager::new();
+    let mut cmd = fake_agent();
+    cmd.push("--needs-auth".into());
+    let err = manager
+        .start("c1", &cmd, &ws.cwd, Arc::new(RecordingSink::default()))
+        .await
+        .unwrap_err();
+    assert_eq!(err.0, "The agent needs you to sign in first (Authentication required)");
+}
+
+#[tokio::test]
+async fn prompt_error_carries_the_agent_message() {
+    let ws = workspace();
+    let (manager, sink) = started("c1", &ws).await;
+    manager.prompt("c1", vec![PromptPart::Text("fail".into())]).await.unwrap();
+    sink.wait_finished().await;
+    assert_eq!(
+        sink.updates().last().unwrap(),
+        &AgentUpdate::Error {
+            message: "The agent reported an error: Internal error (quota exceeded)".into()
+        }
+    );
+    manager.stop("c1").await.unwrap();
+}
+
+#[tokio::test]
 async fn unknown_chat_and_bad_command_are_errors() {
     let ws = workspace();
     let manager = AcpManager::new();
