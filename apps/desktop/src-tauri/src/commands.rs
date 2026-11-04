@@ -365,11 +365,34 @@ pub fn format_timecode(sec: f64, fps: u32) -> String {
     format!("{}:{:02}.{:02}", whole / 60, whole % 60, cc)
 }
 
-/// Turns chat parts into what the agent sees. Tool parts are skipped.
+/// How much of a mentioned project's AGENTS.md goes into the prompt.
+const BRIEF_LIMIT: usize = 8 * 1024;
+
+/// `<folder>/AGENTS.md`, cut to `BRIEF_LIMIT` bytes on a character boundary.
+pub fn read_brief(folder: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(folder.join("AGENTS.md")).ok()?;
+    Some(truncate_brief(&text))
+}
+
+fn truncate_brief(text: &str) -> String {
+    if text.len() <= BRIEF_LIMIT {
+        return text.to_string();
+    }
+    let mut end = BRIEF_LIMIT;
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}\n[AGENTS.md cut at 8 KB]", &text[..end])
+}
+
+/// Turns chat parts into what the agent sees. Tool parts are skipped. A mentioned
+/// project's AGENTS.md (from `brief`) is inlined, since a new chat's agent runs
+/// outside that project's folder.
 pub fn build_prompt(
     parts: &[MessagePart],
     fps: u32,
     project: impl Fn(&str) -> Option<Project>,
+    brief: impl Fn(&Path) -> Option<String>,
 ) -> Vec<PromptPart> {
     let mut out = Vec::new();
     for part in parts {
@@ -377,10 +400,18 @@ pub fn build_prompt(
             MessagePart::Text { text } => out.push(PromptPart::Text(text.clone())),
             MessagePart::Mention { project_id, title } => {
                 out.push(PromptPart::Text(match project(project_id) {
-                    Some(p) => format!(
-                        "Context: video project \"{}\" in folder {} (read its AGENTS.md first).",
-                        p.title, p.folder
-                    ),
+                    Some(p) => {
+                        let head = format!(
+                            "Context: video project \"{}\". Its files are in {}.",
+                            p.title, p.folder
+                        );
+                        match brief(Path::new(&p.folder)) {
+                            Some(b) if !b.trim().is_empty() => {
+                                format!("{head}\nIts AGENTS.md:\n\n{}", b.trim_end())
+                            }
+                            _ => head,
+                        }
+                    }
                     None => format!(
                         "Context: video project \"{title}\" (no longer on this computer)."
                     ),
@@ -442,7 +473,7 @@ pub async fn agent_prompt(
     check_frame_images(&working, &parts, |id| {
         state.db.get_project(id).ok().flatten().map(|p| PathBuf::from(p.folder))
     })?;
-    let prompt = build_prompt(&parts, fps, |id| state.db.get_project(id).ok().flatten());
+    let prompt = build_prompt(&parts, fps, |id| state.db.get_project(id).ok().flatten(), read_brief);
     state.acp.prompt(&chat_id, prompt).await.map_err(err)
 }
 
@@ -666,10 +697,25 @@ mod tests {
     }
 
     #[test]
+    fn brief_is_read_and_cut_at_8_kb() {
+        let tmp = tempfile::tempdir().unwrap();
+        assert_eq!(read_brief(tmp.path()), None);
+        std::fs::write(tmp.path().join("AGENTS.md"), "# Hi\n").unwrap();
+        assert_eq!(read_brief(tmp.path()).as_deref(), Some("# Hi\n"));
+        // 3-byte characters straddle the limit: the cut stays on a boundary.
+        let long = "é€".repeat(3000);
+        std::fs::write(tmp.path().join("AGENTS.md"), &long).unwrap();
+        let cut = read_brief(tmp.path()).unwrap();
+        let body = cut.strip_suffix("\n[AGENTS.md cut at 8 KB]").unwrap();
+        assert!(body.len() <= BRIEF_LIMIT && body.len() > BRIEF_LIMIT - 4);
+        assert!(long.starts_with(body));
+    }
+
+    #[test]
     fn missing_mention_has_no_empty_folder() {
         let parts = vec![MessagePart::Mention { project_id: "x".into(), title: "Gone".into() }];
         assert_eq!(
-            build_prompt(&parts, 30, |_| None),
+            build_prompt(&parts, 30, |_| None, |_| None),
             vec![PromptPart::Text(
                 "Context: video project \"Gone\" (no longer on this computer).".into()
             )]
@@ -709,13 +755,18 @@ mod tests {
                 status: ToolCallStatus::Done,
             },
         ];
-        let out = build_prompt(&parts, 30, |id| (id == "p1").then(|| project.clone()));
+        let out = build_prompt(
+            &parts,
+            30,
+            |id| (id == "p1").then(|| project.clone()),
+            |f| (f == Path::new("/w/launch")).then(|| "# Launch\n- Kind: promo\n".to_string()),
+        );
         assert_eq!(
             out,
             vec![
                 PromptPart::Text("hi".into()),
                 PromptPart::Text(
-                    "Context: video project \"Launch\" in folder /w/launch (read its AGENTS.md first)."
+                    "Context: video project \"Launch\". Its files are in /w/launch.\nIts AGENTS.md:\n\n# Launch\n- Kind: promo"
                         .into()
                 ),
                 PromptPart::Image { path: PathBuf::from("/w/f.png") },
