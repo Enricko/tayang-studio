@@ -6,6 +6,7 @@ import { formatTimecode, frameAt, secAt } from '@tayang/shared';
 import type { MediaInfo, Mark } from '@tayang/shared';
 import { Button } from '@/components/Button';
 import { Oyen } from '@/components/Oyen';
+import { cn } from '@/lib/utils';
 import {
   assetUrl,
   mediaExtractFrame,
@@ -37,12 +38,10 @@ function RenderBanner({ since }: { since: number }) {
   );
 }
 
-const Key = ({ children, className = '' }: { children: React.ReactNode; className?: string }) => (
-  <span
-    className={`min-w-3 rounded border border-b-2 border-[#333333] px-1 text-center font-mono text-[11px] text-[#D9D9D9] ${className}`}
-  >
+const Kbd = ({ children }: { children: React.ReactNode }) => (
+  <kbd className="inline-flex h-4 min-w-4 items-center justify-center rounded-sm border border-b-2 border-hairline px-1 font-mono text-[10px] leading-none text-text-2">
     {children}
-  </span>
+  </kbd>
 );
 
 export function Preview({
@@ -184,15 +183,46 @@ export function Preview({
     }
   };
 
+  // ← → anywhere in the panel step a frame (Shift: a second); the strip handles its own keys first.
+  const onPanelKeyDown = (e: React.KeyboardEvent) => {
+    if (e.defaultPrevented || e.altKey || e.metaKey || e.ctrlKey) return;
+    if (e.target instanceof HTMLElement && e.target.closest('input, textarea, [contenteditable="true"]')) return;
+    const step = e.shiftKey ? Math.round(fps) : 1;
+    if (e.key === 'ArrowRight') seek(frame + step);
+    else if (e.key === 'ArrowLeft') seek(frame - step);
+    else return;
+    e.preventDefault();
+  };
+
+  // The frame box takes the video's own shape, as large as the stage allows.
+  const aspect = info.width > 0 && info.height > 0 ? info.width / info.height : 9 / 16;
+  const current = formatTimecode(secAt(frame, fps), fps);
+  const length = formatTimecode(durationSec, fps);
+
   return (
-    <div className="flex h-full flex-col gap-3 overflow-y-auto bg-[#101010] px-5 py-4">
-      {run && <RenderBanner since={run.startedAt} />}
-      <div className="flex justify-center">
+    <div
+      data-testid="preview-panel"
+      onKeyDown={onPanelKeyDown}
+      className="@container flex h-full flex-col overflow-y-auto bg-[#101010]"
+    >
+      {run && (
+        <div className="shrink-0 px-4 pt-4">
+          <RenderBanner since={run.startedAt} />
+        </div>
+      )}
+      <div
+        data-testid="preview-stage"
+        className="flex min-h-40 flex-1 items-center justify-center px-4 pt-4 [container-type:size]"
+      >
         <div
           ref={boxRef}
           data-testid="preview-frame"
           onClick={onBoxClick}
-          className={`relative h-[448px] w-[252px] overflow-hidden rounded-xl border border-[#23365A] bg-black ${marking ? 'cursor-crosshair' : ''}`}
+          className={cn(
+            'relative max-h-full overflow-hidden rounded-xl border border-border bg-black',
+            marking && 'cursor-crosshair',
+          )}
+          style={{ aspectRatio: String(aspect), width: `min(100cqw, calc(100cqh * ${aspect}))` }}
         >
           <video
             ref={videoRef}
@@ -217,59 +247,107 @@ export function Preview({
               {i + 1}
             </div>
           ))}
+          {checked && (
+            <span
+              data-testid="frames-checked"
+              className="pointer-events-none absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-ink/75 py-0.5 pl-0.5 pr-2 text-[11px] leading-4 whitespace-nowrap text-text-2 backdrop-blur-sm"
+            >
+              <Oyen mood="happy" size={18} />
+              {t('preview.framesChecked')}
+            </span>
+          )}
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
-        <Button variant="secondary" size="icon" aria-label={playing ? t('preview.pause') : t('preview.play')} onClick={toggle} className="size-8 px-0">
-          {playing ? <Pause size={12} fill="currentColor" /> : <Play size={12} fill="currentColor" />}
-        </Button>
-        <Button variant="ghost" size="icon" aria-label={t('preview.previousFrame')} onClick={() => seek(frame - 1)} className="size-8 px-0">
-          <ChevronLeft size={16} strokeWidth={1.5} />
-        </Button>
-        <Button variant="ghost" size="icon" aria-label={t('preview.nextFrame')} onClick={() => seek(frame + 1)} className="size-8 px-0">
-          <ChevronRight size={16} strokeWidth={1.5} />
-        </Button>
-        <span className="font-mono text-xs tabular-nums text-foreground">{formatTimecode(secAt(frame, fps), fps)}</span>
-        <span className="font-mono text-xs tabular-nums text-text-3">/ {formatTimecode(durationSec, fps)}</span>
-        <span className="ml-auto font-mono text-xs tabular-nums text-text-3">{t('preview.frame', { n: frame })}</span>
-      </div>
-
-      <Scrubber durationSec={durationSec} fps={fps} frame={frame} thumbnails={thumbs} onSeek={seek} scenes={scenes} />
-
-      <div className="flex items-center gap-2">
-        <Button variant="secondary" disabled={sending} onClick={() => void sendFrame()} className="px-3 text-[13px]">
-          <SquarePlus size={16} strokeWidth={1.5} />
-          {t('preview.sendFrame')}
-        </Button>
-        <Button
-          variant="ghost"
-          aria-pressed={marking}
-          onClick={() => setMarking((m) => !m)}
-          className={`px-3 text-[13px] ${marking ? 'text-foreground' : ''}`}
-        >
-          <MapPin size={16} strokeWidth={1.5} />
-          {t('preview.markSpot')}
-        </Button>
-      </div>
-      {error && (
-        <p role="alert" className="text-xs text-[#FFB08F]">
-          {error}
-        </p>
-      )}
-
-      <div className="flex items-center gap-2 text-xs text-text-3">
-        <Key>←</Key>
-        <Key>→</Key>
-        <span>{t('preview.oneFrame')}</span>
-        <Key className="ml-2">Shift</Key>
-        <span>{t('preview.oneSecond')}</span>
-        {checked && (
-          <span className="ml-auto inline-flex items-center gap-1 text-text-2">
-            <Oyen mood="happy" size={24} />
-            {t('preview.framesChecked')}
+      <div data-testid="preview-controls" className="flex shrink-0 flex-col gap-3 px-4 pb-4 pt-3">
+        <div data-testid="transport" className="flex flex-nowrap items-center gap-1 whitespace-nowrap">
+          <Button
+            variant="secondary"
+            size="icon"
+            aria-label={playing ? t('preview.pause') : t('preview.play')}
+            onClick={toggle}
+            className="size-8 shrink-0 px-0"
+          >
+            {playing ? <Pause size={14} fill="currentColor" /> : <Play size={14} fill="currentColor" />}
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={t('preview.previousFrame')}
+            title={t('preview.previousFrameTip')}
+            onClick={() => seek(frame - 1)}
+            className="size-8 shrink-0 px-0"
+          >
+            <ChevronLeft size={16} strokeWidth={1.5} />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={t('preview.nextFrame')}
+            title={t('preview.nextFrameTip')}
+            onClick={() => seek(frame + 1)}
+            className="size-8 shrink-0 px-0"
+          >
+            <ChevronRight size={16} strokeWidth={1.5} />
+          </Button>
+          <span
+            data-testid="timecode"
+            title={t('preview.frame', { n: frame })}
+            className="ml-1 shrink-0 font-mono text-xs whitespace-nowrap tabular-nums text-foreground"
+          >
+            {current}
+            <span className="text-text-3"> / {length}</span>
           </span>
+          <span
+            title={t('preview.frame', { n: frame })}
+            className="ml-auto hidden h-5 shrink-0 items-center rounded-sm bg-raised px-1.5 font-mono text-[11px] tabular-nums text-text-3 @min-[320px]:inline-flex"
+          >
+            #{frame}
+          </span>
+        </div>
+
+        <Scrubber durationSec={durationSec} fps={fps} frame={frame} thumbnails={thumbs} onSeek={seek} scenes={scenes} />
+
+        <div className="grid grid-cols-2 gap-2">
+          <Button
+            variant="secondary"
+            aria-label={t('preview.sendFrame')}
+            disabled={sending}
+            onClick={() => void sendFrame()}
+            className="h-8 w-full min-w-0 gap-1.5 whitespace-nowrap px-2 text-[13px]"
+          >
+            <SquarePlus size={16} strokeWidth={1.5} aria-hidden="true" />
+            <span className="hidden @min-[380px]:inline">{t('preview.sendFrame')}</span>
+            <span className="@min-[380px]:hidden">{t('preview.sendFrameShort')}</span>
+          </Button>
+          <Button
+            variant="ghost"
+            aria-label={t('preview.markSpot')}
+            aria-pressed={marking}
+            onClick={() => setMarking((m) => !m)}
+            className={cn(
+              'h-8 w-full min-w-0 gap-1.5 whitespace-nowrap px-2 text-[13px]',
+              marking && 'bg-raised text-foreground',
+            )}
+          >
+            <MapPin size={16} strokeWidth={1.5} aria-hidden="true" />
+            <span className="hidden @min-[380px]:inline">{t('preview.markSpot')}</span>
+            <span className="@min-[380px]:hidden">{t('preview.markSpotShort')}</span>
+          </Button>
+        </div>
+        {error && (
+          <p role="alert" className="m-0 text-xs text-orange-light">
+            {error}
+          </p>
         )}
+
+        <p data-testid="key-hints" className="m-0 hidden items-center gap-1 text-[11px] leading-4 text-text-3 @min-[300px]:flex">
+          <Kbd>←</Kbd> <Kbd>→</Kbd> <span>{t('preview.keysFrame')}</span> <span aria-hidden="true">·</span>{' '}
+          <span className="inline-flex items-center gap-0.5">
+            <Kbd>Shift</Kbd>+<Kbd>←</Kbd> <Kbd>→</Kbd>
+          </span>{' '}
+          <span>{t('preview.keysSecond')}</span>
+        </p>
       </div>
     </div>
   );
