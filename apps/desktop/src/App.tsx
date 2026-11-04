@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { Button } from '@/components/Button';
 import { Sidebar, type SidebarKey } from '@/components/Sidebar';
 import { getSettings } from '@/lib/ipc';
+import { ChatNew } from '@/screens/ChatNew';
+import { ChatProject } from '@/screens/ChatProject';
 import { Connect } from '@/screens/onboarding/Connect';
 import { Requirements } from '@/screens/onboarding/Requirements';
 import { Welcome } from '@/screens/onboarding/Welcome';
@@ -95,7 +97,13 @@ export default function App() {
         <Sidebar active={SIDEBAR_KEY[route.name] ?? 'chat'} />
       </div>
       <main className="relative min-w-0 flex-1">
-        <Placeholder name={route.name} />
+        {route.name === 'chat-new' ? (
+          <ChatNew key="chat-new" />
+        ) : route.name === 'chat' ? (
+          <ChatProject key={route.chatId} chatId={route.chatId} />
+        ) : (
+          <Placeholder name={route.name} />
+        )}
       </main>
     </div>
   );

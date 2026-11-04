@@ -5,7 +5,7 @@ import logo from '@/assets/brand/tayang-horizontal-reversed-color.svg';
 import ditherCard from '@/assets/brand/dither-card.png';
 import { Oyen } from '@/components/Oyen';
 import { Button } from '@/components/Button';
-import { listProjects } from '@/lib/ipc';
+import { createChat, listChats, listProjects } from '@/lib/ipc';
 import { useApp, type Route } from '@/state/app';
 import { cn } from '@/lib/utils';
 
@@ -58,6 +58,7 @@ function NavItem({
 export function Sidebar({ active }: { active: SidebarKey }) {
   const navigate = useApp((s) => s.navigate);
   const needsYou = useApp((s) => s.needsYouCount);
+  const version = useApp((s) => s.projectsVersion);
   const [recent, setRecent] = useState<Project[]>([]);
 
   useEffect(() => {
@@ -68,7 +69,18 @@ export function Sidebar({ active }: { active: SidebarKey }) {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [version]);
+
+  // A project's chat: the latest one, or a fresh one when it has none yet.
+  const openProject = async (p: Project) => {
+    try {
+      const chats = await listChats(p.id);
+      const chat = chats[0] ?? (await createChat(p.id, useApp.getState().settings?.defaultAgent ?? 'claude', p.title));
+      navigate({ name: 'chat', chatId: chat.id });
+    } catch {
+      /* stay where we are */
+    }
+  };
 
   return (
     <nav
@@ -106,7 +118,7 @@ export function Sidebar({ active }: { active: SidebarKey }) {
             href="#"
             onClick={(e) => {
               e.preventDefault();
-              navigate({ name: 'chat', chatId: p.id });
+              void openProject(p);
             }}
             className="flex h-8 items-center gap-2 rounded-md px-3 text-[13px] text-[#D9D9D9] no-underline hover:bg-raised/50"
           >

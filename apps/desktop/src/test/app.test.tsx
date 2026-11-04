@@ -31,7 +31,7 @@ describe('App start', () => {
   it('goes to a new chat when onboarded', async () => {
     vi.mocked(getSettings).mockResolvedValue({ ...base, onboarded: true });
     render(<App />);
-    expect(await screen.findByText('New chat', { selector: 'h1' })).toBeInTheDocument();
+    expect(await screen.findByText('What are we making?', { selector: 'h1' })).toBeInTheDocument();
     expect(useApp.getState().route.name).toBe('chat-new');
   });
 });
