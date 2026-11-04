@@ -465,6 +465,40 @@ describe('Style popup', () => {
     }
   });
 
+  it('reduced motion: no timer fallback until Play is pressed, then 5 s from the press', async () => {
+    reduced = true;
+    mocks();
+    render(<Style />);
+    try {
+      const dialog = await openWithFakeTimers('Atlas journey');
+      act(() => void vi.advanceTimersByTime(20_000));
+      expect(dialog.querySelector('video')).not.toBeNull();
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Play preview' }));
+      act(() => void vi.advanceTimersByTime(4900));
+      expect(dialog.querySelector('video')).not.toBeNull();
+      act(() => void vi.advanceTimersByTime(200));
+      expect(dialog.querySelector('video')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('pressing Pause cancels the autoplay fallback timer', async () => {
+    mocks();
+    render(<Style />);
+    try {
+      const dialog = await openWithFakeTimers('Atlas journey');
+      const video = dialog.querySelector('video')!;
+      Object.defineProperty(video, 'paused', { value: false, configurable: true });
+      fireEvent.playing(video);
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Pause preview' }));
+      act(() => void vi.advanceTimersByTime(20_000));
+      expect(dialog.querySelector('video')).not.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('does not fall back after the clip has loaded', async () => {
     mocks();
     render(<Style />);
@@ -641,6 +675,90 @@ describe('Style popup', () => {
     render(<Style />);
     const dialog = await openCard('Atlas journey');
     expect(within(dialog).queryByRole('button', { name: 'Delete' })).toBeNull();
+  });
+});
+
+describe('Style popup after review', () => {
+  const mine: StyleT = { ...atlas, id: 'mine-1', name: 'Mine', source: 'mine', basedOn: 'atlas-journey', notes: { camera: 'Slow' } };
+  /** Every list call returns fresh objects, like IPC does. */
+  const freshLists = (get: () => StyleT[]) => {
+    vi.mocked(ipc.syncStyles).mockResolvedValue({ styles: [], offline: false });
+    vi.mocked(ipc.listStyles).mockImplementation(async () => structuredClone(get()));
+  };
+  const reload = () => act(() => useStudy.setState((s) => ({ savedVersion: s.savedVersion + 1 })));
+
+  it('a reload with fresh objects does not reset a form with unsaved edits', async () => {
+    freshLists(() => [mine]);
+    render(<Style />);
+    const dialog = await openCard('Mine');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Edit' }));
+    await userEvent.type(within(dialog).getByRole('textbox', { name: 'Pacing' }), 'Quick cuts');
+    await new Promise((r) => setTimeout(r, 50));
+    const before = vi.mocked(ipc.listStyles).mock.calls.length;
+    reload();
+    await waitFor(() => expect(vi.mocked(ipc.listStyles).mock.calls.length).toBeGreaterThan(before));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(within(dialog).getByRole('textbox', { name: 'Pacing' })).toHaveValue('Quick cuts');
+    expect(within(dialog).getByRole('button', { name: 'Save' })).toBeInTheDocument();
+  });
+
+  it('after Save the popup leaves edit mode even when the reload returns fresh objects', async () => {
+    freshLists(() => [mine]);
+    vi.mocked(ipc.saveStyle).mockResolvedValue(undefined);
+    render(<Style />);
+    const dialog = await openCard('Mine');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Edit' }));
+    await userEvent.type(within(dialog).getByRole('textbox', { name: 'Camera' }), ' more');
+    const before = vi.mocked(ipc.listStyles).mock.calls.length;
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(vi.mocked(ipc.listStyles).mock.calls.length).toBeGreaterThan(before));
+    expect(await within(dialog).findByRole('button', { name: 'Edit' })).toBeInTheDocument();
+    expect(within(dialog).queryByRole('button', { name: 'Save' })).toBeNull();
+  });
+
+  it('a clone opens in edit mode once; reopening it later shows the read-only view', async () => {
+    let list: StyleT[] = [atlas];
+    freshLists(() => list);
+    vi.mocked(ipc.saveStyle).mockImplementation(async (st) => {
+      list = [atlas, st];
+    });
+    render(<Style />);
+    const dialog = await openCard('Atlas journey');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Clone to edit' }));
+    expect(await screen.findByRole('textbox', { name: 'Style name' })).toBeInTheDocument();
+    await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel' }));
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    const again = await openCard('Atlas journey \\(copy\\)');
+    expect(within(again).queryByRole('textbox', { name: 'Style name' })).toBeNull();
+    expect(within(again).getByRole('button', { name: 'Edit' })).toBeInTheDocument();
+  });
+
+  it('Clone to edit ignores a second click while the first is saving', async () => {
+    freshLists(() => [atlas]);
+    let done: () => void = () => {};
+    vi.mocked(ipc.saveStyle).mockClear();
+    vi.mocked(ipc.saveStyle).mockReturnValue(new Promise<void>((res) => (done = res)));
+    render(<Style />);
+    const dialog = await openCard('Atlas journey');
+    const btn = within(dialog).getByRole('button', { name: 'Clone to edit' });
+    fireEvent.click(btn);
+    fireEvent.click(btn);
+    expect(ipc.saveStyle).toHaveBeenCalledTimes(1);
+    expect(btn).toBeDisabled();
+    await act(async () => done());
+    vi.mocked(ipc.saveStyle).mockReset();
+    vi.mocked(ipc.saveStyle).mockResolvedValue(undefined);
+  });
+
+  it('switching the clip while the popup is open loads the new src', async () => {
+    let list: StyleT[] = [atlas];
+    freshLists(() => list);
+    render(<Style />);
+    const dialog = await openCard('Atlas journey');
+    list = [{ ...atlas, previewVideoUrl: 'https://api.tayang.app/v1/styles/atlas-journey/preview-video?v=2' }];
+    reload();
+    await waitFor(() => expect(dialog.querySelector('video')).toHaveAttribute('src', 'https://api.tayang.app/v1/styles/atlas-journey/preview-video?v=2'));
   });
 });
 

@@ -228,19 +228,31 @@ function StylePreview({ style }: { style: StyleT }) {
   const video = useRef<HTMLVideoElement>(null);
   const src = style.previewVideoUrl;
 
-  // No data after 5 s (blocked, offline, stalled): fall back to the image instead of a black box.
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelTimer = () => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = null;
+  };
+  /** No data 5 s after playback was requested (blocked, offline, stalled): show the image instead of a black box. */
+  const armTimer = () => {
+    cancelTimer();
+    if (!src || loadedRef.current) return;
+    timer.current = setTimeout(() => {
+      if (!loadedRef.current) setFailed(src);
+    }, VIDEO_TIMEOUT_MS);
+  };
   useEffect(() => {
     loadedRef.current = false;
     setLoaded(false);
     setPlaying(false);
-    if (!src) return;
-    const t = setTimeout(() => {
-      if (!loadedRef.current) setFailed(src);
-    }, VIDEO_TIMEOUT_MS);
-    return () => clearTimeout(t);
+    // Autoplay is the only thing the deadline covers: with reduced motion nothing was requested yet.
+    if (!reduced) armTimer();
+    return cancelTimer;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [src]);
 
-  // Closing (or switching style) pauses and unloads the clip so nothing keeps downloading.
+  // Closing the popup pauses and unloads the clip so nothing keeps downloading. (A new clip remounts this
+  // component, see the key where it is used, so this never strips a newer src.)
   useEffect(() => {
     const el = video.current;
     return () => {
@@ -249,7 +261,7 @@ function StylePreview({ style }: { style: StyleT }) {
       el.removeAttribute('src');
       el.load();
     };
-  }, [src]);
+  }, []);
 
   const poster = posterOf(style);
   const frames = <NoPreview id={style.id} text className="max-h-[60vh]" />;
@@ -266,8 +278,13 @@ function StylePreview({ style }: { style: StyleT }) {
   const toggle = () => {
     const el = video.current;
     if (!el) return;
-    if (el.paused) void Promise.resolve(el.play()).catch(() => {});
-    else el.pause();
+    if (el.paused) {
+      armTimer(); // the user asked to play: give it 5 s from now
+      void Promise.resolve(el.play()).catch(() => {});
+    } else {
+      cancelTimer();
+      el.pause();
+    }
   };
   return (
     <div className="relative mx-auto aspect-[9/16] max-h-[60vh] w-full max-w-[320px] overflow-hidden rounded-md border border-[#333] bg-black">
@@ -284,6 +301,7 @@ function StylePreview({ style }: { style: StyleT }) {
         className="size-full object-cover"
         onLoadedData={() => {
           loadedRef.current = true;
+          cancelTimer();
           setLoaded(true);
         }}
         onPlaying={() => setPlaying(true)}
@@ -331,6 +349,7 @@ function Detail({
   onDeleted,
   onDirty,
   onClone,
+  onEditStarted,
 }: {
   style: StyleT;
   startInEdit: boolean;
@@ -338,6 +357,7 @@ function Detail({
   onDeleted(id: string): void;
   onDirty(dirty: boolean): void;
   onClone(clone: StyleT): Promise<void>;
+  onEditStarted(): void;
 }) {
   const navigate = useApp((s) => s.navigate);
   const [editing, setEditing] = useState(startInEdit);
@@ -353,16 +373,21 @@ function Detail({
     setPrompt(style.prompt);
     setError(null);
   };
+  // A fresh clone opens in edit mode once; the parent forgets it right away.
   useEffect(() => {
-    setEditing(startInEdit);
-    reset();
-    // Re-sync whenever the stored style changes.
+    if (startInEdit) onEditStarted();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [style.id, style.name, style.prompt, style.notes]);
+  }, []);
 
   const original = draftOf(style);
   const dirty =
     editing && (name !== style.name || prompt !== style.prompt || ASPECTS.some((a) => notes[a] !== original[a]));
+  // The stored style changed (a sync, another save): follow it, but never over unsaved edits.
+  const storedKey = JSON.stringify([style.name, style.prompt, style.notes]);
+  useEffect(() => {
+    if (!dirty) reset();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storedKey]);
   useEffect(() => {
     onDirty(dirty);
     return () => onDirty(false);
@@ -383,7 +408,10 @@ function Detail({
     }
   };
 
+  const [cloning, setCloning] = useState(false);
   const clone = async () => {
+    if (cloning) return;
+    setCloning(true);
     try {
       await onClone({
         ...style,
@@ -396,6 +424,7 @@ function Detail({
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+      setCloning(false);
     }
   };
 
@@ -411,7 +440,7 @@ function Detail({
   const shownNotes = ASPECTS.filter((a) => style.notes[a]);
   return (
     <div className="grid min-w-0 gap-6 sm:grid-cols-[minmax(0,280px)_minmax(0,1fr)]">
-      <StylePreview style={style} />
+      <StylePreview key={style.previewVideoUrl ?? 'none'} style={style} />
       <div className="flex min-w-0 flex-col gap-4">
         <div className="flex flex-col gap-1 pr-6">
           {editing ? (
@@ -515,7 +544,7 @@ function Detail({
                 Use in a new chat
               </Button>
               {builtin ? (
-                <Button variant="ghost" className="h-9 px-3 text-[13px]" onClick={() => void clone()}>
+                <Button variant="ghost" className="h-9 px-3 text-[13px]" disabled={cloning} onClick={() => void clone()}>
                   Clone to edit
                 </Button>
               ) : (
@@ -740,10 +769,12 @@ export function Style() {
             }}
           >
             <Detail
+              key={current.id}
               style={current}
               startInEdit={editNew === current.id}
               onChanged={() => setVersion((v) => v + 1)}
               onDirty={setDirty}
+              onEditStarted={() => setEditNew(null)}
               onClone={async (clone) => {
                 await saveStyle(clone);
                 setStored((prev) => (prev.some((x) => x.id === clone.id) ? prev : [...prev, clone]));
