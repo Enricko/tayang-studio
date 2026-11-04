@@ -470,14 +470,18 @@ export function Style() {
   useEffect(() => {
     if (!dirty) setBlocked(false);
   }, [dirty]);
-  useEffect(() => {
+  const applyRefocus = () => {
     const want = refocus.current;
-    if (!want || current) return;
+    if (!want) return;
     const cards = [...(library.current?.querySelectorAll<HTMLElement>('[data-style-id]') ?? [])];
     const el = cards.find((c) => c.dataset.styleId === want.id) ?? null;
     if (want.id && !el) return; // the list has not caught up yet
     refocus.current = null;
     (el ?? library.current)?.focus();
+  };
+  useEffect(() => {
+    if (!current) applyRefocus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stored, current]);
 
   const study = () => {
@@ -614,8 +618,8 @@ export function Style() {
             className="max-h-[90vh] overflow-y-auto p-5 sm:max-w-[720px]"
             onCloseAutoFocus={(e) => {
               e.preventDefault();
-              if (refocus.current) return;
-              card.current?.focus();
+              if (refocus.current) applyRefocus();
+              else card.current?.focus();
             }}
           >
             <Detail
@@ -626,6 +630,7 @@ export function Style() {
                 const i = shown.findIndex((x) => x.id === id);
                 const next = shown[i + 1] ?? shown[i - 1];
                 refocus.current = { id: next?.id ?? null };
+                card.current = null; // the deleted card is going away
                 setSel(null);
                 setVersion((v) => v + 1);
               }}
