@@ -5,7 +5,7 @@ import { slotTime } from '@/lib/autopilot';
 import { createChat, listChats } from '@/lib/ipc';
 import { localClock } from '@/lib/time';
 import { useApp } from '@/state/app';
-import { appendSystem, BUSY_NOTE, useChat, type SendOpts } from '@/state/chat';
+import { BUSY_NOTE, useChat, type SendOpts } from '@/state/chat';
 
 /** The project's latest chat, or a fresh one when it has none yet. */
 async function projectChat(p: Project) {
@@ -59,9 +59,10 @@ export async function sendInProjectChat(
   // The conversation must be in memory before anything is added to it, or the chat would open without its history.
   await store.load(chatId);
   if (useChat.getState().streaming[chatId]) {
-    await appendSystem(chatId, BUSY_NOTE);
+    useChat.getState().notice(chatId, BUSY_NOTE);
     return;
   }
   const ask: MessagePart[] = [{ type: 'text', text }];
-  await useChat.getState().send(chatId, ask, projectSendOptions(project, agentId, ask));
+  // What the user left in the composer stays there: this message is Tayang's, sent for them.
+  await useChat.getState().send(chatId, ask, { ...projectSendOptions(project, agentId, ask), keepAttachments: true });
 }

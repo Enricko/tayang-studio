@@ -42,6 +42,8 @@ export interface SendOpts {
   job?: ChatJob;
   /** The chat's own agent; defaults to the agent picked in Settings. */
   agentId?: AgentId;
+  /** Leave the composer's attachments where they are (a message Tayang sends on the user's behalf). */
+  keepAttachments?: boolean;
   /**
    * Sent by the autopilot, with nobody watching: a refusal because the agent is still working comes
    * back as an error too, and every error comes back in English (it is saved on the slot).
@@ -90,6 +92,8 @@ interface ChatState {
    * are stored with it but not drawn as text (the schedule line keeps the answer that it records).
    */
   appendSystem(chatId: string, text: string, extra?: MessagePart[]): Promise<void>;
+  /** A system line shown in the live chat only, never stored (like the busy note). */
+  notice(chatId: string, text: string): void;
   attach(chatId: string, part: MessagePart): void;
   detach(chatId: string, index: number): void;
   listen(): void;
@@ -116,6 +120,11 @@ const chatJobs = new Map<string, ChatJob>();
 const clientKeys = new Map<string, string>();
 /** A key for a message that stays the same when the local copy is swapped for the stored one. */
 export const messageKey = (m: ChatMessage) => clientKeys.get(m.id) ?? m.id;
+
+/** Things the agent should know before the user's next message, such as a schedule Tayang made from its card. */
+const agentNotes = new Map<string, string[]>();
+/** Tells the agent `text` in front of the next prompt in this chat, without a turn of its own. */
+export const noteForAgent = (chatId: string, text: string) => agentNotes.set(chatId, [...(agentNotes.get(chatId) ?? []), text]);
 
 /** Recaps waiting for the first prompt of a new session: after an agent switch, or a retired session. */
 const pendingRecap = new Map<string, { text: string; switched: boolean }>();
@@ -465,11 +474,11 @@ export const useChat = create<ChatState>((set, get) => {
 
     async send(chatId, parts, opts) {
       tracked.add(chatId);
-      const attached = get().attachments[chatId] ?? [];
+      const attached = opts?.keepAttachments ? [] : (get().attachments[chatId] ?? []);
       const visible = [...attached, ...parts];
       turnSeq.set(chatId, (turnSeq.get(chatId) ?? 0) + 1);
       set((s) => ({
-        attachments: { ...s.attachments, [chatId]: [] },
+        attachments: opts?.keepAttachments ? s.attachments : { ...s.attachments, [chatId]: [] },
         streaming: { ...s.streaming, [chatId]: true },
         // A send refused because a turn is running keeps that turn's start.
         turnStartedAt: { ...s.turnStartedAt, [chatId]: s.streaming[chatId] ? (s.turnStartedAt[chatId] ?? Date.now()) : Date.now() },
@@ -511,8 +520,11 @@ export const useChat = create<ChatState>((set, get) => {
           // i18n-ignore: this goes to the agent, not the user
           lead.push({ type: 'text', text: `${intro}\n${recap.text}\n\nContinue from here.` });
         }
+        const notes = agentNotes.get(chatId);
+        if (notes?.length) lead.push({ type: 'text', text: notes.join('\n') });
         await agentPrompt(chatId, [...lead, ...sent]);
         pendingRecap.delete(chatId);
+        agentNotes.delete(chatId);
         return null;
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e);
@@ -571,6 +583,10 @@ export const useChat = create<ChatState>((set, get) => {
       await persist(chatId, sys);
     },
 
+    notice(chatId, text) {
+      append(chatId, localMessage(chatId, 'system', [{ type: 'text', text }]));
+    },
+
     attach: (chatId, part) =>
       set((s) => ({ attachments: { ...s.attachments, [chatId]: [...(s.attachments[chatId] ?? []), part] } })),
 
@@ -602,6 +618,7 @@ export const useChat = create<ChatState>((set, get) => {
       pendingRecap.clear();
       clientKeys.clear();
       turnSeq.clear();
+      agentNotes.clear();
       useRender.setState({ runs: {} });
       set({ messages: {}, streaming: {}, turnStartedAt: {}, permissions: {}, attachments: {}, started: {}, auto: {}, pendingAuto: null, autoBusy: {} });
     },
