@@ -170,3 +170,42 @@ describe('PermissionCard options', () => {
     expect(onRespond).toHaveBeenCalledWith(null);
   });
 });
+
+describe('Requirements multi-request', () => {
+  beforeEach(() => {
+    handlers.update = [];
+    handlers.perm = [];
+    vi.clearAllMocks();
+    useInstall.getState().reset();
+    useApp.setState({ settings, route: { name: 'requirements' } });
+    vi.mocked(ipc.getSystemInfo).mockResolvedValue({ os: 'macos', osVersion: '26', packageManager: 'brew' });
+    vi.mocked(ipc.checkTools).mockResolvedValue(missingFfmpeg);
+    vi.mocked(ipc.agentStart).mockResolvedValue();
+    vi.mocked(ipc.agentPrompt).mockResolvedValue();
+    vi.mocked(ipc.agentCancel).mockResolvedValue();
+    vi.mocked(ipc.agentRespondPermission).mockResolvedValue();
+  });
+
+  it('shows and answers two sequential requests in one install', async () => {
+    const user = userEvent.setup();
+    render(<Requirements />);
+    await user.click(await screen.findByRole('button', { name: 'Install FFmpeg' }));
+    await act(async () => handlers.perm.forEach((h) => h(request)));
+    await user.click(screen.getByRole('button', { name: 'Allow and install' }));
+    expect(ipc.agentRespondPermission).toHaveBeenLastCalledWith('r1', 'once');
+
+    await act(async () => handlers.perm.forEach((h) => h({ ...request, requestId: 'r2', commands: ['ffmpeg -version'] })));
+    await user.click(screen.getByRole('button', { name: 'Allow and install' }));
+    expect(ipc.agentRespondPermission).toHaveBeenLastCalledWith('r2', 'once');
+  });
+
+  it('cancel while running calls agentCancel', async () => {
+    const user = userEvent.setup();
+    render(<Requirements />);
+    await user.click(await screen.findByRole('button', { name: 'Install FFmpeg' }));
+    await act(async () => handlers.perm.forEach((h) => h(request)));
+    await user.click(screen.getByRole('button', { name: 'Allow and install' }));
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(ipc.agentCancel).toHaveBeenCalledWith('setup');
+  });
+});

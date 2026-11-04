@@ -150,7 +150,12 @@ export const useInstall = create<InstallState>((set, get) => {
           if (chatId === SETUP_CHAT) void onUpdate(update);
         }),
         onPermission((req) => {
-          if (req.chatId === SETUP_CHAT && get().active) set({ request: req });
+          if (req.chatId !== SETUP_CHAT) return;
+          const tool = get().active;
+          if (!tool) return;
+          // Every request of the turn gets its own card, not just the first.
+          patch(tool, { status: 'confirm' });
+          set({ request: req });
         }),
       ];
     },

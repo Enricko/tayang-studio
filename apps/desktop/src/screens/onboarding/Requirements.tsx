@@ -76,6 +76,7 @@ function ToolRow({ tool, sys, agentName, busy, onInstall, onAskKey }: {
   const respond = useInstall((s) => s.respond);
   const cancel = useInstall((s) => s.cancel);
   const dismiss = useInstall((s) => s.dismiss);
+  const active = useInstall((s) => s.active);
   const agent = useApp((s) => s.settings?.defaultAgent) ?? 'claude';
   const [key, setKey] = useState('');
   const copy = COPY[tool.id];
@@ -125,6 +126,11 @@ function ToolRow({ tool, sys, agentName, busy, onInstall, onAskKey }: {
             {status === 'running' ? 'Installing' : 'Waiting for permission'}
           </span>
         )}
+        {status === 'running' && !ok && (
+          <Button variant="ghost" className="h-9 px-2 text-[13px]" onClick={() => void cancel(tool.id)}>
+            Cancel
+          </Button>
+        )}
       </div>
 
       {isEleven && !ok && (status === 'missing' || status === 'key') && (
@@ -172,7 +178,7 @@ function ToolRow({ tool, sys, agentName, busy, onInstall, onAskKey }: {
         </div>
       )}
 
-      {status === 'confirm' && request && (
+      {request && active === tool.id && (
         <PermissionCard request={request} ask={copy.ask} agentId={agent} onRespond={(id) => void respond(id)} />
       )}
 
