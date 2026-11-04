@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import { RefreshCw } from 'lucide-react';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { DEFAULT_SETTINGS, type AgentInfo, type Settings as SettingsT, type SystemInfo, type ToolId } from '@tayang/shared';
@@ -12,16 +13,12 @@ import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AGENT_NAMES } from '@/lib/agents';
 import { detectAgents, getSystemInfo, pickFolder, updateSettings } from '@/lib/ipc';
+import { LANGUAGES, LANGUAGE_NAMES, uiLanguage } from '@/i18n';
+import { chooseLanguage } from '@/lib/language';
 import { useApp } from '@/state/app';
 import { useInstall } from '@/state/install';
 
-const SECTIONS = [
-  ['agents', 'Agents'],
-  ['video', 'Video defaults'],
-  ['render', 'Rendering'],
-  ['tools', 'Tools'],
-  ['account', 'Account'],
-] as const;
+const SECTIONS = ['general', 'agents', 'video', 'render', 'tools', 'account'] as const;
 
 function isHttpUrl(v: string): boolean {
   try {
@@ -76,6 +73,7 @@ function Segmented<T extends string>({
 const section = (id: string) => () => document.getElementById(id)?.scrollIntoView?.({ behavior: 'smooth' });
 
 export function Settings() {
+  const { t } = useTranslation();
   const settings = useApp((s) => s.settings);
   const setSettings = useApp((s) => s.setSettings);
   const navigate = useApp((s) => s.navigate);
@@ -112,7 +110,7 @@ export function Settings() {
     try {
       setSettings(await updateSettings(patch));
     } catch (e) {
-      setError(`Couldn't save: ${e instanceof Error ? e.message : String(e)}`);
+      setError(t('settings.saveError', { message: e instanceof Error ? e.message : String(e) }));
     }
   };
 
@@ -135,18 +133,18 @@ export function Settings() {
   return (
     <div className="flex h-full flex-wrap content-start gap-8 overflow-y-auto p-8">
       <h1 data-tauri-drag-region className="m-0 flex-[1_1_100%] text-[28px] font-semibold tracking-[-0.01em]">
-        Settings
+        {t('settings.title')}
       </h1>
 
-      <nav aria-label="Settings sections" className="flex flex-[0_0_180px] flex-col gap-1">
-        {SECTIONS.map(([id, label]) => (
+      <nav aria-label={t('settings.sectionsAria')} className="flex flex-[0_0_180px] flex-col gap-1">
+        {SECTIONS.map((id) => (
           <button
             key={id}
             type="button"
             onClick={section(id)}
             className="flex h-9 items-center rounded-md px-3 text-left text-sm font-medium text-text-2 hover:bg-raised hover:text-foreground"
           >
-            {label}
+            {t(`settings.sections.${id}`)}
           </button>
         ))}
       </nav>
@@ -158,15 +156,27 @@ export function Settings() {
           </p>
         )}
 
+        <section id="general" className="flex flex-col gap-3">
+          <h2 className="m-0 text-base font-medium">{t('settings.sections.general')}</h2>
+          <Card>
+            <Row label={t('settings.language')} hint={t('settings.languageHint')}>
+              <Segmented
+                label={t('settings.language')}
+                value={uiLanguage()}
+                options={LANGUAGES.map((l) => ({ value: l, label: LANGUAGE_NAMES[l] }))}
+                onChange={(l) => void chooseLanguage(l)}
+              />
+            </Row>
+          </Card>
+        </section>
+
         <section id="agents" className="flex flex-col gap-3">
           <div className="flex flex-col gap-1">
-            <h2 className="m-0 text-base font-medium">Agents</h2>
-            <span className="text-[13px] text-text-2">
-              Tayang talks to agents through ACP. Pick the one that builds your videos by default.
-            </span>
+            <h2 className="m-0 text-base font-medium">{t('settings.sections.agents')}</h2>
+            <span className="text-[13px] text-text-2">{t('settings.agentsIntro')}</span>
           </div>
           <span id="default-agent-label" className="text-[13px] font-medium">
-            Default agent for new chats
+            {t('settings.defaultAgent')}
           </span>
           <Card>
             <RadioGroup
@@ -177,16 +187,16 @@ export function Settings() {
             >
               {agents.map((a) => (
                 <div key={a.id} className="flex items-center gap-3 border-b border-border px-4 py-3 last:border-b-0">
-                  <RadioGroupItem value={a.id} id={`agent-${a.id}`} disabled={!a.installed} aria-label={`Use ${AGENT_NAMES[a.id]} by default`} />
+                  <RadioGroupItem value={a.id} id={`agent-${a.id}`} disabled={!a.installed} aria-label={t('settings.useByDefault', { name: AGENT_NAMES[a.id] })} />
                   <AgentLogo id={a.id} size={20} />
                   <div className="mr-auto flex min-w-0 flex-col gap-1">
                     <span className="text-sm font-medium">{AGENT_NAMES[a.id]}</span>
                     <span className="text-xs text-text-3">
-                      {a.installed ? `Connected${a.version ? ` · ${a.version}` : ''}` : 'Not installed'}
+                      {a.installed ? (a.version ? t('settings.connectedVersion', { version: a.version }) : t('settings.connected')) : t('settings.notInstalled')}
                     </span>
                   </div>
                   <Button variant="ghost" className="h-8 px-2 text-[13px] text-primary hover:text-accent-hover" onClick={() => navigate({ name: 'connect' })}>
-                    {a.installed ? 'Reconnect' : 'How to install'}
+                    {a.installed ? t('settings.reconnect') : t('settings.howToInstall')}
                   </Button>
                 </div>
               ))}
@@ -195,54 +205,50 @@ export function Settings() {
           <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3">
             <div className="mr-auto flex flex-col gap-1">
               <label htmlFor="frame-check" className="text-sm font-medium">
-                Check every frame before showing me
+                {t('settings.frameCheck')}
               </label>
-              <span className="text-xs text-text-3">
-                The agent renders stills, looks for overlaps and cut-off text, and fixes them first
-              </span>
+              <span className="text-xs text-text-3">{t('settings.frameCheckHint')}</span>
             </div>
             <Switch
               id="frame-check"
               checked={settings.frameCheck}
-              aria-label="Check every frame before showing me"
+              aria-label={t('settings.frameCheck')}
               onCheckedChange={(v) => void save({ frameCheck: v })}
             />
           </div>
           <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3">
             <div className="mr-auto flex flex-col gap-1">
               <label htmlFor="auto-mode" className="text-sm font-medium">
-                Auto mode for chats
+                {t('settings.autoMode')}
               </label>
-              <span className="text-xs text-text-3">
-                Your agent runs commands without asking. Claude Code reviews risky steps itself; other agents' requests are approved one at a time.
-              </span>
+              <span className="text-xs text-text-3">{t('settings.autoModeHint')}</span>
             </div>
             <Switch
               id="auto-mode"
               checked={settings.autoMode}
-              aria-label="Auto mode for chats"
+              aria-label={t('settings.autoMode')}
               onCheckedChange={(v) => void save({ autoMode: v })}
             />
           </div>
         </section>
 
         <section id="video" className="flex flex-col gap-3">
-          <h2 className="m-0 text-base font-medium">Video defaults</h2>
+          <h2 className="m-0 text-base font-medium">{t('settings.sections.video')}</h2>
           <Card>
-            <Row label="Language in videos">
+            <Row label={t('settings.videoLanguage')}>
               <Segmented
-                label="Language in videos"
+                label={t('settings.videoLanguage')}
                 value={settings.language}
                 options={[
-                  { value: 'id', label: 'Bahasa Indonesia' },
-                  { value: 'en', label: 'English' },
+                  { value: 'id', label: LANGUAGE_NAMES.id },
+                  { value: 'en', label: LANGUAGE_NAMES.en },
                 ]}
                 onChange={(language) => void save({ language })}
               />
             </Row>
-            <Row label="Format">
+            <Row label={t('settings.format')}>
               <Segmented
-                label="Format"
+                label={t('settings.format')}
                 value={settings.format}
                 options={[
                   { value: '9:16', label: '9:16' },
@@ -252,43 +258,43 @@ export function Settings() {
                 onChange={(format) => void save({ format })}
               />
             </Row>
-            <Row label="Frame rate">
+            <Row label={t('settings.frameRate')}>
               <Segmented
-                label="Frame rate"
+                label={t('settings.frameRate')}
                 value={String(settings.fps)}
-                options={['24', '30', '60'].map((v) => ({ value: v, label: `${v} fps` }))}
+                options={['24', '30', '60'].map((v) => ({ value: v, label: t('settings.fps', { n: v }) }))}
                 onChange={(v) => void save({ fps: Number(v) })}
               />
             </Row>
-            <Row label="Voiceover">
-              <span className="text-xs text-text-3">With a plan</span>
-              <span className="text-sm text-[#D9D9D9]">Off</span>
+            <Row label={t('settings.voiceover')}>
+              <span className="text-xs text-text-3">{t('settings.withPlan')}</span>
+              <span className="text-sm text-[#D9D9D9]">{t('settings.off')}</span>
             </Row>
           </Card>
         </section>
 
         <section id="render" className="flex flex-col gap-3">
-          <h2 className="m-0 text-base font-medium">Rendering</h2>
+          <h2 className="m-0 text-base font-medium">{t('settings.sections.render')}</h2>
           <Card>
             <Row
-              label="Working folder"
-              hint="Your projects live here, and your agent only works inside it"
-              note="Existing projects stay where they are"
+              label={t('settings.workingFolder')}
+              hint={t('settings.workingFolderHint')}
+              note={t('settings.workingFolderNote')}
             >
               <span className="max-w-[220px] truncate font-mono text-xs text-[#D9D9D9]" title={settings.workingFolder}>
                 {settings.workingFolder}
               </span>
               <Button variant="secondary" className="h-7 rounded-sm px-2 text-xs" onClick={() => void changeFolder()}>
-                Change
+                {t('settings.change')}
               </Button>
             </Row>
-            <Row label="Where to render" hint="Cloud rendering keeps your computer free while videos export">
+            <Row label={t('settings.whereToRender')} hint={t('settings.whereToRenderHint')}>
               <Segmented
-                label="Where to render"
+                label={t('settings.whereToRender')}
                 value="local"
                 options={[
-                  { value: 'local', label: 'This computer' },
-                  { value: 'cloud', label: 'Cloud, with a plan', disabled: true },
+                  { value: 'local', label: t('settings.thisComputer') },
+                  { value: 'cloud', label: t('settings.cloud'), disabled: true },
                 ]}
                 onChange={() => {}}
               />
@@ -299,10 +305,8 @@ export function Settings() {
         <section id="tools" className="flex flex-col gap-3">
           <div className="flex items-center gap-3">
             <div className="mr-auto flex flex-col gap-1">
-              <h2 className="m-0 text-base font-medium">Tools</h2>
-              <span className="text-[13px] text-text-2">
-                Videos render on this computer. If something is missing, {agentName} installs it after you allow it.
-              </span>
+              <h2 className="m-0 text-base font-medium">{t('settings.sections.tools')}</h2>
+              <span className="text-[13px] text-text-2">{t('settings.toolsIntro', { agent: agentName })}</span>
             </div>
             <Button
               variant="secondary"
@@ -311,7 +315,7 @@ export function Settings() {
               onClick={check}
             >
               <RefreshCw size={14} strokeWidth={1.5} aria-hidden="true" />
-              Check again
+              {t('settings.checkAgain')}
             </Button>
           </div>
           <ul className="m-0 flex list-none flex-col overflow-hidden rounded-xl border border-border bg-card p-0">
@@ -330,40 +334,36 @@ export function Settings() {
         </section>
 
         <section id="account" className="flex flex-col gap-3">
-          <h2 className="m-0 text-base font-medium">Account</h2>
+          <h2 className="m-0 text-base font-medium">{t('settings.sections.account')}</h2>
           <div className="flex flex-wrap items-center gap-4 rounded-xl border border-border bg-card p-4">
             <Oyen mood="default" size={40} />
             <div className="flex min-w-[280px] flex-1 flex-col gap-1">
-              <span className="text-sm font-medium">You're on the free plan. Making videos is free.</span>
-              <span className="text-[13px] leading-normal text-text-2">
-                A tayang.app plan adds voiceover, cloud rendering, premium styles and Autopilot posting.
-              </span>
+              <span className="text-sm font-medium">{t('settings.freePlan')}</span>
+              <span className="text-[13px] leading-normal text-text-2">{t('settings.planText')}</span>
             </div>
-            <Button onClick={() => void openUrl('https://tayang.app')}>Sign in to tayang.app</Button>
+            <Button onClick={() => void openUrl('https://tayang.app')}>{t('settings.signIn')}</Button>
           </div>
           <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3">
             <div className="mr-auto flex flex-col gap-1">
               <label htmlFor="share-install-stats" className="text-sm font-medium">
-                Share anonymous install stats
+                {t('settings.shareStats')}
               </label>
-              <span className="text-xs text-text-3">
-                Sends a random install ID, your system (macOS, Windows or Linux), its version, your computer's processor type and the app version once a day. Nothing about you or your videos.
-              </span>
+              <span className="text-xs text-text-3">{t('settings.shareStatsHint')}</span>
             </div>
             <Switch
               id="share-install-stats"
               checked={settings.shareInstallStats}
-              aria-label="Share anonymous install stats"
+              aria-label={t('settings.shareStats')}
               onCheckedChange={(v) => void save({ shareInstallStats: v })}
             />
           </div>
           <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card px-4 py-3">
             <div className="mr-auto flex flex-col gap-1">
               <label htmlFor="api-url" className="text-sm font-medium">
-                API address
+                {t('settings.apiAddress')}
               </label>
-              <span className="text-xs text-text-3">Used for built-in styles and install stats</span>
-              <span className="text-xs text-text-3">Leave it empty to use {DEFAULT_SETTINGS.apiUrl}</span>
+              <span className="text-xs text-text-3">{t('settings.apiHint')}</span>
+              <span className="text-xs text-text-3">{t('settings.apiDefault', { url: DEFAULT_SETTINGS.apiUrl })}</span>
             </div>
             <Input
               id="api-url"
@@ -375,7 +375,7 @@ export function Settings() {
               onBlur={(e) => {
                 const v = e.target.value.trim() || DEFAULT_SETTINGS.apiUrl;
                 if (!isHttpUrl(v)) {
-                  setApiError('Enter an address that starts with http:// or https://');
+                  setApiError(t('settings.apiInvalid'));
                   return;
                 }
                 setApiError(null);
