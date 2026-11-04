@@ -6,10 +6,10 @@ import { Composer, type MentionRef } from '@/components/Composer';
 import { MessageList } from '@/components/MessageList';
 import { PermissionCard } from '@/components/PermissionCard';
 import { ScrollToBottom } from '@/components/ScrollToBottom';
-import { TemplateChip } from '@/components/TemplateChip';
+import { TemplateChip, templateOf, useChipTemplate, useStyles } from '@/components/TemplateChip';
 import { TurnRail } from '@/components/TurnRail';
 import { listProjects } from '@/lib/ipc';
-import { mentionContext, mentionedIn } from '@/lib/mentions';
+import { mentionContext, mentionedIn, styleContext } from '@/lib/mentions';
 import { ideasFromReply, startTopic, type TopicIdea } from '@/lib/topics';
 import { extractA2ui } from '@/a2ui/parse';
 import { useApp } from '@/state/app';
@@ -47,6 +47,9 @@ export function ChatThread({ chatId, draft, styleId: routeStyleId }: { chatId: s
   const [setupLine, setSetupLine] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const styles = useStyles();
+  // A template style waiting in the composer is the chat's template; the template chip steps aside for it.
+  const chipTemplate = useChipTemplate(chatId, styles);
 
   const seen = useMemo(() => mentionedIn(messages), [messages]);
   const ideas = useMemo(() => topicCards(messages, streaming), [messages, streaming]);
@@ -82,7 +85,11 @@ export function ChatThread({ chatId, draft, styleId: routeStyleId }: { chatId: s
     setError(null);
     const sentMention = mention;
     setMention(null);
-    const ctx = await mentionContext(parts, seen, projects, settings);
+    const ctx = [...(await mentionContext(parts, seen, projects, settings)), ...styleContext(parts, styles)];
+    // A style with a starter template, once sent, is what a topic picked here starts from.
+    const sentStyle = parts.find((p) => p.type === 'style-mention');
+    const sentTemplate = templateOf(sentStyle?.type === 'style-mention' ? sentStyle : null, styles);
+    if (sentTemplate) setStyleId(sentTemplate);
     const failure = await useChat
       .getState()
       .send(chatId, parts, { agentId: agent, ...(ctx.length ? { promptParts: [...ctx, ...parts] } : {}) });
@@ -98,7 +105,7 @@ export function ChatThread({ chatId, draft, styleId: routeStyleId }: { chatId: s
     setError(null);
     try {
       // The idea's own style wins when it is a synced one; else the template chip's style.
-      await startTopic(idea, { settings, agent, styleId, onStatus: setSetupLine });
+      await startTopic(idea, { settings, agent, styleId: chipTemplate ?? styleId, onStatus: setSetupLine });
       setStyleId(null);
     } catch (e) {
       setBusy(false);
@@ -177,10 +184,11 @@ export function ChatThread({ chatId, draft, styleId: routeStyleId }: { chatId: s
         </div>
 
         <div className="w-full max-w-[720px] pb-6 pt-4">
-          <TemplateChip styleId={styleId} onRemove={() => setStyleId(null)} />
+          <TemplateChip styleId={chipTemplate ? null : styleId} onRemove={() => setStyleId(null)} />
           <Composer
             chatId={chatId}
             draftKey={chatId}
+            styles={styles}
             initialText={draft}
             onSend={onSend}
             disabled={streaming || busy}

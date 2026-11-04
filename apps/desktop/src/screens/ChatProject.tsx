@@ -11,6 +11,8 @@ import { ScheduleDialog } from '@/components/ScheduleDialog';
 import { ScrollToBottom } from '@/components/ScrollToBottom';
 import { TurnRail } from '@/components/TurnRail';
 import { StepBar } from '@/components/StepBar';
+import { useStyles } from '@/components/TemplateChip';
+import { styleContext } from '@/lib/mentions';
 import { getChat, listProjects, mediaProbe, mediaRender, renderCommand, updateProject, type RenderCommand } from '@/lib/ipc';
 import { LANGUAGE_NAMES } from '@/i18n';
 import { projectSendOptions } from '@/lib/openProject';
@@ -44,6 +46,7 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
   const renderRunning = useRender((s) => (project ? !!s.runs[project.id] : false));
   const projectsVersion = useApp((s) => s.projectsVersion);
   const seenVersion = useRef(projectsVersion);
+  const styles = useStyles();
 
   useEffect(() => {
     useChat.getState().listen();
@@ -121,7 +124,11 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
   const sendOptions = (prompt: MessagePart[]): SendOpts => projectSendOptions(project, agent, prompt);
 
   const send = (parts: MessagePart[]) => {
-    void useChat.getState().send(chatId, parts, sendOptions(parts));
+    const opts = sendOptions(parts);
+    // A mentioned style is context for this message; the project keeps its own style and template.
+    const ctx = styleContext(parts, styles);
+    if (ctx.length) opts.promptParts = [...ctx, ...(opts.promptParts ?? parts)];
+    void useChat.getState().send(chatId, parts, opts);
   };
 
   const renderVideo = async () => {
@@ -215,6 +222,8 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
               onAgentChange={(a) => void switchAgent(a)}
               quickChips
               sees={project?.title}
+              styles={styles}
+              styleHint={project && !project.styleId ? t('composer.styleForMessage') : undefined}
             />
           </div>
         </section>

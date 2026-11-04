@@ -5,9 +5,9 @@ import type { AgentId, MessagePart, Project, Style, VideoKind } from '@tayang/sh
 import { buildTopicIdeasPrompt } from '@tayang/skills';
 import oyen from '@/assets/brand/oyen-expr-default.svg';
 import { Composer, type MentionRef } from '@/components/Composer';
-import { TemplateChip } from '@/components/TemplateChip';
+import { TemplateChip, templateOf, useChipTemplate, useStyles } from '@/components/TemplateChip';
 import { createChat, listProjects, listStyles } from '@/lib/ipc';
-import { mentionContext } from '@/lib/mentions';
+import { mentionContext, styleContext } from '@/lib/mentions';
 import { useApp } from '@/state/app';
 import { EMPTY_DRAFT, NEW_CHAT_DRAFT, useChat, type Draft } from '@/state/chat';
 import { useUsage } from '@/state/usage';
@@ -32,6 +32,12 @@ export function ChatNew() {
   const creating = useRef<Promise<string> | null>(null);
   const [picked, setPicked] = useState<AgentId | null>(null);
   const agent = picked ?? settings?.defaultAgent ?? 'claude';
+  const styles = useStyles();
+  // A mentioned style with a starter template is the chat's template: it wins over the Style screen's.
+  const chipTemplate = useChipTemplate(NEW_CHAT_DRAFT, styles);
+  /** The chat's template: the mentioned one (`ref`, else the chip waiting in the composer), else the Style screen's. */
+  const templateFor = (ref?: { styleId: string } | null) =>
+    templateOf(ref === undefined ? useChat.getState().drafts[NEW_CHAT_DRAFT]?.style : ref, styles) ?? styleId;
 
   // An unsent Auto choice belongs to this screen only.
   useEffect(() => () => useChat.setState({ pendingAuto: null }), []);
@@ -70,12 +76,12 @@ export function ChatNew() {
   };
 
   /** The chat exists: the screen becomes that chat, so leaving and coming back finds it. */
-  const openChat = (chatId: string, draft?: Draft) => {
+  const openChat = (chatId: string, template: string | null, draft?: Draft) => {
     const store = useChat.getState();
     // An unsent draft goes with the chat, its style chip too.
     if (draft) store.setDraft(chatId, draft);
     store.setDraft(NEW_CHAT_DRAFT, EMPTY_DRAFT);
-    navigate({ name: 'chat', chatId, ...(draft?.text ? { draft: draft.text } : {}), ...(styleId ? { styleId } : {}) });
+    navigate({ name: 'chat', chatId, ...(draft?.text ? { draft: draft.text } : {}), ...(template ? { styleId: template } : {}) });
   };
 
   const onSend = async (parts: MessagePart[]): Promise<boolean> => {
@@ -83,12 +89,13 @@ export function ChatNew() {
     try {
       const text = parts.find((p) => p.type === 'text');
       const id = await ensureChat(text?.type === 'text' ? text.text.slice(0, 48) : t('chat.newChat'));
-      const ctx = await mentionContext(parts, [], projects, settings);
+      const ctx = [...(await mentionContext(parts, [], projects, settings)), ...styleContext(parts, styles)];
       // The message is in the chat as soon as send starts; the chat screen shows the rest of the turn.
       void useChat
         .getState()
         .send(id, parts, { agentId: agent, ...(ctx.length ? { promptParts: [...ctx, ...parts] } : {}) });
-      openChat(id);
+      const sentStyle = parts.find((p) => p.type === 'style-mention');
+      openChat(id, templateFor(sentStyle?.type === 'style-mention' ? sentStyle : null));
       return true;
     } catch (e) {
       setError(t('chat.couldntStartChat', { message: e instanceof Error ? e.message : String(e) }));
@@ -101,12 +108,12 @@ export function ChatNew() {
     setError(null);
     try {
       const id = await ensureChat(t('chat.topicIdeas'));
-      const styles = await listStyles().catch(() => [] as Style[]);
+      const synced = await listStyles().catch(() => [] as Style[]);
       void useChat.getState().send(id, [{ type: 'text', text: t('chat.suggestTopics') }], {
         agentId: agent,
-        promptParts: [{ type: 'text', text: buildTopicIdeasPrompt(KINDS, settings.language, styles.map((s) => ({ id: s.id, name: s.name }))) }],
+        promptParts: [{ type: 'text', text: buildTopicIdeasPrompt(KINDS, settings.language, synced.map((s) => ({ id: s.id, name: s.name }))) }],
       });
-      openChat(id);
+      openChat(id, templateFor());
     } catch (e) {
       setError(t('chat.couldntStartChat', { message: e instanceof Error ? e.message : String(e) }));
     }
@@ -115,7 +122,7 @@ export function ChatNew() {
   /** Attaching a file makes the chat: the typed text goes along, unsent. */
   const ensureForAttach = async () => {
     const id = await ensureChat(t('chat.newChat'));
-    openChat(id, useChat.getState().drafts[NEW_CHAT_DRAFT]);
+    openChat(id, templateFor(), useChat.getState().drafts[NEW_CHAT_DRAFT]);
     return id;
   };
 
@@ -148,10 +155,11 @@ export function ChatNew() {
         </div>
 
         <div className="w-full max-w-[720px] pb-6 pt-4">
-          <TemplateChip styleId={styleId} onRemove={() => setStyleId(null)} />
+          <TemplateChip styleId={chipTemplate ? null : styleId} onRemove={() => setStyleId(null)} />
           <Composer
             chatId={null}
             draftKey={NEW_CHAT_DRAFT}
+            styles={styles}
             ensureChat={ensureForAttach}
             onSend={onSend}
             projects={projects}

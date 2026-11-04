@@ -3,6 +3,37 @@ import { useTranslation } from 'react-i18next';
 import { X } from 'lucide-react';
 import type { Style } from '@tayang/shared';
 import { listStyles } from '@/lib/ipc';
+import { useChat } from '@/state/chat';
+
+/** The styles the @ menu lists, the Style screen's list. Best effort: none when they can't be read. */
+export function useStyles(): Style[] {
+  const [styles, setStyles] = useState<Style[]>([]);
+  useEffect(() => {
+    let alive = true;
+    void Promise.resolve()
+      .then(() => listStyles())
+      .then((all) => alive && setStyles(all))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+  return styles;
+}
+
+/** `ref`'s style when it has a starter template, else null. */
+export const templateOf = (ref: { styleId: string } | null | undefined, styles: Style[]): string | null =>
+  ref && styles.some((s) => s.id === ref.styleId && s.template) ? ref.styleId : null;
+
+/**
+ * The composer's style chip when it is a template: it is the chat's template then, and the template chip
+ * steps aside so there is one chip, not two.
+ */
+export const useChipTemplate = (draftKey: string, styles: Style[]): string | null =>
+  templateOf(
+    useChat((s) => s.drafts[draftKey]?.style),
+    styles,
+  );
 
 /** The template picked on the Style screen, above the composer until a topic starts a project or the user removes it. */
 export function TemplateChip({ styleId, onRemove }: { styleId: string | null; onRemove(): void }) {

@@ -1,7 +1,7 @@
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
-import type { AgentUpdate, Chat, Job, PermissionRequest, Project, RecentChat, Settings } from '@tayang/shared';
+import type { AgentUpdate, Chat, Job, PermissionRequest, Project, RecentChat, Settings, Style } from '@tayang/shared';
 
 vi.mock('@/lib/ipc', () => ({
   listProjects: vi.fn(),
@@ -344,5 +344,113 @@ describe('Recent in the sidebar', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Semua chat' });
     await user.type(within(dialog).getByRole('searchbox', { name: 'Cari chat' }), 'zzz');
     expect(within(dialog).getByText('Tidak ada chat yang cocok')).toBeInTheDocument();
+  });
+});
+
+describe('@mentioning a style in the chat screens', () => {
+  const atlas: Style = {
+    id: 'builtin-atlas',
+    name: 'Atlas journey',
+    source: 'builtin',
+    sourceUrl: null,
+    notes: { camera: 'Slow push-ins' },
+    prompt: 'Animate a journey across a paper map.',
+    createdAt: '',
+    previewUrl: 'https://cdn.tayang.app/atlas.jpg',
+    template: { sha256: 'a', size: 1, version: 1 },
+  };
+  const paper: Style = { ...atlas, id: 'paper', name: 'Paper cut', previewUrl: null };
+  const mine: Style = { ...atlas, id: 'mine-1', name: 'Mine', source: 'mine', template: null, previewUrl: null };
+  const sentText = () => JSON.stringify(vi.mocked(ipc.agentPrompt).mock.calls.at(-1)![1]);
+
+  beforeEach(() => {
+    vi.mocked(ipc.listStyles).mockResolvedValue([atlas, paper, mine]);
+  });
+
+  const mentionStyle = async (user: ReturnType<typeof userEvent.setup>, query: string) => {
+    await user.type(await screen.findByRole('textbox', { name: 'Message' }), `@${query}`);
+    await screen.findByRole('option', { name: new RegExp(query, 'i') });
+    await user.keyboard('{Enter}');
+  };
+
+  it('New chat: a style with a template becomes the chat template, with one chip, and the agent gets the style', async () => {
+    const user = userEvent.setup();
+    // The template from the Style screen, replaced by the one mentioned.
+    useApp.setState({ route: { name: 'chat-new', styleId: 'paper' } });
+    render(<Shell />);
+    expect(await screen.findByText('Starting from the Paper cut template')).toBeInTheDocument();
+    await mentionStyle(user, 'atlas');
+    expect(screen.getByText('@Atlas journey')).toBeInTheDocument();
+    expect(screen.queryByText(/^Starting from the/)).not.toBeInTheDocument();
+    await user.type(screen.getByRole('textbox', { name: 'Message' }), 'bikin ini');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(useApp.getState().route).toEqual({ name: 'chat', chatId: 'c-new', styleId: 'builtin-atlas' }));
+    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
+    expect(sentText()).toContain('Use the style \\"Atlas journey\\" for this video:');
+    expect(sentText()).toContain('Animate a journey across a paper map.');
+    expect(sentText()).not.toContain('cdn.tayang.app');
+    // The sent message shows the chip; the chat keeps the template for topic starts.
+    expect(await within(main()).findByText('@Atlas journey')).toBeInTheDocument();
+    expect(await within(main()).findByText('Starting from the Atlas journey template')).toBeInTheDocument();
+  });
+
+  it('New chat: a style without a template only adds context', async () => {
+    const user = userEvent.setup();
+    render(<Shell />);
+    await mentionStyle(user, 'mine');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(useApp.getState().route).toEqual({ name: 'chat', chatId: 'c-new' }));
+    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
+    expect(sentText()).toContain('Use the style \\"Mine\\" for this video:');
+  });
+
+  it('New chat: the style chip survives going elsewhere and back', async () => {
+    const user = userEvent.setup();
+    render(<Shell />);
+    await mentionStyle(user, 'atlas');
+    act(() => useApp.getState().navigate({ name: 'videos' }));
+    act(() => useApp.getState().navigate({ name: 'chat-new' }));
+    expect(await screen.findByText('@Atlas journey')).toBeInTheDocument();
+    expect(screen.queryByText(/^Starting from the/)).not.toBeInTheDocument();
+  });
+
+  it('a chat without a project sends the style with the message', async () => {
+    const user = userEvent.setup();
+    vi.mocked(ipc.getChat).mockResolvedValue(chat('c0', null, 'Ngobrol'));
+    useApp.setState({ route: { name: 'chat', chatId: 'c0' } });
+    render(<ChatRoute />);
+    await screen.findByText('Ngobrol');
+    await mentionStyle(user, 'mine');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
+    expect(sentText()).toContain('Use the style \\"Mine\\" for this video:');
+  });
+
+  it('a project chat: the style is context only, with a hint when the project has no style yet', async () => {
+    const user = userEvent.setup();
+    vi.mocked(ipc.getChat).mockResolvedValue(chat('c1', 'p1'));
+    useApp.setState({ route: { name: 'chat', chatId: 'c1' } });
+    render(<ChatRoute />);
+    await screen.findByRole('list', { name: 'Progress' });
+    await mentionStyle(user, 'atlas');
+    expect(screen.getByText('This style is used for this message')).toBeInTheDocument();
+    await user.type(screen.getByRole('textbox', { name: 'Message' }), 'ganti gaya');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
+    expect(sentText()).toContain('Use the style \\"Atlas journey\\" for this video:');
+    expect(ipc.updateProject).not.toHaveBeenCalled();
+    expect(ipc.installStyleTemplate).not.toHaveBeenCalled();
+  });
+
+  it('a project chat with a style shows no hint', async () => {
+    const user = userEvent.setup();
+    vi.mocked(ipc.listProjects).mockResolvedValue([{ ...mkProject('p1', 'Kenapa rupiah melemah?'), styleId: 'paper' }]);
+    vi.mocked(ipc.getChat).mockResolvedValue(chat('c1', 'p1'));
+    useApp.setState({ route: { name: 'chat', chatId: 'c1' } });
+    render(<ChatRoute />);
+    await screen.findByRole('list', { name: 'Progress' });
+    await mentionStyle(user, 'atlas');
+    expect(screen.getByText('@Atlas journey')).toBeInTheDocument();
+    expect(screen.queryByText('This style is used for this message')).not.toBeInTheDocument();
   });
 });
