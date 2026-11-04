@@ -1,20 +1,22 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link2, Lightbulb, Disc3, X } from 'lucide-react';
 import type { AgentId, MessagePart, Project, Style, VideoKind } from '@tayang/shared';
-import { buildProjectBrief, buildTopicIdeasPrompt, parseTopicIdeas } from '@tayang/skills';
+import { buildProjectBrief, buildTopicIdeasPrompt, topicIdeaFromAction } from '@tayang/skills';
 import oyen from '@/assets/brand/oyen-expr-default.svg';
 import { Composer, type MentionRef } from '@/components/Composer';
 import { MessageList } from '@/components/MessageList';
 import { PermissionCard } from '@/components/PermissionCard';
-import { addMessage, createChat, createProject, installStyleTemplate, listProjects, listStyles, writeBrief } from '@/lib/ipc';
+import { createChat, listProjects, listStyles } from '@/lib/ipc';
 import { useApp } from '@/state/app';
 import { headPermission, useChat } from '@/state/chat';
 import { useUsage } from '@/state/usage';
+import { ideasFromReply, startTopic, type TopicIdea } from '@/lib/topics';
+import { extractA2ui } from '@/a2ui/parse';
 
 const KINDS: VideoKind[] = ['explainer', 'promo', 'quote', 'news', 'tutorial', 'data', 'event'];
 const NO_MESSAGES: never[] = [];
 
-type Idea = { title: string; kind: VideoKind; lengthSec: number };
+type Idea = TopicIdea;
 
 function agentText(parts: MessagePart[]) {
   return parts.map((p) => (p.type === 'text' ? p.text : '')).join('');
@@ -90,7 +92,9 @@ export function ChatNew() {
     if (last?.role === 'system') topicPending.current = false; // the turn failed
     if (last?.role !== 'agent') return;
     topicPending.current = false;
-    setIdeas(parseTopicIdeas(agentText(last.parts)));
+    // A2UI replies draw their own cards; only a ```json answer needs the fallback cards.
+    const text = agentText(last.parts);
+    setIdeas(extractA2ui(text).blocks.length ? [] : ideasFromReply(text));
   }, [chatId, streaming, messages]);
 
   const ensureChat = async (title: string) => {
@@ -143,9 +147,10 @@ export function ChatNew() {
     const id = await ensureChat('Topic ideas');
     topicPending.current = true;
     setIdeas([]);
+    const styles = await listStyles().catch(() => [] as Style[]);
     void useChat.getState().send(id, [{ type: 'text', text: 'Suggest video topics for my channel' }], {
       agentId: agent,
-      promptParts: [{ type: 'text', text: buildTopicIdeasPrompt(KINDS, settings.language) }],
+      promptParts: [{ type: 'text', text: buildTopicIdeasPrompt(KINDS, settings.language, styles.map((s) => ({ id: s.id, name: s.name }))) }],
     });
   };
 
@@ -153,66 +158,20 @@ export function ChatNew() {
     if (!settings || busy) return;
     setBusy(true);
     try {
-      let style: Style | null = null;
-      let styleProblem: string | null = null;
-      if (styleId) {
-        try {
-          style = (await listStyles()).find((s) => s.id === styleId) ?? null;
-          if (!style) styleProblem = 'that style is no longer in your library';
-        } catch (e) {
-          styleProblem = e instanceof Error ? e.message : String(e);
-        }
-      }
-      const input = {
-        title: idea.title,
-        kind: idea.kind,
-        format: settings.format,
-        language: settings.language,
-        ...(style ? { styleId: style.id } : {}),
-      };
-      const draft: Project = {
-        id: '',
-        slug: '',
-        folder: '',
-        status: 'draft',
-        styleId: style?.id ?? null,
-        scheduledAt: null,
-        durationSec: null,
-        createdAt: '',
-        updatedAt: '',
-        ...input,
-      };
-      const project = await createProject(input, buildProjectBrief(draft, style, settings));
-      useApp.getState().bumpProjects();
-      const chat = await createChat(project.id, agent, idea.title);
-      const say = (text: string) => addMessage(chat.id, 'system', [{ type: 'text', text }]).catch(() => {});
-      if (styleProblem) await say(`Couldn't set up the template: ${styleProblem}. Continuing without it.`);
-      if (style?.template) {
-        await say(`Setting up the ${style.name} template…`);
-        let reason: string | null = null;
-        try {
-          const r = await installStyleTemplate(project.id);
-          if (!r.installed) reason = 'the template files were not added';
-        } catch (e) {
-          reason = e instanceof Error ? e.message : String(e);
-        }
-        if (reason !== null) {
-          // The brief promised a template: take that promise back.
-          await writeBrief(project.id, buildProjectBrief(draft, { ...style, template: null }, settings)).catch(() => {});
-          await say(`Couldn't set up the ${style.name} template: ${reason}. Continuing without it.`);
-        }
-      }
+      // The idea's own style wins when it is a synced one; else the template chip's style.
+      await startTopic(idea, { settings, agent, styleId });
       setStyleId(null);
-      navigate({ name: 'chat', chatId: chat.id });
-      void useChat
-        .getState()
-        .send(chat.id, [{ type: 'text', text: `Write the script for "${idea.title}", about ${idea.lengthSec} seconds.` }], {
-          agentId: agent,
-          job: { projectId: project.id, title: project.title },
-        });
     } catch {
       setBusy(false);
     }
+  };
+
+  const onA2uiAction = (a: { name: string; context: Record<string, unknown> }) => {
+    if (a.name !== 'pick_topic') return false;
+    const idea = topicIdeaFromAction(a.context);
+    if (!idea) return false;
+    void pickIdea(idea);
+    return true;
   };
 
   const attached = new Set([...seen, ...(mention ? [mention.projectId] : [])]).size;
@@ -247,7 +206,7 @@ export function ChatNew() {
             </>
           ) : (
             <div className="my-auto">
-              <MessageList messages={messages} streaming={streaming}>
+              <MessageList messages={messages} streaming={streaming} onA2uiAction={onA2uiAction}>
                 {permission && chatId && (
                   <PermissionCard
                     request={permission}
