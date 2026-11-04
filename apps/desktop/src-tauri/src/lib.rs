@@ -35,6 +35,7 @@ pub fn run() {
                 acp: acp::AcpManager::new(),
                 media: media::MediaTools::from_env_or_path(),
                 home,
+                study_working: Default::default(),
             });
             // Anonymous install ping, in the background; never blocks the UI, failures are ignored.
             let handle = app.handle().clone();

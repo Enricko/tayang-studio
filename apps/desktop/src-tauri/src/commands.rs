@@ -20,9 +20,17 @@ pub struct AppState {
     pub acp: AcpManager,
     pub media: MediaTools,
     pub home: PathBuf,
+    /// The working folder each study started in, so changing the working folder mid-study can't strand its files.
+    pub study_working: std::sync::Mutex<std::collections::HashMap<String, PathBuf>>,
 }
 
 impl AppState {
+    /// The working folder `study_dir` created this study in, else the current one.
+    pub fn working_for_study(&self, study_id: &str) -> PathBuf {
+        let known = self.study_working.lock().unwrap_or_else(|e| e.into_inner()).get(study_id).cloned();
+        known.unwrap_or_else(|| self.working())
+    }
+
     pub fn working(&self) -> PathBuf {
         PathBuf::from(self.db.get_settings(&self.home).working_folder)
     }
@@ -253,7 +261,7 @@ pub async fn make_style_preview(
     study_id: String,
     style_id: String,
 ) -> CmdResult<Option<media::StylePreview>> {
-    let study = study_path(&state.working(), &study_id)?;
+    let study = study_path(&state.working_for_study(&study_id), &study_id)?;
     let data = app.path().app_data_dir().map_err(err)?;
     let out = media::style_media_dir(&data, &style_id).ok_or("That style id isn't valid")?;
     let tools = state.media.clone();
@@ -278,7 +286,7 @@ pub(crate) fn study_path(working: &Path, study_id: &str) -> CmdResult<PathBuf> {
 
 #[tauri::command]
 pub fn read_style_result(state: State<'_, AppState>, study_id: String) -> CmdResult<Option<String>> {
-    let path = study_path(&state.working(), &study_id)?.join("style.json");
+    let path = study_path(&state.working_for_study(&study_id), &study_id)?.join("style.json");
     match std::fs::read_to_string(&path) {
         Ok(s) => Ok(Some(s)),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
@@ -289,13 +297,18 @@ pub fn read_style_result(state: State<'_, AppState>, study_id: String) -> CmdRes
 /// Deletes a study's folder (its download, frames and result) once the study is over, however it ended.
 #[tauri::command]
 pub fn remove_study_dir(state: State<'_, AppState>, study_id: String) -> CmdResult<()> {
-    media::remove_study_dir(&state.working(), &study_id)
+    let working = state.working_for_study(&study_id);
+    let out = media::remove_study_dir(&working, &study_id);
+    state.study_working.lock().unwrap_or_else(|e| e.into_inner()).remove(&study_id);
+    out
 }
 
 #[tauri::command]
 pub fn study_dir(state: State<'_, AppState>, study_id: String) -> CmdResult<String> {
-    let dir = study_path(&state.working(), &study_id)?;
+    let working = state.working();
+    let dir = study_path(&working, &study_id)?;
     std::fs::create_dir_all(&dir).map_err(|e| format!("Can't create the study folder: {e}"))?;
+    state.study_working.lock().unwrap_or_else(|e| e.into_inner()).insert(study_id, working);
     Ok(dir.to_string_lossy().into_owned())
 }
 
@@ -936,6 +949,30 @@ pub fn write_brief(state: State<'_, AppState>, project_id: String, brief: String
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_study_keeps_the_working_folder_it_started_in() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (old, new) = (tmp.path().join("old"), tmp.path().join("new"));
+        let db = Db::open_in_memory().unwrap();
+        db.update_settings(serde_json::json!({ "workingFolder": old.to_string_lossy() })).unwrap();
+        let state = AppState {
+            db,
+            acp: AcpManager::new(),
+            media: MediaTools::from_env_or_path(),
+            home: tmp.path().to_path_buf(),
+            study_working: Default::default(),
+        };
+        let dir = study_path(&state.working(), "s1").unwrap();
+        std::fs::create_dir_all(&dir).unwrap();
+        state.study_working.lock().unwrap().insert("s1".into(), state.working());
+        state.db.update_settings(serde_json::json!({ "workingFolder": new.to_string_lossy() })).unwrap();
+        assert_eq!(state.working(), new);
+        assert_eq!(state.working_for_study("s1"), old);
+        assert_eq!(state.working_for_study("other"), new);
+        media::remove_study_dir(&state.working_for_study("s1"), "s1").unwrap();
+        assert!(!dir.exists());
+    }
 
     #[test]
     fn session_options_for_claude_load_the_plugin() {
