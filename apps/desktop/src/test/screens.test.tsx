@@ -415,7 +415,7 @@ describe('Style popup', () => {
     const dialog = await openCard('Atlas journey');
     const video = dialog.querySelector('video')!;
     Object.defineProperty(video, 'paused', { value: false, configurable: true });
-    fireEvent.play(video);
+    fireEvent.playing(video);
     await userEvent.click(await within(dialog).findByRole('button', { name: 'Pause preview' }));
     expect(HTMLMediaElement.prototype.pause).toHaveBeenCalled();
     Object.defineProperty(video, 'paused', { value: true, configurable: true });
@@ -423,15 +423,149 @@ describe('Style popup', () => {
     expect(await within(dialog).findByRole('button', { name: 'Play preview' })).toBeInTheDocument();
   });
 
-  it('Edit prompt then Save on a built-in saves a copy of yours from the dialog', async () => {
+  it('shows the poster as a layer until the video has data, and the icon says Play until it is playing', async () => {
     mocks();
-    vi.mocked(ipc.saveStyle).mockResolvedValue(undefined);
     render(<Style />);
     const dialog = await openCard('Atlas journey');
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Edit prompt' }));
-    await userEvent.type(within(dialog).getByRole('textbox', { name: 'Prompt your agent gets' }), ' More.');
+    const video = dialog.querySelector('video')!;
+    expect(within(dialog).getByTestId('preview-poster')).toBeInTheDocument();
+    expect(within(dialog).getByTestId('preview-poster').querySelector('img')).toHaveAttribute('src', atlas.previewUrl);
+    // WebKit fires play before any data: still the poster and a Play icon.
+    fireEvent.play(video);
+    expect(within(dialog).getByTestId('preview-poster')).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Play preview' })).toBeInTheDocument();
+    fireEvent.loadedData(video);
+    expect(within(dialog).queryByTestId('preview-poster')).toBeNull();
+    fireEvent.playing(video);
+    expect(await within(dialog).findByRole('button', { name: 'Pause preview' })).toBeInTheDocument();
+  });
+
+  /** Opens a card with fake timers on, so the preview's timers are the fake ones. */
+  const openWithFakeTimers = async (name: string) => {
+    const card = await screen.findByRole('button', { name: new RegExp(`^${name}`) });
+    vi.useFakeTimers();
+    fireEvent.click(card);
+    return screen.getByRole('dialog');
+  };
+
+  it('falls back to the image when the clip has no data after 5 seconds', async () => {
+    mocks();
+    render(<Style />);
+    try {
+      const dialog = await openWithFakeTimers('Atlas journey');
+      act(() => void vi.advanceTimersByTime(4900));
+      expect(dialog.querySelector('video')).not.toBeNull();
+      act(() => void vi.advanceTimersByTime(200));
+      expect(dialog.querySelector('video')).toBeNull();
+      expect(dialog.querySelector('img')).toHaveAttribute('src', atlas.previewUrl);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not fall back after the clip has loaded', async () => {
+    mocks();
+    render(<Style />);
+    try {
+      const dialog = await openWithFakeTimers('Atlas journey');
+      fireEvent.loadedData(dialog.querySelector('video')!);
+      act(() => void vi.advanceTimersByTime(10_000));
+      expect(dialog.querySelector('video')).not.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a built-in offers Clone to edit, not Edit', async () => {
+    mocks();
+    render(<Style />);
+    const dialog = await openCard('Atlas journey');
+    expect(within(dialog).getByRole('button', { name: 'Clone to edit' })).toBeInTheDocument();
+    expect(within(dialog).queryByRole('button', { name: 'Edit' })).toBeNull();
+    expect(within(dialog).queryByRole('button', { name: 'Edit prompt' })).toBeNull();
+  });
+
+  it('Clone to edit saves a copy of yours with the template and previews, and opens it in edit mode', async () => {
+    mocks();
+    // Like the database: the saved style shows up in the next list.
+    vi.mocked(ipc.saveStyle).mockImplementation(async (st) => {
+      vi.mocked(ipc.listStyles).mockResolvedValue([atlas, plain, st]);
+    });
+    render(<Style />);
+    const dialog = await openCard('Atlas journey');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Clone to edit' }));
+    await waitFor(() => expect(ipc.saveStyle).toHaveBeenCalledTimes(1));
+    expect(ipc.saveStyle).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: expect.stringMatching(/^mine-/),
+        name: 'Atlas journey (copy)',
+        source: 'mine',
+        sourceUrl: null,
+        notes: atlas.notes,
+        prompt: atlas.prompt,
+        engine: 'remotion',
+        template: atlas.template,
+        previewUrl: atlas.previewUrl,
+        previewVideoUrl: atlas.previewVideoUrl,
+        basedOn: 'atlas-journey',
+      }),
+    );
+    const now = screen.getByRole('dialog');
+    expect(await within(now).findByRole('textbox', { name: 'Style name' })).toHaveValue('Atlas journey (copy)');
+    expect(within(now).getByRole('button', { name: 'Save' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Atlas journey \(copy\)/, hidden: true })).toBeInTheDocument();
+  });
+
+  it('edit mode has Name, one textarea per aspect in order, then the prompt; saving keeps notes and drops empty aspects', async () => {
+    const mine: StyleT = { ...atlas, id: 'mine-1', name: 'Mine', source: 'mine', basedOn: 'atlas-journey', notes: { camera: 'Slow', pacing: 'Fast' } };
+    vi.mocked(ipc.syncStyles).mockResolvedValue({ styles: [], offline: false });
+    vi.mocked(ipc.listStyles).mockResolvedValue([mine]);
+    vi.mocked(ipc.saveStyle).mockResolvedValue(undefined);
+    render(<Style />);
+    const dialog = await openCard('Mine');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Edit' }));
+    const names = within(dialog).getAllByRole('textbox').map((t) => t.getAttribute('aria-label') ?? dialog.querySelector(`label[for="${t.id}"]`)?.textContent);
+    expect(names).toEqual(['Style name', 'Camera', 'Pacing', 'Type', 'Color', 'Captions', 'Transitions', 'Prompt your agent gets']);
+    const camera = within(dialog).getByRole('textbox', { name: 'Camera' });
+    await userEvent.clear(camera);
+    await userEvent.type(camera, 'Orbit');
+    await userEvent.clear(within(dialog).getByRole('textbox', { name: 'Pacing' }));
+    await userEvent.type(within(dialog).getByRole('textbox', { name: 'Color' }), 'Teal');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
-    await waitFor(() => expect(ipc.saveStyle).toHaveBeenCalledWith(expect.objectContaining({ source: 'mine', name: 'Atlas journey', prompt: 'Fly over a map. More.' })));
+    await waitFor(() => expect(ipc.saveStyle).toHaveBeenCalled());
+    const saved = vi.mocked(ipc.saveStyle).mock.calls[0]![0];
+    expect(saved).toMatchObject({ id: 'mine-1', source: 'mine', basedOn: 'atlas-journey', template: atlas.template });
+    expect(saved.notes).toEqual({ camera: 'Orbit', color: 'Teal' });
+  });
+
+  it('Save needs a name and a prompt', async () => {
+    const mine: StyleT = { ...atlas, id: 'mine-1', name: 'Mine', source: 'mine' };
+    vi.mocked(ipc.syncStyles).mockResolvedValue({ styles: [], offline: false });
+    vi.mocked(ipc.listStyles).mockResolvedValue([mine]);
+    render(<Style />);
+    const dialog = await openCard('Mine');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Edit' }));
+    await userEvent.clear(within(dialog).getByRole('textbox', { name: 'Prompt your agent gets' }));
+    expect(within(dialog).getByRole('button', { name: 'Save' })).toBeDisabled();
+  });
+
+  it('a copied-from-video style has Edit directly, and unsaved aspect edits block closing; Cancel restores', async () => {
+    const copied: StyleT = { id: 'c1', name: 'Zoom cut', source: 'copied', sourceUrl: null, notes: { camera: 'Punch in' }, prompt: 'Zoom.', createdAt: '2026-11-04T00:00:00Z' };
+    vi.mocked(ipc.syncStyles).mockResolvedValue({ styles: [], offline: false });
+    vi.mocked(ipc.listStyles).mockResolvedValue([copied]);
+    render(<Style />);
+    const dialog = await openCard('Zoom cut');
+    expect(within(dialog).queryByRole('button', { name: 'Clone to edit' })).toBeNull();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Edit' }));
+    const camera = within(dialog).getByRole('textbox', { name: 'Camera' });
+    await userEvent.type(camera, ' more');
+    await userEvent.keyboard('{Escape}');
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByText('You have unsaved changes. Save or cancel first')).toBeInTheDocument();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(within(dialog).getByText('Punch in')).toBeInTheDocument();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Edit' }));
+    expect(within(dialog).getByRole('textbox', { name: 'Camera' })).toHaveValue('Punch in');
   });
 
   it('Delete on a copied style deletes it and closes the dialog', async () => {
@@ -462,10 +596,12 @@ describe('Style popup', () => {
   });
 
   it('Escape and a click outside keep the dialog open while the prompt has unsaved edits, with a hint', async () => {
-    mocks();
+    const copied: StyleT = { id: 'c1', name: 'Zoom cut', source: 'copied', sourceUrl: null, notes: {}, prompt: 'Zoom.', createdAt: '2026-11-04T00:00:00Z' };
+    vi.mocked(ipc.syncStyles).mockResolvedValue({ styles: [], offline: false });
+    vi.mocked(ipc.listStyles).mockResolvedValue([copied]);
     render(<Style />);
-    const dialog = await openCard('Atlas journey');
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Edit prompt' }));
+    const dialog = await openCard('Zoom cut');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Edit' }));
     // Nothing changed yet: closing is fine elsewhere, but typing makes it dirty.
     await userEvent.type(within(dialog).getByRole('textbox', { name: 'Prompt your agent gets' }), ' More');
     await userEvent.keyboard('{Escape}');
@@ -480,10 +616,12 @@ describe('Style popup', () => {
   });
 
   it('opening Edit without changing anything still closes with Escape', async () => {
-    mocks();
+    const copied: StyleT = { id: 'c1', name: 'Zoom cut', source: 'copied', sourceUrl: null, notes: {}, prompt: 'Zoom.', createdAt: '2026-11-04T00:00:00Z' };
+    vi.mocked(ipc.syncStyles).mockResolvedValue({ styles: [], offline: false });
+    vi.mocked(ipc.listStyles).mockResolvedValue([copied]);
     render(<Style />);
-    const dialog = await openCard('Atlas journey');
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Edit prompt' }));
+    const dialog = await openCard('Zoom cut');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Edit' }));
     await userEvent.keyboard('{Escape}');
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });

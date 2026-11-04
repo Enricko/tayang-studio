@@ -278,31 +278,62 @@ function StylePreview({ style }: { style: StyleT }) {
   );
 }
 
+const ASPECTS = Object.keys(ASPECT_LABEL) as StyleAspect[];
+type NotesDraft = Record<StyleAspect, string>;
+const draftOf = (s: StyleT): NotesDraft =>
+  Object.fromEntries(ASPECTS.map((a) => [a, s.notes[a] ?? ''])) as NotesDraft;
+
+/** A textarea that grows with its text. */
+function AutoTextarea({ value, ...props }: React.ComponentProps<typeof Textarea>) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  }, [value]);
+  return <Textarea ref={ref} value={value} rows={1} {...props} />;
+}
+
 function Detail({
   style,
+  startInEdit,
   onChanged,
   onDeleted,
   onDirty,
+  onClone,
 }: {
   style: StyleT;
+  startInEdit: boolean;
   onChanged(): void;
   onDeleted(id: string): void;
   onDirty(dirty: boolean): void;
+  onClone(clone: StyleT): Promise<void>;
 }) {
   const navigate = useApp((s) => s.navigate);
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(startInEdit);
   const [name, setName] = useState(style.name);
+  const [notes, setNotes] = useState<NotesDraft>(() => draftOf(style));
   const [prompt, setPrompt] = useState(style.prompt);
   const [error, setError] = useState<string | null>(null);
+  const builtin = style.source === 'builtin';
 
-  useEffect(() => {
-    setEditing(false);
+  const reset = () => {
     setName(style.name);
+    setNotes(draftOf(style));
     setPrompt(style.prompt);
     setError(null);
-  }, [style.id, style.name, style.prompt]);
+  };
+  useEffect(() => {
+    setEditing(startInEdit);
+    reset();
+    // Re-sync whenever the stored style changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [style.id, style.name, style.prompt, style.notes]);
 
-  const dirty = editing && (name !== style.name || prompt !== style.prompt);
+  const original = draftOf(style);
+  const dirty =
+    editing && (name !== style.name || prompt !== style.prompt || ASPECTS.some((a) => notes[a] !== original[a]));
   useEffect(() => {
     onDirty(dirty);
     return () => onDirty(false);
@@ -313,21 +344,27 @@ function Detail({
   const save = async () => {
     if (!name.trim() || !prompt.trim()) return;
     try {
-      const next: StyleT =
-        style.source === 'mine'
-          ? { ...style, name: name.trim(), prompt: prompt.trim() }
-          : {
-              id: `mine-${Date.now().toString(36)}`,
-              name: name.trim(),
-              source: 'mine',
-              sourceUrl: null,
-              notes: style.notes,
-              prompt: prompt.trim(),
-              createdAt: new Date().toISOString(),
-            };
-      await saveStyle(next);
+      const kept: StyleT['notes'] = {};
+      for (const a of ASPECTS) if (notes[a].trim()) kept[a] = notes[a].trim();
+      await saveStyle({ ...style, name: name.trim(), notes: kept, prompt: prompt.trim() });
       setEditing(false);
       onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const clone = async () => {
+    try {
+      await onClone({
+        ...style,
+        id: `mine-${Date.now().toString(36)}`,
+        name: `${style.name} (copy)`,
+        source: 'mine',
+        sourceUrl: null,
+        createdAt: new Date().toISOString(),
+        basedOn: style.id,
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -342,7 +379,7 @@ function Detail({
     }
   };
 
-  const notes = (Object.keys(ASPECT_LABEL) as StyleAspect[]).filter((a) => style.notes[a]);
+  const shownNotes = ASPECTS.filter((a) => style.notes[a]);
   return (
     <div className="grid min-w-0 gap-6 sm:grid-cols-[minmax(0,280px)_minmax(0,1fr)]">
       <StylePreview style={style} />
@@ -359,27 +396,44 @@ function Detail({
           <DialogDescription className="text-xs text-text-3">{sourceLabel(style)}</DialogDescription>
           {style.engine && <span className="font-mono text-xs text-text-3">{ENGINE_LABEL[style.engine]}</span>}
         </div>
-        {notes.length > 0 && (
-          <dl className="m-0 flex flex-col gap-2">
-            {notes.map((a) => (
-              <div key={a} className="flex gap-3 text-[13px] leading-normal">
-                <dt className="w-[76px] shrink-0 text-text-3">{ASPECT_LABEL[a]}</dt>
-                <dd className="m-0 text-[#D9D9D9]">{style.notes[a]}</dd>
+        {editing ? (
+          <div className="flex flex-col gap-3">
+            {ASPECTS.map((a) => (
+              <div key={a} className="flex flex-col gap-1">
+                <label htmlFor={`style-note-${a}`} className="text-xs text-text-3">
+                  {ASPECT_LABEL[a]}
+                </label>
+                <AutoTextarea
+                  id={`style-note-${a}`}
+                  value={notes[a]}
+                  onChange={(e) => setNotes((n) => ({ ...n, [a]: e.target.value }))}
+                  className="min-h-9 resize-none bg-background py-2 text-[13px] leading-normal"
+                />
               </div>
             ))}
-          </dl>
+          </div>
+        ) : (
+          shownNotes.length > 0 && (
+            <dl className="m-0 flex flex-col gap-2">
+              {shownNotes.map((a) => (
+                <div key={a} className="flex gap-3 text-[13px] leading-normal">
+                  <dt className="w-[76px] shrink-0 text-text-3">{ASPECT_LABEL[a]}</dt>
+                  <dd className="m-0 text-[#D9D9D9]">{style.notes[a]}</dd>
+                </div>
+              ))}
+            </dl>
+          )
         )}
         <div className="flex flex-col gap-2">
           <label htmlFor="style-prompt" className="text-xs text-text-3">
             Prompt your agent gets
           </label>
           {editing ? (
-            <Textarea
+            <AutoTextarea
               id="style-prompt"
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
-              rows={8}
-              className="bg-background font-mono text-xs leading-[1.6]"
+              className="min-h-[9rem] resize-none bg-background font-mono text-xs leading-[1.6]"
             />
           ) : (
             <div
@@ -406,7 +460,14 @@ function Detail({
               >
                 Save
               </Button>
-              <Button variant="ghost" className="h-9 px-3 text-[13px]" onClick={() => setEditing(false)}>
+              <Button
+                variant="ghost"
+                className="h-9 px-3 text-[13px]"
+                onClick={() => {
+                  reset();
+                  setEditing(false);
+                }}
+              >
                 Cancel
               </Button>
             </>
@@ -424,10 +485,16 @@ function Detail({
               >
                 Use in a new chat
               </Button>
-              <Button variant="ghost" className="h-9 px-3 text-[13px]" onClick={() => setEditing(true)}>
-                Edit prompt
-              </Button>
-              {style.source !== 'builtin' && (
+              {builtin ? (
+                <Button variant="ghost" className="h-9 px-3 text-[13px]" onClick={() => void clone()}>
+                  Clone to edit
+                </Button>
+              ) : (
+                <Button variant="ghost" className="h-9 px-3 text-[13px]" onClick={() => setEditing(true)}>
+                  Edit
+                </Button>
+              )}
+              {!builtin && (
                 <Button variant="ghost" className="h-9 px-3 text-[13px]" onClick={() => void remove()}>
                   Delete
                 </Button>
@@ -495,6 +562,8 @@ export function Style() {
   const library = useRef<HTMLElement>(null);
   const [dirty, setDirty] = useState(false);
   const [blocked, setBlocked] = useState(false);
+  /** The clone that just opened: its popup starts in edit mode. */
+  const [editNew, setEditNew] = useState<string | null>(null);
   /** After a delete, the card to focus once the list has updated (null: the library itself). */
   const refocus = useRef<{ id: string | null } | null>(null);
   useEffect(() => {
@@ -654,8 +723,17 @@ export function Style() {
           >
             <Detail
               style={current}
+              startInEdit={editNew === current.id}
               onChanged={() => setVersion((v) => v + 1)}
               onDirty={setDirty}
+              onClone={async (clone) => {
+                await saveStyle(clone);
+                setStored((prev) => (prev.some((x) => x.id === clone.id) ? prev : [...prev, clone]));
+                setEditNew(clone.id);
+                setSel(clone.id);
+                if (tab === 'builtin' || tab === 'copied') setTab('mine');
+                setVersion((v) => v + 1);
+              }}
               onDeleted={(id) => {
                 const i = shown.findIndex((x) => x.id === id);
                 const next = shown[i + 1] ?? shown[i - 1];
