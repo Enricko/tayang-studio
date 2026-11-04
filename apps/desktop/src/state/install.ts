@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { AgentId, AgentUpdate, PermissionRequest, SystemInfo, ToolId, ToolStatus } from '@tayang/shared';
 import { buildInstallPrompt } from '@tayang/skills';
 import { agentCancel, agentPrompt, agentRespondPermission, agentStart, checkTools } from '@/lib/ipc';
+import { i18n } from '@/i18n';
 import { agentErrorText } from '@/lib/agents';
 import { onAgentUpdate, onPermission } from '@/lib/events';
 
@@ -119,7 +120,7 @@ export const useInstall = create<InstallState>((set, get) => {
           set({ active: null });
         } else {
           const reply = get().tools[tool]?.reply?.trim();
-          fail(tool, reply ? reply.slice(-400) : 'Tayang still can’t find it on this computer. Try again.');
+          fail(tool, reply ? reply.slice(-400) : i18n.t('errors.cantFindTool'));
         }
       } catch (e) {
         fail(tool, e instanceof Error ? e.message : String(e));

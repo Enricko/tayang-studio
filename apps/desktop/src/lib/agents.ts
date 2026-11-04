@@ -1,11 +1,15 @@
 import type { AgentId } from '@tayang/shared';
+import { i18n } from '@/i18n';
 
 export const AGENT_NAMES: Record<AgentId, string> = {
   claude: 'Claude Code',
   opencode: 'opencode',
   gemini: 'Gemini CLI',
   codex: 'Codex',
-  custom: 'Your agent',
+  /** The only name that is a phrase, not a brand: it follows the language. */
+  get custom() {
+    return i18n.t('agents.yourAgent');
+  },
 };
 
 /** What to type in a terminal to sign in to each agent. */
@@ -14,10 +18,8 @@ const SIGN_IN_COMMAND: Record<AgentId, string> = {
   opencode: 'opencode auth login',
   gemini: 'gemini',
   codex: 'codex',
-  custom: "your agent's command",
+  custom: '',
 };
-
-export const AGENT_STOPPED = 'The agent stopped unexpectedly';
 
 /** JSON-RPC -32000 is ACP's "authentication required". */
 const AUTH = /\bauth|sign[ -]?in|log[ -]?in|-32000/i;
@@ -26,14 +28,13 @@ const AUTH = /\bauth|sign[ -]?in|log[ -]?in|-32000/i;
 export function agentErrorText(message: string | null | undefined, agent: AgentId): string {
   const msg = (message ?? '').trim();
   if (AUTH.test(msg)) {
-    const cmd = SIGN_IN_COMMAND[agent];
+    const cmd = SIGN_IN_COMMAND[agent] || i18n.t('errors.yourAgentCommand');
     const run = agent === 'custom' ? cmd : `\`${cmd}\``;
-    return `Sign in to ${AGENT_NAMES[agent]}: open a terminal and run ${run} once, then try again`;
+    return i18n.t('errors.signIn', { agent: AGENT_NAMES[agent], command: run });
   }
-  return msg || AGENT_STOPPED;
+  return msg || i18n.t('errors.agentStopped');
 }
 
 /** The note Rust writes on a job whose agent died with the app (`fail_stale_jobs`). */
 export const CLOSED_NOTE = 'Tayang was closed while this was running';
-/** Prefilled (never sent) when a chat job failed because Tayang was closed. */
-export const CLOSED_DRAFT = "Tayang was closed while you were working on this. Check what's already done and continue.";
+/** The draft prefilled (never sent) when a chat job failed because Tayang was closed is `agents.closedDraft`. */

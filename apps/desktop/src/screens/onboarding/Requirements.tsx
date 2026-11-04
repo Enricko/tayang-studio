@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ArrowRight, RefreshCw } from 'lucide-react';
 import { requiredMissing, type SystemInfo, type ToolId, type ToolStatus } from '@tayang/shared';
 import { AgentLogo } from '@/components/AgentLogo';
@@ -16,6 +17,7 @@ const OS: Record<string, string> = { macos: 'macOS', windows: 'Windows', linux: 
 
 export function Requirements() {
   const { navigate, settings, setSettings } = useApp();
+  const { t } = useTranslation();
   const statuses = useInstall((s) => s.statuses);
   const active = useInstall((s) => s.active);
   const closing = useInstall((s) => s.closing);
@@ -88,23 +90,21 @@ export function Requirements() {
       <div className="flex w-full max-w-[720px] flex-col gap-8">
         <OnboardingHeader step={3} bars />
         <div data-tauri-drag-region className="mt-4 flex flex-col gap-2">
-          <h1 className="text-4xl font-semibold tracking-[-0.02em]">Check your computer</h1>
+          <h1 className="text-4xl font-semibold tracking-[-0.02em]">{t('onboarding.requirements.title')}</h1>
           <p className="text-base leading-[1.6] text-text-2">
-            Videos render on your computer, so Tayang needs a few tools. If something is missing, your agent installs
-            it. Tayang shows you every command your agent asks to run, and nothing it asks about runs until you allow
-            it. Installs always ask, even if you turn on Auto mode for chats.
+            {t('onboarding.requirements.intro')}
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card px-4 py-3">
-          <span className="text-[13px] text-text-3">Installs run through</span>
+          <span className="text-[13px] text-text-3">{t('onboarding.requirements.installsThrough')}</span>
           <span className="inline-flex h-7 items-center gap-2 rounded-sm bg-raised px-2 text-[13px] font-medium">
             <AgentLogo id={agentId} size={16} />
             {agentName}
           </span>
           {sys && (
             <span className="ml-auto text-[13px] text-text-3">
-              Detected{' '}
+              {t('onboarding.requirements.detected')}{' '}
               <span className="text-[#D9D9D9]">
                 {OS[sys.os]} {sys.osVersion}
                 {sys.packageManager ? ` · ${PM[sys.packageManager]}` : ''}
@@ -118,21 +118,21 @@ export function Requirements() {
             onClick={() => void check()}
           >
             <RefreshCw size={14} strokeWidth={1.5} aria-hidden="true" />
-            Check again
+            {t('onboarding.requirements.checkAgain')}
           </Button>
         </div>
 
         {checkError && <p role="alert" className="m-0 text-[13px] text-orange-light">{checkError}</p>}
 
-        {group('Required', missing.length ? `${missing.length} missing` : 'all ready', required)}
-        {group('Recommended', 'you can add these later in Settings', recommended)}
+        {group(t('onboarding.requirements.required'), missing.length ? t('onboarding.requirements.missingCount', { count: missing.length }) : t('onboarding.requirements.allReady'), required)}
+        {group(t('onboarding.requirements.recommended'), t('onboarding.requirements.addLater'), recommended)}
 
         <div className="mt-2 flex items-center gap-4">
           <Button variant="ghost" className="mr-auto h-12 px-0 text-[15px]" onClick={() => navigate({ name: 'connect' })}>
-            Back
+            {t('common.back')}
           </Button>
           {blocked && missing.length > 0 && (
-            <span className="text-[13px] text-text-3">Install {missing.map((m) => m.name).join(' and ')} to continue</span>
+            <span className="text-[13px] text-text-3">{t('onboarding.requirements.installToContinue', { names: missing.map((m) => m.name).join(` ${t('common.and')} `) })}</span>
           )}
           <Button
             variant={blocked ? 'secondary' : 'primary'}
@@ -140,7 +140,7 @@ export function Requirements() {
             disabled={blocked}
             onClick={() => void begin()}
           >
-            Start my first video
+            {t('onboarding.requirements.start')}
             {!blocked && <ArrowRight size={18} strokeWidth={2} aria-hidden="true" />}
           </Button>
         </div>

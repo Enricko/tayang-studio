@@ -20,7 +20,6 @@ import { agentErrorText, AGENT_NAMES } from '@/lib/agents';
 import { useApp } from '@/state/app';
 import { refreshJobs } from '@/state/jobs';
 
-export { AGENT_STOPPED } from '@/lib/agents';
 
 /** A project chat's turns show up on the Agents board as this build job. */
 export interface ChatJob {

@@ -1,8 +1,10 @@
+import { useTranslation } from 'react-i18next';
 import logo from '@/assets/brand/tayang-horizontal-reversed-color.svg';
 import { cn } from '@/lib/utils';
 
 /** Top bar shared by the onboarding screens. The bar itself drags the window. */
 export function OnboardingHeader({ step, bars }: { step: 1 | 2 | 3; bars?: boolean }) {
+  const { t } = useTranslation();
   return (
     <div data-tauri-drag-region className="flex items-center justify-between">
       <img src={logo} alt="Tayang" className="block h-8 w-auto" />
@@ -15,7 +17,7 @@ export function OnboardingHeader({ step, bars }: { step: 1 | 2 | 3; bars?: boole
           </div>
         )}
         <span className="text-[13px] text-text-3">
-          Step {step} of 3
+          {t('onboarding.step', { step })}
         </span>
       </div>
     </div>
