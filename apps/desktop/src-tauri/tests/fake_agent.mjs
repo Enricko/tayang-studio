@@ -24,7 +24,9 @@
 // --clamp-auto: set_mode "auto" is accepted but the session ends up in acceptEdits (as claude-agent-acp
 // does on models without Auto support); --slow-set-mode delays every set_mode answer by 150 ms;
 // --bad-set-mode-default fails set_mode "default"; --hang-set-mode never answers set_mode.
-// Every accepted set_mode is followed by a current_mode_update before its answer.
+// Every accepted set_mode is followed by a current_mode_update before its answer, unless
+// --no-mode-update (the real adapter only reports a mode it clamped). --late-set-mode answers
+// set_mode "auto" after 600 ms (no update), i.e. after a short Tayang timeout.
 // With the --hang argument, initialize is never answered.
 // With the --needs-auth argument, session/new fails with -32000 "Authentication required".
 import { createInterface } from "node:readline";
@@ -237,15 +239,20 @@ function handle(msg) {
         send({ id, error: { code: -32603, message: "cannot leave auto" } });
         return;
       }
-      setTimeout(
-        () => {
-          currentMode =
-            params.modeId === "auto" && process.argv.includes("--clamp-auto") ? "acceptEdits" : params.modeId;
-          update({ sessionUpdate: "current_mode_update", currentModeId: currentMode });
-          send({ id, result: {} });
-        },
-        process.argv.includes("--slow-set-mode") ? 150 : 0,
-      );
+      {
+        const late = process.argv.includes("--late-set-mode") && params.modeId === "auto";
+        const clamped = params.modeId === "auto" && process.argv.includes("--clamp-auto");
+        setTimeout(
+          () => {
+            currentMode = clamped ? "acceptEdits" : params.modeId;
+            if (!late && (clamped || !process.argv.includes("--no-mode-update"))) {
+              update({ sessionUpdate: "current_mode_update", currentModeId: currentMode });
+            }
+            send({ id, result: {} });
+          },
+          late ? 600 : process.argv.includes("--slow-set-mode") ? 150 : 0,
+        );
+      }
       return;
     case "session/prompt":
       if (params?.sessionId !== sessionId) {

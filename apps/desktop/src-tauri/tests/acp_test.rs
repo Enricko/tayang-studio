@@ -691,3 +691,60 @@ async fn failing_to_leave_auto_mode_is_an_error_and_stops_the_session() {
     // Fail closed: the session that may still be in auto mode is gone.
     assert!(manager.prompt("c1", vec![PromptPart::Text("hello".into())]).await.is_err());
 }
+
+#[tokio::test]
+async fn off_after_a_clamp_sends_default() {
+    let ws = workspace();
+    let (manager, sink) = started_auto("c1", &ws, &["--clamp-auto"], true).await;
+    assert_eq!(manager.set_auto("c1", true).await.unwrap(), AutoMethod::Approve);
+    assert_eq!(manager.set_auto("c1", false).await.unwrap(), AutoMethod::Off);
+    ask(&manager, &sink, "mode").await;
+    assert_eq!(sink.texts(), vec!["mode default".to_string()]);
+    manager.stop("c1").await.unwrap();
+}
+
+#[tokio::test]
+async fn off_after_a_timed_out_set_mode_that_lands_late_sends_default() {
+    let ws = workspace();
+    let (manager, sink) = started_auto("c1", &ws, &["--late-set-mode"], true).await;
+    assert_eq!(manager.set_auto("c1", true).await.unwrap(), AutoMethod::Approve);
+    // The agent finishes the switch after Tayang gave up waiting (no update, as the real adapter).
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert_eq!(manager.set_auto("c1", false).await.unwrap(), AutoMethod::Off);
+    ask(&manager, &sink, "mode").await;
+    assert_eq!(sink.texts(), vec!["mode default".to_string()]);
+    manager.stop("c1").await.unwrap();
+}
+
+#[tokio::test]
+async fn a_switch_without_a_mode_update_is_taken_as_requested_and_off_restores_default() {
+    let ws = workspace();
+    let (manager, sink) = started_auto("c1", &ws, &["--no-mode-update"], true).await;
+    assert_eq!(manager.set_auto("c1", true).await.unwrap(), AutoMethod::Mode);
+    manager.prompt("c1", vec![PromptPart::Text("mode".into())]).await.unwrap();
+    sink.wait_for("mode reply", Duration::from_secs(10), |s| s.texts().iter().any(|t| t == "mode auto")).await;
+    assert_eq!(manager.set_auto("c1", false).await.unwrap(), AutoMethod::Off);
+    manager.prompt("c1", vec![PromptPart::Text("mode".into())]).await.unwrap();
+    sink.wait_for("mode reply", Duration::from_secs(10), |s| s.texts().iter().any(|t| t == "mode default")).await;
+    manager.stop("c1").await.unwrap();
+}
+
+#[tokio::test]
+async fn a_failed_off_stops_only_the_session_it_ran_on() {
+    let ws = workspace();
+    let manager = Arc::new(AcpManager::new());
+    let sink = Arc::new(RecordingSink::default());
+    let mut command = fake_agent();
+    command.extend(["--slow-set-mode", "--bad-set-mode-default"].map(String::from));
+    let options = || SessionOptions { use_modes: true, ..Default::default() };
+    manager.start_with("c1", &command, &ws.cwd, sink.clone(), options()).await.unwrap();
+    manager.set_auto("c1", true).await.unwrap();
+    let m = manager.clone();
+    let off = tokio::spawn(async move { m.set_auto("c1", false).await });
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    // The chat moves to a new session while the old one is still leaving auto mode.
+    manager.start_with("c1", &command, &ws.cwd, sink.clone(), options()).await.unwrap();
+    assert!(off.await.unwrap().is_err());
+    manager.prompt("c1", vec![PromptPart::Text("hello".into())]).await.expect("the new session is alive");
+    manager.stop("c1").await.unwrap();
+}

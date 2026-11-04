@@ -423,6 +423,9 @@ struct SessionCore {
     /// The user wants auto mode. While the agent's own `auto` mode isn't the current mode
     /// (it was clamped, or is still switching), Tayang approves requests itself.
     want_auto: AtomicBool,
+    /// Tayang has asked the agent for its `auto` mode (even if the answer never came, or came
+    /// late): turning auto off must then send `default`, whatever mode is tracked.
+    requested_auto: AtomicBool,
     use_modes: bool,
     mode_timeout: Duration,
     /// Serializes `set_auto` calls of this session.
@@ -706,17 +709,22 @@ impl SessionCore {
         if !on {
             self.want_auto.store(false, Ordering::SeqCst);
             self.auto_approve.store(false, Ordering::SeqCst);
-            let was_auto = self.modes.lock().unwrap().current.as_deref() == Some("auto");
-            if self.use_modes && was_auto {
+            let asked = self.requested_auto.load(Ordering::SeqCst);
+            let in_auto = self.modes.lock().unwrap().current.as_deref() == Some("auto");
+            if self.use_modes && (asked || in_auto) {
+                // Idempotent, so it is sent even when the tracked mode says it isn't needed: a
+                // clamp, a late answer or a missing update can all leave it out of date.
                 if !self.has_mode("default") {
                     return Err(AcpError("The agent has no mode to leave auto mode with".into()));
                 }
                 self.set_mode("default").await?;
+                self.requested_auto.store(false, Ordering::SeqCst);
             }
             return Ok(AutoMethod::Off);
         }
         self.want_auto.store(true, Ordering::SeqCst);
         if self.use_modes && self.has_mode("auto") {
+            self.requested_auto.store(true, Ordering::SeqCst);
             match self.set_mode("auto").await {
                 Ok(()) if self.modes.lock().unwrap().current.as_deref() == Some("auto") => {
                     self.auto_approve.store(false, Ordering::SeqCst);
@@ -957,6 +965,7 @@ impl AgentSession {
             modes: Mutex::new(ModeState::default()),
             auto_approve: AtomicBool::new(false),
             want_auto: AtomicBool::new(false),
+            requested_auto: AtomicBool::new(false),
             use_modes: options.use_modes,
             mode_timeout: options.mode_timeout.unwrap_or(SET_MODE_TIMEOUT),
             auto_lock: tokio::sync::Mutex::new(()),
@@ -1108,7 +1117,20 @@ impl AcpManager {
         let result = session.core.set_auto(on).await;
         if result.is_err() {
             // Fail closed: a session that may still be in auto mode must not outlive the toggle.
-            let _ = self.stop(chat_id).await;
+            // Only that session: the chat may have moved on to a new one meanwhile.
+            let uid = session.core.uid;
+            let stale = {
+                let mut sessions = self.sessions.lock().unwrap();
+                if sessions.get(chat_id).is_some_and(|s| s.core.uid == uid) {
+                    sessions.remove(chat_id)
+                } else {
+                    None
+                }
+            };
+            match stale {
+                Some(s) => s.shutdown().await,
+                None => session.shutdown().await,
+            }
         }
         result
     }
