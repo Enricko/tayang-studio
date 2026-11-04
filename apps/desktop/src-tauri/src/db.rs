@@ -59,6 +59,16 @@ CREATE TABLE IF NOT EXISTS jobs (
   id TEXT PRIMARY KEY, kind TEXT NOT NULL, title TEXT NOT NULL, project_id TEXT, chat_id TEXT,
   agent_id TEXT NOT NULL, status TEXT NOT NULL, progress REAL, note TEXT, source_url TEXT, updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS autopilots (
+  id TEXT PRIMARY KEY, name TEXT NOT NULL, niche TEXT NOT NULL, language TEXT NOT NULL,
+  style_id TEXT NOT NULL, agent_id TEXT NOT NULL, frequency TEXT NOT NULL, length_sec INTEGER NOT NULL,
+  review INTEGER NOT NULL, posting TEXT NOT NULL, status TEXT NOT NULL,
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS autopilot_slots (
+  id TEXT PRIMARY KEY, autopilot_id TEXT NOT NULL, due_at TEXT NOT NULL, status TEXT NOT NULL,
+  project_id TEXT, error TEXT, UNIQUE(autopilot_id, due_at)
+);
 ";
 
 // Column lists use camelCase aliases so rows deserialize straight into the serde types.
@@ -80,6 +90,12 @@ const JOB_KEYS: [&str; 11] = [
     "sourceUrl", "updatedAt",
 ];
 
+const AUTOPILOT_SELECT: &str = "SELECT id, name, niche, language, style_id AS styleId, agent_id AS agentId, \
+    frequency, length_sec AS lengthSec, review, posting, status, created_at AS createdAt, \
+    updated_at AS updatedAt FROM autopilots";
+const SLOT_SELECT: &str = "SELECT id, autopilot_id AS autopilotId, due_at AS dueAt, status, \
+    project_id AS projectId, error FROM autopilot_slots";
+
 pub const DEFAULT_API_URL: &str = "https://api.tayang.app";
 
 /// Ids of the hard-coded built-ins older versions seeded; they now come from the API.
@@ -92,6 +108,74 @@ pub fn now() -> String {
 
 fn new_id() -> String {
     uuid::Uuid::new_v4().to_string()
+}
+
+/// An RFC 3339 instant as UTC text (`...Z`, seconds), so slots compare as plain strings.
+fn utc(at: &str) -> Result<String> {
+    chrono::DateTime::parse_from_rfc3339(at)
+        .map(|dt| dt.with_timezone(&chrono::Utc).to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
+        .map_err(|_| DbError(format!("That date and time isn't valid: {at}")))
+}
+
+fn valid_time(t: &str) -> bool {
+    let b = t.as_bytes();
+    b.len() == 5
+        && b[2] == b':'
+        && matches!(t[..2].parse::<u8>(), Ok(h) if h < 24)
+        && matches!(t[3..].parse::<u8>(), Ok(m) if m < 60)
+        && b[0].is_ascii_digit()
+        && b[1].is_ascii_digit()
+        && b[3].is_ascii_digit()
+        && b[4].is_ascii_digit()
+}
+
+/// The rules the dialog also follows: name and niche filled in, 1 to 6 distinct "HH:MM" times a
+/// day (or 1 to 7 distinct weekdays 0 to 6 and one time), and a short-form length of 15 to 180 s.
+pub fn validate_autopilot(a: &AutopilotInput) -> Result<()> {
+    let bad = |m: &str| Err(DbError(m.to_string()));
+    if a.name.trim().is_empty() {
+        return bad("Give the autopilot a name");
+    }
+    if a.niche.trim().is_empty() {
+        return bad("Describe the niche");
+    }
+    if a.style_id.trim().is_empty() {
+        return bad("Pick a style");
+    }
+    if !(15..=180).contains(&a.length_sec) {
+        return bad("The video length must be 15 to 180 seconds");
+    }
+    match &a.frequency {
+        AutopilotFrequency::Daily { times } => {
+            if times.is_empty() || times.len() > 6 {
+                return bad("Pick 1 to 6 times a day");
+            }
+            if times.iter().any(|t| !valid_time(t)) {
+                return bad("Times must look like 09:30");
+            }
+            let mut sorted = times.clone();
+            sorted.sort();
+            sorted.dedup();
+            if sorted.len() != times.len() {
+                return bad("Each time can only be used once");
+            }
+        }
+        AutopilotFrequency::Weekly { days, time } => {
+            if days.is_empty() || days.iter().any(|d| *d > 6) {
+                return bad("Pick days between 0 and 6");
+            }
+            let mut sorted = days.clone();
+            sorted.sort();
+            sorted.dedup();
+            if sorted.len() != days.len() {
+                return bad("Each day can only be picked once");
+            }
+            if !valid_time(time) {
+                return bad("The time must look like 09:30");
+            }
+        }
+    }
+    Ok(())
 }
 
 fn sql_from_json(v: &Value) -> Sql {
@@ -655,6 +739,141 @@ impl Db {
         let sql = format!("{JOB_SELECT} ORDER BY updated_at DESC, rowid DESC");
         query_as(&self.conn(), &sql, &[])
     }
+
+    // ---- autopilots ----
+
+    fn autopilot_row(mut v: Value) -> Result<Autopilot> {
+        // `frequency` is stored as JSON text and `review` as 0/1.
+        if let Some(Value::String(f)) = v.get("frequency").cloned() {
+            v["frequency"] = serde_json::from_str(&f)?;
+        }
+        let review = v.get("review").and_then(Value::as_i64).unwrap_or(0) != 0;
+        v["review"] = Value::Bool(review);
+        Ok(serde_json::from_value(v)?)
+    }
+
+    pub fn list_autopilots(&self) -> Result<Vec<Autopilot>> {
+        let sql = format!("{AUTOPILOT_SELECT} ORDER BY created_at, rowid");
+        query_as::<Value>(&self.conn(), &sql, &[])?.into_iter().map(Self::autopilot_row).collect()
+    }
+
+    pub fn get_autopilot(&self, id: &str) -> Result<Option<Autopilot>> {
+        let sql = format!("{AUTOPILOT_SELECT} WHERE id = ?1");
+        query_as::<Value>(&self.conn(), &sql, &[&id])?.into_iter().next().map(Self::autopilot_row).transpose()
+    }
+
+    /// Creates an autopilot (no id; starts active) or edits one (keeps its status and creation time).
+    pub fn save_autopilot(&self, input: &AutopilotInput) -> Result<Autopilot> {
+        validate_autopilot(input)?;
+        let existing = match input.id.as_deref() {
+            Some(id) => Some(self.get_autopilot(id)?.ok_or_else(|| DbError(format!("No autopilot with id {id}")))?),
+            None => None,
+        };
+        let stamp = now();
+        let a = Autopilot {
+            id: existing.as_ref().map(|e| e.id.clone()).unwrap_or_else(new_id),
+            name: input.name.trim().to_string(),
+            niche: input.niche.trim().to_string(),
+            language: input.language,
+            style_id: input.style_id.clone(),
+            agent_id: input.agent_id,
+            frequency: input.frequency.clone(),
+            length_sec: input.length_sec,
+            review: input.review,
+            posting: input.posting,
+            status: existing.as_ref().map(|e| e.status).unwrap_or(AutopilotStatus::Active),
+            created_at: existing.as_ref().map(|e| e.created_at.clone()).unwrap_or_else(|| stamp.clone()),
+            updated_at: stamp,
+        };
+        let v = serde_json::to_value(&a)?;
+        let text = |k: &str| v[k].as_str().unwrap_or_default().to_string();
+        self.conn().execute(
+            "INSERT INTO autopilots (id, name, niche, language, style_id, agent_id, frequency, length_sec, review, posting, status, created_at, updated_at) \
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13) ON CONFLICT(id) DO UPDATE SET name=excluded.name, \
+             niche=excluded.niche, language=excluded.language, style_id=excluded.style_id, agent_id=excluded.agent_id, \
+             frequency=excluded.frequency, length_sec=excluded.length_sec, review=excluded.review, \
+             posting=excluded.posting, updated_at=excluded.updated_at",
+            rusqlite::params![
+                a.id, a.name, a.niche, text("language"), a.style_id, text("agentId"),
+                serde_json::to_string(&a.frequency)?, a.length_sec, a.review as i64, text("posting"),
+                text("status"), a.created_at, a.updated_at
+            ],
+        )?;
+        Ok(a)
+    }
+
+    pub fn set_autopilot_status(&self, id: &str, status: AutopilotStatus) -> Result<Autopilot> {
+        let text = serde_json::to_value(status)?.as_str().unwrap_or_default().to_string();
+        let n = self.conn().execute(
+            "UPDATE autopilots SET status = ?1, updated_at = ?2 WHERE id = ?3",
+            rusqlite::params![text, now(), id],
+        )?;
+        if n == 0 {
+            return Err(DbError(format!("No autopilot with id {id}")));
+        }
+        self.get_autopilot(id)?.ok_or_else(|| DbError(format!("No autopilot with id {id}")))
+    }
+
+    /// Removes an autopilot and its slots that have not produced a video (planned, failed, skipped).
+    /// Done slots and a slot being made stay; the videos themselves are never touched.
+    pub fn delete_autopilot(&self, id: &str) -> Result<()> {
+        let conn = self.conn();
+        conn.execute(
+            "DELETE FROM autopilot_slots WHERE autopilot_id = ?1 AND status IN ('planned', 'failed', 'skipped')",
+            [id],
+        )?;
+        conn.execute("DELETE FROM autopilots WHERE id = ?1", [id])?;
+        Ok(())
+    }
+
+    /// Slots due in `[from, to]` (RFC 3339 instants), earliest first.
+    pub fn list_slots(&self, from: &str, to: &str) -> Result<Vec<AutopilotSlot>> {
+        let (from, to) = (utc(from)?, utc(to)?);
+        let sql = format!("{SLOT_SELECT} WHERE due_at >= ?1 AND due_at <= ?2 ORDER BY due_at, rowid");
+        query_as(&self.conn(), &sql, &[&from, &to])
+    }
+
+    /// Makes sure a planned slot exists for (autopilot, dueAt) and returns it. A slot that already
+    /// exists is returned untouched, so planning again never undoes progress.
+    pub fn upsert_slot(&self, autopilot_id: &str, due_at: &str) -> Result<AutopilotSlot> {
+        let due = utc(due_at)?;
+        if self.get_autopilot(autopilot_id)?.is_none() {
+            return Err(DbError(format!("No autopilot with id {autopilot_id}")));
+        }
+        let conn = self.conn();
+        conn.execute(
+            "INSERT OR IGNORE INTO autopilot_slots (id, autopilot_id, due_at, status) VALUES (?1, ?2, ?3, 'planned')",
+            rusqlite::params![new_id(), autopilot_id, due],
+        )?;
+        let sql = format!("{SLOT_SELECT} WHERE autopilot_id = ?1 AND due_at = ?2");
+        query_as::<AutopilotSlot>(&conn, &sql, &[&autopilot_id, &due])?
+            .into_iter()
+            .next()
+            .ok_or_else(|| DbError("The slot could not be saved".into()))
+    }
+
+    /// Changes a slot's status, project or error. Keys left out stay as they are; `null` clears.
+    pub fn update_slot(&self, id: &str, patch: Value) -> Result<AutopilotSlot> {
+        let sql = format!("{SLOT_SELECT} WHERE id = ?1");
+        let conn = self.conn();
+        let current = query_as::<AutopilotSlot>(&conn, &sql, &[&id])?
+            .into_iter()
+            .next()
+            .ok_or_else(|| DbError(format!("No slot with id {id}")))?;
+        let mut v = serde_json::to_value(&current)?;
+        for key in ["status", "projectId", "error"] {
+            if let Some(x) = patch.get(key) {
+                v[key] = x.clone();
+            }
+        }
+        let next: AutopilotSlot = serde_json::from_value(v)?;
+        let status = serde_json::to_value(next.status)?.as_str().unwrap_or_default().to_string();
+        conn.execute(
+            "UPDATE autopilot_slots SET status = ?1, project_id = ?2, error = ?3 WHERE id = ?4",
+            rusqlite::params![status, next.project_id, next.error, id],
+        )?;
+        Ok(next)
+    }
 }
 
 #[cfg(test)]
@@ -1057,5 +1276,129 @@ mod tests {
         assert_eq!((w.status, w.note.as_deref()), (JobStatus::Failed, Some("closed")));
         assert_eq!(w.source_url.as_deref(), Some("https://youtu.be/abc"));
         assert_eq!(jobs.iter().find(|j| j.id == "d").unwrap().status, JobStatus::Done);
+    }
+
+    fn input(name: &str) -> AutopilotInput {
+        AutopilotInput {
+            id: None,
+            name: name.into(),
+            niche: "Coffee tips".into(),
+            language: VideoLanguage::Id,
+            style_id: "s1".into(),
+            agent_id: AgentId::Claude,
+            frequency: AutopilotFrequency::Daily { times: vec!["12:00".into(), "19:00".into()] },
+            length_sec: 30,
+            review: true,
+            posting: Posting::Manual,
+        }
+    }
+
+    #[test]
+    fn autopilot_create_edit_status_and_round_trip() {
+        let db = db();
+        let a = db.save_autopilot(&input("  Kopi  ")).unwrap();
+        assert_eq!((a.name.as_str(), a.status, a.review), ("Kopi", AutopilotStatus::Active, true));
+        assert_eq!(db.get_autopilot(&a.id).unwrap().unwrap(), a);
+        let paused = db.set_autopilot_status(&a.id, AutopilotStatus::Paused).unwrap();
+        assert_eq!(paused.status, AutopilotStatus::Paused);
+        // Editing keeps the id, the status and the creation time.
+        let mut edit = input("Kopi 2");
+        edit.id = Some(a.id.clone());
+        edit.review = false;
+        edit.frequency = AutopilotFrequency::Weekly { days: vec![1, 3], time: "08:15".into() };
+        let b = db.save_autopilot(&edit).unwrap();
+        assert_eq!((b.id.as_str(), b.status, b.created_at.as_str()), (a.id.as_str(), AutopilotStatus::Paused, a.created_at.as_str()));
+        let listed = db.list_autopilots().unwrap();
+        assert_eq!(listed, vec![b]);
+        assert!(!listed[0].review);
+        assert!(db.set_autopilot_status("nope", AutopilotStatus::Active).is_err());
+        let mut ghost = input("x");
+        ghost.id = Some("nope".into());
+        assert!(db.save_autopilot(&ghost).is_err());
+    }
+
+    #[test]
+    fn autopilot_validation() {
+        let db = db();
+        let reject = |f: &dyn Fn(&mut AutopilotInput)| {
+            let mut i = input("A");
+            f(&mut i);
+            assert!(db.save_autopilot(&i).is_err());
+        };
+        reject(&|i| i.name = "  ".into());
+        reject(&|i| i.niche = "".into());
+        reject(&|i| i.style_id = "".into());
+        reject(&|i| i.length_sec = 14);
+        reject(&|i| i.length_sec = 181);
+        reject(&|i| i.frequency = AutopilotFrequency::Daily { times: vec![] });
+        reject(&|i| i.frequency = AutopilotFrequency::Daily { times: (0..7).map(|h| format!("0{h}:00")).collect() });
+        for bad in ["24:00", "9:00", "12:60", "ab:cd", "12-00", ""] {
+            reject(&|i| i.frequency = AutopilotFrequency::Daily { times: vec![bad.into()] });
+        }
+        reject(&|i| i.frequency = AutopilotFrequency::Daily { times: vec!["09:00".into(), "09:00".into()] });
+        reject(&|i| i.frequency = AutopilotFrequency::Weekly { days: vec![], time: "09:00".into() });
+        reject(&|i| i.frequency = AutopilotFrequency::Weekly { days: vec![7], time: "09:00".into() });
+        reject(&|i| i.frequency = AutopilotFrequency::Weekly { days: vec![1, 1], time: "09:00".into() });
+        reject(&|i| i.frequency = AutopilotFrequency::Weekly { days: vec![1], time: "9am".into() });
+        let mut ok = input("A");
+        ok.length_sec = 15;
+        ok.frequency = AutopilotFrequency::Daily { times: (10..16).map(|h| format!("{h}:00")).collect() };
+        assert!(db.save_autopilot(&ok).is_ok());
+        ok.length_sec = 180;
+        ok.frequency = AutopilotFrequency::Weekly { days: vec![0, 6], time: "23:59".into() };
+        assert!(db.save_autopilot(&ok).is_ok());
+    }
+
+    #[test]
+    fn slots_are_unique_normalised_listed_and_patched() {
+        let db = db();
+        let a = db.save_autopilot(&input("A")).unwrap();
+        assert!(db.upsert_slot("nope", "2026-11-05T09:00:00Z").is_err());
+        assert!(db.upsert_slot(&a.id, "soon").is_err());
+        let s = db.upsert_slot(&a.id, "2026-11-05T16:00:00+07:00").unwrap();
+        assert_eq!((s.due_at.as_str(), s.status), ("2026-11-05T09:00:00Z", SlotStatus::Planned));
+        db.upsert_slot(&a.id, "2026-11-06T09:00:00Z").unwrap();
+        // The same instant in another offset is the same slot, and progress is never undone.
+        let done = db.update_slot(&s.id, json!({"status": "making", "projectId": "p1"})).unwrap();
+        assert_eq!((done.status, done.project_id.as_deref()), (SlotStatus::Making, Some("p1")));
+        let again = db.upsert_slot(&a.id, "2026-11-05T09:00:00Z").unwrap();
+        assert_eq!(again, done);
+        let all = db.list_slots("2026-11-05T00:00:00Z", "2026-11-07T00:00:00Z").unwrap();
+        assert_eq!(all.len(), 2);
+        assert!(all[0].due_at < all[1].due_at);
+        let one = db.list_slots("2026-11-05T09:00:00Z", "2026-11-05T09:00:00Z").unwrap();
+        assert_eq!(one.len(), 1);
+        assert!(db.list_slots("2026-11-07T00:00:00Z", "2026-11-08T00:00:00Z").unwrap().is_empty());
+        // A patch changes only the keys it carries; null clears.
+        let failed = db.update_slot(&s.id, json!({"status": "failed", "error": "No video"})).unwrap();
+        assert_eq!((failed.project_id.as_deref(), failed.error.as_deref()), (Some("p1"), Some("No video")));
+        let back = db.update_slot(&s.id, json!({"status": "planned", "error": null, "projectId": null})).unwrap();
+        assert_eq!((back.status, back.project_id, back.error), (SlotStatus::Planned, None, None));
+        assert!(db.update_slot("nope", json!({"status": "done"})).is_err());
+        assert!(db.update_slot(&s.id, json!({"status": "bogus"})).is_err());
+    }
+
+    #[test]
+    fn deleting_an_autopilot_drops_unfinished_slots_and_keeps_videos_and_other_autopilots() {
+        let db = db();
+        db.insert_project(&project("p", "2026-01-01T00:00:00Z")).unwrap();
+        let a = db.save_autopilot(&input("A")).unwrap();
+        let b = db.save_autopilot(&input("B")).unwrap();
+        let slot = |id: &str, at: &str, status: &str| {
+            let s = db.upsert_slot(id, at).unwrap();
+            db.update_slot(&s.id, json!({"status": status})).unwrap();
+        };
+        slot(&a.id, "2026-11-05T09:00:00Z", "planned");
+        slot(&a.id, "2026-11-06T09:00:00Z", "failed");
+        slot(&a.id, "2026-11-07T09:00:00Z", "skipped");
+        slot(&a.id, "2026-11-08T09:00:00Z", "done");
+        slot(&b.id, "2026-11-05T09:00:00Z", "planned");
+        db.delete_autopilot(&a.id).unwrap();
+        db.delete_autopilot("missing").unwrap();
+        assert_eq!(db.list_autopilots().unwrap().len(), 1);
+        let left = db.list_slots("2026-11-01T00:00:00Z", "2026-12-01T00:00:00Z").unwrap();
+        let kept: Vec<_> = left.iter().map(|s| (s.autopilot_id.as_str(), s.status)).collect();
+        assert_eq!(kept, vec![(b.id.as_str(), SlotStatus::Planned), (a.id.as_str(), SlotStatus::Done)]);
+        assert_eq!(db.list_projects().unwrap().len(), 1);
     }
 }
