@@ -102,3 +102,57 @@ export interface BillingStatus {
   active: boolean;
   pending: PendingPayment | null;
 }
+
+// ---- plan order and periods: the API applies these, and the app previews them ----
+
+/** Lowest to highest. While a plan runs, only the same plan (renew) or a higher one (upgrade) can be bought. */
+export const PLAN_RANK: readonly PlanId[] = ['free', 'lite', 'creator', 'pro'];
+
+export const planRank = (plan: PlanId): number => PLAN_RANK.indexOf(plan);
+
+/** Whether `plan` ranks below `than`. */
+export const isLowerPlan = (plan: PlanId, than: PlanId): boolean => planRank(plan) < planRank(than);
+
+const DAY_MS = 86_400_000;
+/** Against float noise: 10 days × 15000 / 50000 must be exactly 3. */
+const EPS = 1e-9;
+
+/** Upgrade credit: the old plan's unused time, worth `floor(remaining days × old price / new price)` days of the new one. */
+export function upgradeExtraDays(remainingMs: number, oldPrice: number, newPrice: number): number {
+  if (remainingMs <= 0 || newPrice <= 0) return 0;
+  return Math.floor((remainingMs / DAY_MS) * (oldPrice / newPrice) + EPS);
+}
+
+/** A lower plan paid while a higher one runs (a late link): `floor(30 × paid / current)` days on the higher plan. */
+export function lowerPlanDays(paidPrice: number, currentPrice: number): number {
+  if (currentPrice <= 0) return 0;
+  return Math.floor(PLAN_PERIOD_DAYS * (paidPrice / currentPrice) + EPS);
+}
+
+export interface PeriodChange {
+  /** new: nothing running; renew: same plan; upgrade: higher plan with credit; converted: lower plan turned into days. */
+  kind: 'new' | 'renew' | 'upgrade' | 'converted';
+  plan: PaidPlanId;
+  /** ISO, with milliseconds. */
+  end: string;
+  /** Credit days on top of the 30 (upgrade), or the days a lower payment became (converted). */
+  extraDays: number;
+}
+
+/** What paying for `paid` at `now` does to the running subscription `current` (null: none). */
+export function nextPeriod(current: { plan: PaidPlanId; end: string } | null, paid: PaidPlanId, now: Date): PeriodChange {
+  const t = now.getTime();
+  const end = current ? Date.parse(current.end) : NaN;
+  const iso = (ms: number) => new Date(ms).toISOString();
+  if (!current || Number.isNaN(end) || end <= t) {
+    return { kind: 'new', plan: paid, end: iso(t + PLAN_PERIOD_DAYS * DAY_MS), extraDays: 0 };
+  }
+  const price = (p: PaidPlanId) => findPlan(p)?.price ?? 0;
+  if (paid === current.plan) return { kind: 'renew', plan: paid, end: iso(end + PLAN_PERIOD_DAYS * DAY_MS), extraDays: 0 };
+  if (isLowerPlan(current.plan, paid)) {
+    const extraDays = upgradeExtraDays(end - t, price(current.plan), price(paid));
+    return { kind: 'upgrade', plan: paid, end: iso(t + (PLAN_PERIOD_DAYS + extraDays) * DAY_MS), extraDays };
+  }
+  const extraDays = lowerPlanDays(price(paid), price(current.plan));
+  return { kind: 'converted', plan: current.plan, end: iso(end + extraDays * DAY_MS), extraDays };
+}
