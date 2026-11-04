@@ -224,6 +224,17 @@ pub fn update_project(
     state.db.update_project(&id, patch).map_err(err)
 }
 
+/// Moves a project to `status` (draft → building → rendered); never back unless `reset`. See `Db::set_project_status`.
+#[tauri::command]
+pub fn set_project_status(
+    state: State<'_, AppState>,
+    project_id: String,
+    status: crate::types::ProjectStatus,
+    reset: Option<bool>,
+) -> CmdResult<Project> {
+    state.db.set_project_status(&project_id, status, reset.unwrap_or(false)).map_err(err)
+}
+
 /// Sets or clears when a video is due to be posted. `at` must be RFC 3339; a new time is
 /// reminded afresh, so `remindedAt` is cleared with it.
 pub fn schedule_project(db: &Db, project_id: &str, at: Option<String>) -> CmdResult<Project> {

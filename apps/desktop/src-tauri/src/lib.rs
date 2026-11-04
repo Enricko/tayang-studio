@@ -91,6 +91,7 @@ pub fn run() {
             commands::list_projects,
             commands::create_project,
             commands::update_project,
+            commands::set_project_status,
             commands::set_schedule,
             commands::set_posted,
             commands::approve_project,

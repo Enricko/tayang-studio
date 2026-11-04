@@ -454,6 +454,29 @@ impl Db {
         Ok(updated)
     }
 
+    /// Moves a project along draft → building → rendered. Without `reset` it never goes back, and a
+    /// project already there (or `scheduled`, from older data) is returned as it is, unwritten.
+    /// `scheduled` is never set: scheduling lives in `scheduledAt`.
+    pub fn set_project_status(&self, id: &str, status: ProjectStatus, reset: bool) -> Result<Project> {
+        let rank = |s: ProjectStatus| match s {
+            ProjectStatus::Draft => 0,
+            ProjectStatus::Building => 1,
+            ProjectStatus::Rendered => 2,
+            ProjectStatus::Scheduled => 3,
+        };
+        if status == ProjectStatus::Scheduled {
+            return Err(DbError("a project's schedule is its scheduledAt, not its status".into()));
+        }
+        let current = self
+            .get_project(id)?
+            .ok_or_else(|| DbError(format!("project not found: {id}")))?;
+        let moves = if reset { current.status != status } else { rank(status) > rank(current.status) };
+        if !moves {
+            return Ok(current);
+        }
+        self.update_project(id, json!({ "status": status }))
+    }
+
     // ---- chats and messages ----
 
     pub fn create_chat(&self, project_id: Option<&str>, agent: AgentId, title: &str) -> Result<Chat> {
@@ -1151,6 +1174,33 @@ mod tests {
         assert!(db.update_project("a", json!({"status": "bogus"})).is_err());
         assert!(db.update_project("missing", json!({"title": "x"})).is_err());
         assert_eq!(db.get_project("a").unwrap().unwrap().title, "New");
+    }
+
+    #[test]
+    fn project_status_only_moves_forward_unless_reset() {
+        let db = db();
+        db.insert_project(&project("a", "2026-01-01T00:00:00Z")).unwrap();
+        let b = db.set_project_status("a", ProjectStatus::Building, false).unwrap();
+        assert_eq!(b.status, ProjectStatus::Building);
+        assert_ne!(b.updated_at, "2026-01-01T00:00:00Z");
+        // The same status again changes nothing, not even the time.
+        let again = db.set_project_status("a", ProjectStatus::Building, false).unwrap();
+        assert_eq!(again, b);
+        let r = db.set_project_status("a", ProjectStatus::Rendered, false).unwrap();
+        assert_eq!(r.status, ProjectStatus::Rendered);
+        // Never backwards on its own.
+        assert_eq!(db.set_project_status("a", ProjectStatus::Building, false).unwrap().status, ProjectStatus::Rendered);
+        assert_eq!(db.set_project_status("a", ProjectStatus::Draft, false).unwrap().status, ProjectStatus::Rendered);
+        // An explicit reset may.
+        assert_eq!(db.set_project_status("a", ProjectStatus::Draft, true).unwrap().status, ProjectStatus::Draft);
+        assert_eq!(db.get_project("a").unwrap().unwrap().status, ProjectStatus::Draft);
+        // Scheduling lives in scheduledAt, not in the status.
+        assert!(db.set_project_status("a", ProjectStatus::Scheduled, false).is_err());
+        assert!(db.set_project_status("a", ProjectStatus::Scheduled, true).is_err());
+        assert!(db.set_project_status("missing", ProjectStatus::Building, false).is_err());
+        // A project that somehow has `scheduled` keeps it.
+        db.update_project("a", json!({"status": "scheduled"})).unwrap();
+        assert_eq!(db.set_project_status("a", ProjectStatus::Rendered, false).unwrap().status, ProjectStatus::Scheduled);
     }
 
     #[test]
