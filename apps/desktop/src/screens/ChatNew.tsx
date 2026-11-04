@@ -221,7 +221,7 @@ export function ChatNew() {
                       <button
                         key={idea.title}
                         type="button"
-                        disabled={busy}
+                        disabled={busy || streaming}
                         onClick={() => void pickIdea(idea)}
                         className="flex cursor-pointer items-center justify-between gap-3 rounded-lg border border-border bg-card px-4 py-3 text-left text-foreground transition-colors hover:bg-raised disabled:cursor-default disabled:opacity-60"
                       >

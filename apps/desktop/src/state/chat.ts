@@ -75,6 +75,10 @@ const chatJobs = new Map<string, ChatJob>();
 /** Recaps waiting for the first prompt after an agent switch. */
 const pendingRecap = new Map<string, string>();
 
+/** What `agent_prompt` says when a turn is still running; that turn goes on untouched. */
+const BUSY = /still working/i;
+export const BUSY_NOTE = 'Wait for the agent to finish, then try again';
+
 const RECAP_MESSAGES = 6;
 const RECAP_CHARS = 1500;
 
@@ -271,6 +275,11 @@ export const useChat = create<ChatState>((set, get) => {
         return null;
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e);
+        if (BUSY.test(message)) {
+          // The running turn is fine: leave its permissions, job and session alone and just say so.
+          append(chatId, localMessage(chatId, 'system', [{ type: 'text', text: BUSY_NOTE }]));
+          return null;
+        }
         onUpdate(chatId, { kind: 'error', message });
         return agentErrorText(message, chatAgent.get(chatId) ?? 'claude');
       }

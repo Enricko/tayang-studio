@@ -373,11 +373,14 @@ export function A2uiSurface({
   surface,
   onAction,
   disabled = false,
+  locked = false,
 }: {
   surface: Surface;
   onAction: (action: A2uiAction) => void;
   /** The surface was answered; inputs stay visible but can't be changed. */
   disabled?: boolean;
+  /** Not now: the agent is still replying or the screen is busy. Same look as answered, without the mark. */
+  locked?: boolean;
 }) {
   const [data, setDataState] = useState<unknown>(surface.data);
   const [confirmUrl, setConfirmUrl] = useState<string | null>(null);
@@ -386,9 +389,10 @@ export function A2uiSurface({
     budget: { used: 0, over: false },
     surface,
     data,
-    disabled,
+    disabled: disabled || locked,
     setData: (path, value) => setDataState((d: unknown) => setAt(d, path, value)),
     fire(c, base) {
+      if (disabled || locked) return;
       const action = c.action;
       if (!isObj(action)) return;
       if (isObj(action.functionCall)) {

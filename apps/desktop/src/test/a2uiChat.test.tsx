@@ -17,9 +17,9 @@ vi.mock('@/lib/ipc', () => ({
 }));
 vi.mock('@/lib/events', () => ({ onAgentUpdate: vi.fn(async () => () => {}), onPermission: vi.fn(async () => () => {}) }));
 vi.mock('@tauri-apps/plugin-opener', () => ({ openUrl: vi.fn() }));
-import { agentPrompt, agentStart } from '@/lib/ipc';
+import { agentPrompt, agentRespondPermission, agentStart, upsertJob } from '@/lib/ipc';
 import { MessageList } from '@/components/MessageList';
-import { useChat } from '@/state/chat';
+import { BUSY_NOTE, useChat } from '@/state/chat';
 
 const V = 'v0.9';
 const block = (surfaceId: string, label: string) =>
@@ -122,6 +122,39 @@ describe('A2UI in the chat', () => {
     // Updated in place: still one surface, now live again with the new label.
     expect(screen.getAllByTestId('a2ui-surface')).toHaveLength(1);
     expect(screen.getByRole('button', { name: 'Pick again' })).toBeEnabled();
+  });
+});
+
+describe('one gate while the agent replies', () => {
+  it('disables a live surface while the chat streams, without marking it answered', () => {
+    const first = msg('1', 'agent', [{ type: 'text', text: block('s1', 'Pick me') }]);
+    const { rerender } = render(<MessageList streaming messages={[first, msg('2', 'user', [{ type: 'text', text: 'hm' }])]} />);
+    expect(screen.getByRole('button', { name: 'Pick me' })).toBeDisabled();
+    expect(screen.getByTestId('a2ui-surface')).not.toHaveAttribute('data-answered');
+    rerender(<MessageList streaming={false} messages={[first, msg('2', 'user', [{ type: 'text', text: 'hm' }])]} />);
+    expect(screen.getByRole('button', { name: 'Pick me' })).toBeEnabled();
+  });
+
+  it('a prompt refused because the agent is busy leaves the running turn alone', async () => {
+    vi.mocked(agentStart).mockClear();
+    await useChat.getState().send('c1', [{ type: 'text', text: 'first' }], {
+      agentId: 'claude',
+      job: { projectId: 'p1', title: 'Video' },
+    });
+    const perm = { chatId: 'c1', requestId: 'r1', title: 'Run', commands: [], options: [] };
+    useChat.setState((s) => ({ permissions: { ...s.permissions, c1: [perm] } }));
+    vi.mocked(upsertJob).mockClear();
+    vi.mocked(agentRespondPermission).mockClear();
+    vi.mocked(agentPrompt).mockRejectedValueOnce(new Error('The agent is still working on the last message'));
+    expect(await useChat.getState().send('c1', [{ type: 'text', text: 'second' }])).toBeNull();
+    const s = useChat.getState();
+    expect(s.streaming.c1).toBe(true);
+    expect(s.started.c1).toBe(true);
+    expect(s.permissions.c1).toHaveLength(1);
+    expect(agentRespondPermission).not.toHaveBeenCalled();
+    expect(vi.mocked(upsertJob).mock.calls.map((c) => c[0].status)).not.toContain('failed');
+    expect(s.messages.c1!.at(-1)).toMatchObject({ role: 'system', parts: [{ type: 'text', text: BUSY_NOTE }] });
+    expect(agentStart).toHaveBeenCalledTimes(1);
   });
 });
 

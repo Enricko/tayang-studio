@@ -114,8 +114,13 @@ function isUpdateOnly(text: string, messageId: string, a2ui: A2uiState): boolean
   });
 }
 
-/** A screen can take an A2UI action itself (return true) instead of sending it to the agent. */
-const ActionHandler = createContext<((a: A2uiAction) => boolean) | undefined>(undefined);
+interface Actions {
+  /** A screen can take an A2UI action itself (return true) instead of sending it to the agent. */
+  handle?: (a: A2uiAction) => boolean;
+  /** Surfaces take no input while the agent replies: one gate with the composer and agent picker. */
+  locked: boolean;
+}
+const ActionsContext = createContext<Actions>({ locked: false });
 
 function sendAction(chatId: string, a: A2uiAction) {
   const { summary, ...rest } = a;
@@ -127,7 +132,7 @@ function sendAction(chatId: string, a: A2uiAction) {
 /** An agent text part: prose, the surfaces it owns, and a placeholder for a block still streaming. */
 function AgentText({ text, messageId, a2ui }: { text: string; messageId: string; a2ui: A2uiState }) {
   const { text: rawProse, blocks, pending: a2uiPending } = useMemo(() => extractA2ui(text), [text]);
-  const handle = useContext(ActionHandler);
+  const { handle, locked } = useContext(ActionsContext);
   // Older agents answer topics with a ```json block. Where a screen shows topic cards (it provides the
   // handler), hide that block, also while it is still streaming; other chats keep it as written.
   const { prose, pending: jsonPending } = useMemo(() => {
@@ -153,6 +158,7 @@ function AgentText({ text, messageId, a2ui }: { text: string; messageId: string;
           key={`${sid}:${a2ui.version[sid]}`}
           surface={a2ui.set.surfaces[sid]!}
           disabled={a2ui.answered[sid]}
+          locked={locked}
           onAction={(a) => {
             if (!handle?.(a)) sendAction(a2ui.chatId, a);
           }}
@@ -210,9 +216,10 @@ export function MessageList({
   }, [messages, streaming]);
 
   const a2ui = useMemo(() => deriveA2ui(messages), [messages]);
+  const actions = useMemo(() => ({ handle: onA2uiAction, locked: streaming }), [onA2uiAction, streaming]);
   const last = messages[messages.length - 1];
   return (
-    <ActionHandler.Provider value={onA2uiAction}>
+    <ActionsContext.Provider value={actions}>
     <div className="flex flex-col gap-6" role="log" aria-label="Conversation">
       {messages.map((m, i) => {
         if (m.role === 'user') {
@@ -269,7 +276,7 @@ export function MessageList({
       {children}
       <div ref={end} />
     </div>
-    </ActionHandler.Provider>
+    </ActionsContext.Provider>
   );
 }
 
