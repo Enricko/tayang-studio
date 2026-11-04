@@ -255,9 +255,14 @@ function StylePreview({ style }: { style: StyleT }) {
   }, [src]);
 
   // Closing the popup pauses and unloads the clip so nothing keeps downloading. (A new clip remounts this
-  // component, see the key where it is used, so this never strips a newer src.)
+  // component, see the key where it is used, so this never strips a newer src.) React StrictMode runs this
+  // cleanup once right after mount in development; the setup puts the clip back so the preview still plays.
   useEffect(() => {
     const el = video.current;
+    if (el && src && !el.getAttribute('src')) {
+      el.setAttribute('src', src);
+      el.load();
+    }
     return () => {
       if (!el) return;
       el.pause();

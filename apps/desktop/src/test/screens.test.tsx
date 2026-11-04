@@ -1,5 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { StrictMode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentInfo, AgentUpdate, Job, PermissionRequest, Project, Settings, Style as StyleT } from '@tayang/shared';
 
@@ -387,6 +388,17 @@ describe('Style popup', () => {
     expect(within(dialog).getByText('Map fly-through')).toBeInTheDocument();
     expect(within(dialog).getByText('Fly over a map.')).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: 'Use in a new chat' })).toBeInTheDocument();
+  });
+
+  it('keeps the clip under React StrictMode (dev double-runs effects)', async () => {
+    mocks();
+    render(
+      <StrictMode>
+        <Style />
+      </StrictMode>,
+    );
+    const dialog = await openCard('Atlas journey');
+    expect(dialog.querySelector('video')).toHaveAttribute('src', atlas.previewVideoUrl);
   });
 
   it('Enter opens the dialog from a focused card', async () => {
