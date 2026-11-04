@@ -136,6 +136,13 @@ beforeEach(() => {
 });
 
 describe('ChatNew', () => {
+  it('centres with my-auto, not justify-center, so an overflowing conversation keeps its top reachable', () => {
+    const { container } = render(<ChatNew />);
+    const scroller = container.querySelector('.no-scrollbar')!;
+    expect(scroller.className).not.toContain('justify-center');
+    expect(scroller.firstElementChild!.className).toContain('my-auto');
+  });
+
   it('shows project titles after typing @ and inserts a chip on Enter', async () => {
     const user = userEvent.setup();
     render(<ChatNew />);

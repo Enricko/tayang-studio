@@ -202,9 +202,9 @@ export function ChatNew() {
 
       <div className="flex min-h-0 flex-1 flex-col items-center px-6">
         <div className="relative flex min-h-0 w-full flex-1 justify-center">
-        <div ref={scrollRef} className="no-scrollbar flex min-h-0 w-full max-w-[720px] flex-1 flex-col justify-center gap-6 overflow-y-auto py-6">
+        <div ref={scrollRef} className="no-scrollbar flex min-h-0 w-full max-w-[720px] flex-1 flex-col gap-6 overflow-y-auto py-6">
           {!started ? (
-            <>
+            <div className="my-auto flex flex-col gap-6">
               <div className="flex flex-col items-start gap-3">
                 <img src={oyen} alt="Oyen" className="size-14" />
                 <h1 className="m-0 text-[28px] font-semibold tracking-[-0.01em]">What are we making?</h1>
@@ -217,7 +217,7 @@ export function ChatNew() {
                 <OptionCard icon={Disc3} title="Remix a video" body="Type @ and pick the video to work from" onClick={() => setSignal((n) => n + 1)} />
                 <OptionCard icon={Link2} title="Copy a style" body="Paste a TikTok, Reels or YouTube link" onClick={() => navigate({ name: 'style' })} />
               </div>
-            </>
+            </div>
           ) : (
             <div className="my-auto">
               <MessageList
