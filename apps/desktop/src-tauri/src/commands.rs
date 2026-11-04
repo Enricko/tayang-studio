@@ -434,7 +434,19 @@ pub fn build_prompt(
                     format_timecode(*time_sec, fps)
                 )));
             }
-            MessagePart::File { .. } => {}
+            MessagePart::File { path, name, size, .. } => {
+                let rel = Path::new(path)
+                    .file_name()
+                    .map(|f| format!("attachments/{}", f.to_string_lossy()))
+                    .unwrap_or_else(|| name.clone());
+                let size = human_size(*size);
+                if is_image_name(name) {
+                    out.push(PromptPart::Image { path: PathBuf::from(path) });
+                    out.push(PromptPart::Text(format!("Attached image: {rel} ({name}, {size})")));
+                } else {
+                    out.push(PromptPart::Text(format!("Attached file: {rel} ({name}, {size})")));
+                }
+            }
             MessagePart::Tool { .. } => {}
         }
     }
@@ -443,12 +455,126 @@ pub fn build_prompt(
 
 pub const MAX_ATTACHMENT: u64 = 50 * 1024 * 1024;
 
-pub fn copy_attachment(_cwd: &Path, _source: &Path, _max: u64) -> CmdResult<MessagePart> {
-    todo!()
+/// Mime type from the file extension; unknown ones are generic binary.
+fn mime_for(name: &str) -> &'static str {
+    let ext = Path::new(name)
+        .extension()
+        .map(|e| e.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+    match ext.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "webp" => "image/webp",
+        "gif" => "image/gif",
+        "svg" => "image/svg+xml",
+        "pdf" => "application/pdf",
+        "txt" | "md" => "text/plain",
+        "csv" => "text/csv",
+        "json" => "application/json",
+        "mp3" => "audio/mpeg",
+        "wav" => "audio/wav",
+        "mp4" => "video/mp4",
+        "mov" => "video/quicktime",
+        _ => "application/octet-stream",
+    }
 }
 
-pub fn check_file_parts(_cwd: &Path, _parts: &[MessagePart]) -> CmdResult<()> {
-    todo!()
+fn is_image_name(name: &str) -> bool {
+    matches!(
+        mime_for(name),
+        "image/png" | "image/jpeg" | "image/webp" | "image/gif"
+    )
+}
+
+fn human_size(bytes: u64) -> String {
+    const KB: f64 = 1024.0;
+    let b = bytes as f64;
+    if b < KB {
+        format!("{bytes} B")
+    } else if b < KB * KB {
+        format!("{:.1} KB", b / KB)
+    } else {
+        format!("{:.1} MB", b / (KB * KB))
+    }
+}
+
+/// Copies `source` into `<cwd>/attachments/`, under a name that is not taken yet.
+pub fn copy_attachment(cwd: &Path, source: &Path, max: u64) -> CmdResult<MessagePart> {
+    let meta = std::fs::metadata(source).map_err(|e| format!("Can't read that file: {e}"))?;
+    if !meta.is_file() {
+        return Err("That isn't a file".into());
+    }
+    if meta.len() > max {
+        return Err("That file is larger than 50 MB".into());
+    }
+    let file_name = source
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .filter(|n| safe_segment(n))
+        .ok_or("That file has no usable name")?;
+    let dir = cwd.join("attachments");
+    if !projects::ensure_inside(cwd, &dir) {
+        return Err("The agent can only read files inside this chat's folder".into());
+    }
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Can't create {}: {e}", dir.display()))?;
+    let (stem, ext) = match file_name.rfind('.') {
+        Some(i) if i > 0 => (file_name[..i].to_string(), file_name[i..].to_string()),
+        _ => (file_name.clone(), String::new()),
+    };
+    let mut name = file_name;
+    let mut n = 1;
+    loop {
+        let dest = dir.join(&name);
+        if !projects::ensure_inside(cwd, &dest) {
+            return Err("The agent can only read files inside this chat's folder".into());
+        }
+        // create_new keeps two attachments from racing for the same name.
+        match std::fs::OpenOptions::new().write(true).create_new(true).open(&dest) {
+            Ok(mut out) => {
+                let mut input = std::fs::File::open(source)
+                    .map_err(|e| format!("Can't read that file: {e}"))?;
+                if let Err(e) = std::io::copy(&mut input, &mut out) {
+                    drop(out);
+                    let _ = std::fs::remove_file(&dest);
+                    return Err(format!("Can't copy that file: {e}"));
+                }
+                return Ok(MessagePart::File {
+                    path: dest.to_string_lossy().into_owned(),
+                    mime: mime_for(&name).into(),
+                    name,
+                    size: meta.len(),
+                });
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                n += 1;
+                name = format!("{stem}-{n}{ext}");
+            }
+            Err(e) => return Err(format!("Can't copy that file: {e}")),
+        }
+    }
+}
+
+/// Attached files must live inside the chat's own folder.
+pub fn check_file_parts(cwd: &Path, parts: &[MessagePart]) -> CmdResult<()> {
+    for part in parts {
+        if let MessagePart::File { path, .. } = part {
+            if !projects::ensure_inside(cwd, Path::new(path)) {
+                return Err("That file is outside this chat's folder".into());
+            }
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn attach_file(
+    state: State<'_, AppState>,
+    chat_id: String,
+    source_path: String,
+) -> CmdResult<MessagePart> {
+    let folder = project_folder_for_chat(&state, &chat_id)?;
+    let cwd = resolve_cwd(&state.working(), &chat_id, folder.as_deref())?;
+    copy_attachment(&cwd, Path::new(&source_path), MAX_ATTACHMENT)
 }
 
 /// Frame images must live inside the working folder or inside the recorded folder of
@@ -481,6 +607,11 @@ pub async fn agent_prompt(
     let settings = state.db.get_settings(&state.home);
     let fps = settings.fps;
     let working = PathBuf::from(&settings.working_folder);
+    if parts.iter().any(|p| matches!(p, MessagePart::File { .. })) {
+        let folder = project_folder_for_chat(&state, &chat_id)?;
+        let cwd = resolve_cwd(&working, &chat_id, folder.as_deref())?;
+        check_file_parts(&cwd, &parts)?;
+    }
     check_frame_images(&working, &parts, |id| {
         state.db.get_project(id).ok().flatten().map(|p| PathBuf::from(p.folder))
     })?;

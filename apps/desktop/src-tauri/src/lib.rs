@@ -56,6 +56,7 @@ pub fn run() {
             commands::study_dir,
             commands::list_jobs,
             commands::upsert_job,
+            commands::attach_file,
             commands::agent_start,
             commands::agent_prompt,
             commands::agent_cancel,
