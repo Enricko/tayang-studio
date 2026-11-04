@@ -104,7 +104,14 @@ describe('style', () => {
   it('study prompt', () => {
     const p = buildStudyStylePrompt('https://v', '/out');
     expect(p).toContain('yt-dlp');
-    expect(p).toContain('/out/style.json');
+    expect(p).toContain('`"/out/style.json"`');
+  });
+  it('study prompt quotes folders with spaces', () => {
+    const p = buildStudyStylePrompt('https://v', '/Users/a b/Tayang/.tayang/style-study/x');
+    expect(p).toContain('into the folder `"/Users/a b/Tayang/.tayang/style-study/x"`');
+    expect(p).toContain('Write `"/Users/a b/Tayang/.tayang/style-study/x/style.json"`');
+    const w = buildStudyStylePrompt('https://v', 'C:\\Users\\a b\\x');
+    expect(w).toContain('`"C:\\Users\\a b\\x\\style.json"`');
   });
   it('builtins', () => {
     expect(BUILTIN_STYLES.length).toBe(3);
