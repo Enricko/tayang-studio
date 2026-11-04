@@ -354,13 +354,11 @@ impl SessionCore {
     fn handle_line(self: &Arc<Self>, line: &str) {
         match parse_message(line) {
             Some(Incoming::Response { id, result }) => self.rpc.resolve(id, result),
-            Some(Incoming::Notification { method, params }) => {
-                if method == "session/update" {
-                    self.on_session_update(&params);
-                }
+            Some(Incoming::Notification { method, params }) if method == "session/update" => {
+                self.on_session_update(&params);
             }
             Some(Incoming::Request { id, method, params }) => self.on_request(id, &method, params),
-            None => {}
+            Some(Incoming::Notification { .. }) | None => {}
         }
     }
 
@@ -657,18 +655,38 @@ async fn read_loop(stdout: impl AsyncRead + Unpin, core: Arc<SessionCore>) {
 async fn supervise(
     mut child: Child,
     kill_rx: oneshot::Receiver<()>,
-    reader: JoinHandle<()>,
+    mut reader: JoinHandle<()>,
     core: Arc<SessionCore>,
 ) {
+    #[cfg(unix)]
+    let pid = child.id().and_then(|p| libc::pid_t::try_from(p).ok());
+    // A dropped `kill_rx` (the session was dropped) also means stop.
     let stop_requested = tokio::select! {
         _ = child.wait() => false,
         _ = kill_rx => true,
     };
     if stop_requested {
         terminate(&mut child).await;
+    } else {
+        // The agent exited on its own: clear out helpers it left behind.
+        #[cfg(unix)]
+        if let Some(pid) = pid {
+            kill_group(pid, libc::SIGKILL);
+        }
     }
-    let _ = tokio::time::timeout(DRAIN_GRACE, reader).await;
+    // Let the reader finish output the agent already wrote, but don't wait on
+    // a stray process that still holds the pipe open.
+    if tokio::time::timeout(DRAIN_GRACE, &mut reader).await.is_err() {
+        reader.abort();
+    }
     core.on_closed();
+}
+
+#[cfg(unix)]
+fn kill_group(pgid: libc::pid_t, signal: libc::c_int) {
+    // SAFETY: kill(2) has no memory-safety preconditions; the negative pid
+    // targets the process group created for this agent in `spawn_agent`.
+    unsafe { libc::kill(-pgid, signal) };
 }
 
 /// Stops the agent and everything it started (its process group on Unix,
@@ -676,12 +694,10 @@ async fn supervise(
 async fn terminate(child: &mut Child) {
     #[cfg(unix)]
     if let Some(pid) = child.id().and_then(|p| libc::pid_t::try_from(p).ok()) {
-        // SAFETY: kill(2) has no memory-safety preconditions; the negative pid
-        // targets the process group created for this agent in `spawn_agent`.
-        unsafe { libc::kill(-pid, libc::SIGTERM) };
+        kill_group(pid, libc::SIGTERM);
         let _ = tokio::time::timeout(KILL_GRACE, child.wait()).await;
-        // SAFETY: as above; reaches helpers that ignored SIGTERM.
-        unsafe { libc::kill(-pid, libc::SIGKILL) };
+        // Reaches helpers that ignored SIGTERM.
+        kill_group(pid, libc::SIGKILL);
     }
     #[cfg(windows)]
     if let Some(pid) = child.id() {
@@ -929,6 +945,39 @@ mod tests {
         );
         assert_eq!(parse_message("not json"), None);
         assert_eq!(parse_message("[1,2]"), None);
+    }
+
+    #[test]
+    fn manager_is_shareable_tauri_state() {
+        fn assert_send_sync<T: Send + Sync + 'static>() {}
+        assert_send_sync::<AcpManager>();
+        assert_send_sync::<AgentSession>();
+    }
+
+    #[test]
+    fn maps_acp_enums_to_app_literals() {
+        assert_eq!(map_tool_status("in_progress"), Some(ToolCallStatus::Running));
+        assert_eq!(map_tool_status("completed"), Some(ToolCallStatus::Done));
+        assert_eq!(map_tool_status("bogus"), None);
+        assert_eq!(map_option_kind("allow_always"), Some(PermissionOptionKind::AllowAlways));
+        assert_eq!(map_option_kind("reject_always"), Some(PermissionOptionKind::RejectAlways));
+        assert_eq!(map_option_kind("allow-once"), None);
+    }
+
+    #[test]
+    fn image_mime_comes_from_the_extension() {
+        let dir = tempfile::tempdir().unwrap();
+        for (name, mime) in [("a.PNG", "image/png"), ("b.jpg", "image/jpeg"), ("c.jpeg", "image/jpeg"), ("d.webp", "image/webp")] {
+            let p = dir.path().join(name);
+            std::fs::write(&p, b"x").unwrap();
+            let block = image_block(&p).unwrap();
+            assert_eq!(block["mimeType"], mime);
+            assert_eq!(block["data"], "eA==");
+            assert_eq!(block["type"], "image");
+        }
+        let gif = dir.path().join("e.gif");
+        std::fs::write(&gif, b"x").unwrap();
+        assert!(image_block(&gif).is_err());
     }
 
     #[test]
