@@ -253,6 +253,8 @@ export const en = {
     },
   },
   billing: {
+    checking: 'Checking your plan…',
+    unknown: "Couldn't check your plan just now",
     free: 'Free',
     activeUntil: 'Active until {{date}}',
     active: 'Active',

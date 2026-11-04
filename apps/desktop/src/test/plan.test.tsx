@@ -16,6 +16,7 @@ import { setUiLanguage } from '@/i18n';
 import * as billing from '@/lib/billing';
 import { POLL_MS } from '@/lib/billing';
 import { useBilling } from '@/state/billing';
+import { useAuth } from '@/state/auth';
 
 const free: BillingStatus = { plan: 'free', lastPlan: null, currentPeriodEnd: null, active: false, pending: null };
 const creator: BillingStatus = { plan: 'creator', lastPlan: 'creator', currentPeriodEnd: '2026-12-04T12:00:00.000Z', active: true, pending: null };
@@ -71,6 +72,33 @@ describe('plan card', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Continue payment' }));
     expect(billing.billingCheckout).toHaveBeenCalledWith('pro');
     expect(await screen.findByText('Finish paying in your browser')).toBeInTheDocument();
+  });
+});
+
+describe("plan card when the plan state can't be read (B2 bug: a paid Lite showed Gratis)", () => {
+  const withAccount = (plan: string) =>
+    useAuth.setState({
+      status: { state: 'signed-in', signedIn: true, offline: false, apiUrl: 'x', account: { id: 'a', email: 'a@b.c', name: 'A', plan: plan as 'lite', features: [] } },
+    });
+
+  it('never says Free when the read failed: it shows the signed-in plan and offers to try again', async () => {
+    withAccount('lite');
+    vi.mocked(billing.billingStatus).mockRejectedValue(new Error('Command billing_status not found'));
+    render(<PlanCard />);
+    expect(await screen.findByText('Lite')).toBeInTheDocument();
+    expect(screen.queryByText('Free')).not.toBeInTheDocument();
+    expect(screen.getByText("Couldn't check your plan just now")).toBeInTheDocument();
+    vi.mocked(billing.billingStatus).mockResolvedValue({ ...creator, plan: 'lite', lastPlan: 'lite' });
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByText('Active until Dec 4, 2026')).toBeInTheDocument();
+  });
+
+  it('says it is checking before the first answer, not Free', async () => {
+    withAccount('free');
+    vi.mocked(billing.billingStatus).mockReturnValue(new Promise(() => {}));
+    render(<PlanCard />);
+    expect(await screen.findByText('Checking your plan…')).toBeInTheDocument();
+    expect(screen.queryByText('Free')).not.toBeInTheDocument();
   });
 });
 

@@ -9,6 +9,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { uiLanguage } from '@/i18n';
 import { formatDay, formatIdr, isPaymentLink, planCard, type BillingErrorCode } from '@/lib/billing';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/state/auth';
 import { useBilling } from '@/state/billing';
 
 const ERROR_KEYS = {
@@ -183,6 +184,30 @@ export function PlanCard() {
   useEffect(() => {
     void useBilling.getState().refresh();
   }, []);
+
+  const loadedAt = useBilling((s) => s.loadedAt);
+  const failed = useBilling((s) => s.failed);
+  const account = useAuth((s) => (s.status?.signedIn ? s.status.account : undefined));
+
+  // Not read yet, or the read failed: the plan is unknown, which is not the same as free.
+  if (!status && (failed || !loadedAt)) {
+    const known = findPlan(account?.plan);
+    return (
+      <div className="flex flex-wrap items-center gap-4 rounded-xl border border-border bg-card p-4">
+        <div className="flex min-w-[220px] flex-1 flex-col gap-1">
+          {known && <span className="text-sm font-medium">{known.name}</span>}
+          <span role="status" className="text-[13px] leading-normal text-text-2">
+            {failed ? t('billing.unknown') : t('billing.checking')}
+          </span>
+        </div>
+        {failed && (
+          <Button variant="secondary" onClick={() => void useBilling.getState().refresh()}>
+            {t('common.tryAgain')}
+          </Button>
+        )}
+      </div>
+    );
+  }
 
   const state = planCard(status);
   // The plan to renew: the running one, else the one that ran out.

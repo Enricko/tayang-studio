@@ -255,6 +255,8 @@ export const id: Translations = {
     },
   },
   billing: {
+    checking: 'Mengecek paketmu…',
+    unknown: 'Paketmu belum bisa dicek sekarang',
     free: 'Gratis',
     activeUntil: 'Aktif sampai {{date}}',
     active: 'Aktif',

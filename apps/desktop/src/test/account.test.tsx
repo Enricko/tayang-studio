@@ -101,7 +101,8 @@ describe('Sign in with Google', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(screen.getByText('Ana Putri')).toBeInTheDocument();
     expect(screen.getByText('ana@example.com')).toBeInTheDocument();
-    expect(screen.getByText('Pro')).toBeInTheDocument();
+    // The badge, and the plan card (which can't read the plan here, so it names the signed-in one).
+    expect(screen.getAllByText('Pro')).toHaveLength(2);
     expect(screen.getByText('AP')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Sign in with Google' })).not.toBeInTheDocument();
   });
@@ -167,8 +168,8 @@ describe('Account card', () => {
   it('falls back to the email, and a free plan says Free', async () => {
     vi.mocked(auth.authStatus).mockResolvedValue({ ...signedIn, account: { ...signedIn.account!, name: null, plan: 'free' } });
     render(<AccountSection />);
-    // The badge, and the plan card under it.
-    expect(await screen.findAllByText('Free')).toHaveLength(2);
+    // The badge; the plan card can't read the plan here and doesn't claim Free.
+    expect(await screen.findAllByText('Free')).toHaveLength(1);
     expect(screen.getAllByText('ana@example.com').length).toBeGreaterThan(0);
     expect(screen.getByText('A')).toBeInTheDocument();
   });

@@ -17,6 +17,8 @@ interface BillingStore {
   status: BillingStatus | null;
   /** When `status` was read (ms), 0 if never. */
   loadedAt: number;
+  /** The last read failed (other than signed out): the plan is unknown, not free. */
+  failed: boolean;
   flow: PayFlow;
   /** Bumped by every pay, close and reopen, so a late answer or poll from an old one is dropped. */
   attempt: number;
@@ -67,16 +69,18 @@ export const useBilling = create<BillingStore>((set, get) => {
   return {
     status: null,
     loadedAt: 0,
+    failed: false,
     flow: { phase: 'closed' },
     attempt: 0,
 
     async refresh() {
       try {
         const s = await billingStatus();
-        set({ status: s, loadedAt: Date.now() });
+        set({ status: s, loadedAt: Date.now(), failed: false });
         return s;
       } catch (e) {
-        if (billingErrorCode(e) === 'signed-out') set({ status: null, loadedAt: Date.now() });
+        if (billingErrorCode(e) === 'signed-out') set({ status: null, loadedAt: Date.now(), failed: false });
+        else set({ failed: true });
         return null;
       }
     },
@@ -125,7 +129,7 @@ export const useBilling = create<BillingStore>((set, get) => {
 
     reset() {
       stopPolling();
-      set((s) => ({ status: null, loadedAt: 0, attempt: s.attempt + 1, flow: { phase: 'closed' } }));
+      set((s) => ({ status: null, loadedAt: 0, failed: false, attempt: s.attempt + 1, flow: { phase: 'closed' } }));
     },
   };
 });
