@@ -21,7 +21,7 @@ function elevenLabsCommands(sys: SystemInfo, agent: AgentId, key: string): strin
   const uv = sys.os === 'macos' ? 'brew install uv' : sys.os === 'windows' ? 'winget install --id astral-sh.uv -e' : 'pipx install uv';
   const cmds = [uv];
   if (agent === 'claude') {
-    cmds.push(`claude mcp add elevenlabs -e ELEVENLABS_API_KEY=${key} -- uvx elevenlabs-mcp`);
+    cmds.push(`claude mcp add -s user elevenlabs -e ELEVENLABS_API_KEY=${key} -- uvx elevenlabs-mcp`);
   }
   return cmds;
 }
@@ -89,7 +89,7 @@ export function buildInstallPrompt(
       lines.push('Install `uv` first if it is missing:');
       lines.push(`  ${commandsFor(tool, sys, agent, key)[0]}`);
       lines.push(
-        `Then add an MCP server named \`elevenlabs\` that runs \`uvx elevenlabs-mcp\` with the environment variable \`ELEVENLABS_API_KEY=${key}\`, in your own MCP configuration.`,
+        `Then add an MCP server named \`elevenlabs\` that runs \`uvx elevenlabs-mcp\` with the environment variable \`ELEVENLABS_API_KEY=${key}\`, in your user-level (global) MCP configuration so it works in every folder.`,
       );
     }
   } else if (tool === 'chrome' && sys.os === 'linux') {

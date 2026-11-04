@@ -117,7 +117,7 @@ Three steps, then the user lands in a new chat.
 4. **The agent runs the commands while Tayang shows progress** (sleepy Oyen and a short step log). It then checks the version, and the item turns ready with "Installed by Claude Code".
 5. **If it fails,** the item shows surprised Oyen, the agent's own explanation, and two choices: "Ask the agent to fix it" or a manual install guide. **(my call)**
 
-For the ElevenLabs MCP, Tayang first asks for an API key, stored only in the agent's MCP settings on this computer. The agent then installs `uv` if needed, runs `claude mcp add elevenlabs -e ELEVENLABS_API_KEY=… -- uvx elevenlabs-mcp` (or the equivalent for another agent), and makes one test call.
+For the ElevenLabs MCP, Tayang first asks for an API key, stored only in the agent's MCP settings on this computer. The agent then installs `uv` if needed, runs `claude mcp add -s user elevenlabs -e ELEVENLABS_API_KEY=… -- uvx elevenlabs-mcp` (or the equivalent for another agent), and makes one test call.
 
 ### App
 

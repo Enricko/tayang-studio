@@ -338,21 +338,16 @@ pub fn detect_agents(exec: &dyn Exec) -> Vec<AgentInfo> {
         .collect()
 }
 
+/// True when `~/.claude.json` has an ElevenLabs server at user scope (top-level
+/// `mcpServers`). Local-scope entries under `projects` only work in that one folder, so
+/// they don't count.
 pub fn elevenlabs_in_claude_config(json: &str) -> bool {
     let Ok(v) = serde_json::from_str::<serde_json::Value>(json) else {
         return false;
     };
-    let has = |servers: Option<&serde_json::Value>| {
-        servers
-            .and_then(|s| s.as_object())
-            .is_some_and(|m| m.keys().any(|k| k.to_ascii_lowercase().contains("elevenlabs")))
-    };
-    if has(v.get("mcpServers")) {
-        return true;
-    }
-    v.get("projects")
-        .and_then(|p| p.as_object())
-        .is_some_and(|projects| projects.values().any(|p| has(p.get("mcpServers"))))
+    v.get("mcpServers")
+        .and_then(|s| s.as_object())
+        .is_some_and(|m| m.keys().any(|k| k.to_ascii_lowercase().contains("elevenlabs")))
 }
 
 fn chrome_found(exec: &dyn Exec, os: OsKind) -> bool {
@@ -624,8 +619,10 @@ mod tests {
     #[test]
     fn elevenlabs_config_detection() {
         assert!(elevenlabs_in_claude_config(r#"{"mcpServers":{"elevenlabs":{}}}"#));
-        assert!(elevenlabs_in_claude_config(
-            r#"{"projects":{"/a":{"mcpServers":{"my-ElevenLabs-tts":{}}}}}"#
+        assert!(elevenlabs_in_claude_config(r#"{"mcpServers":{"my-ElevenLabs-tts":{}}}"#));
+        // Local scope (one folder only) doesn't count.
+        assert!(!elevenlabs_in_claude_config(
+            r#"{"projects":{"/a":{"mcpServers":{"elevenlabs":{}}}}}"#
         ));
         assert!(!elevenlabs_in_claude_config("{}"));
         assert!(!elevenlabs_in_claude_config(r#"{"mcpServers":{"other":{}}}"#));
