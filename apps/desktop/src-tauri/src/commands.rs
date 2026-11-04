@@ -729,7 +729,7 @@ pub async fn media_render(state: State<'_, AppState>, project_id: String) -> Cmd
 pub async fn sync_styles(state: State<'_, AppState>) -> CmdResult<StylesSync> {
     let api_url = crate::styles_sync::effective_api_url(&state.db.get_settings(&state.home));
     let fetcher = crate::styles_sync::HttpFetcher::new(std::time::Duration::from_secs(10))?;
-    Ok(crate::styles_sync::sync_styles(&state.db, &api_url, &fetcher).await)
+    crate::styles_sync::sync_styles(&state.db, &api_url, &fetcher).await
 }
 
 /// Unpacks the project's style template into its folder (once, never over existing files).

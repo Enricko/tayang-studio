@@ -9,6 +9,11 @@ use sha2::{Digest, Sha256};
 use std::io::{Cursor, Read};
 use std::path::{Component, Path, PathBuf};
 
+/// Largest template Tayang downloads.
+const MAX_TEMPLATE: u64 = 200 * 1024 * 1024;
+/// Largest styles list response.
+const MAX_LIST: u64 = 5 * 1024 * 1024;
+
 /// Refuse templates that would unpack to more than this many bytes (zip bombs).
 const MAX_UNPACKED: u64 = 2 * 1024 * 1024 * 1024;
 
@@ -21,7 +26,8 @@ pub struct Fetched {
 /// HTTP GET, injectable so tests never touch the network.
 #[allow(async_fn_in_trait)]
 pub trait Fetcher {
-    async fn get(&self, url: &str) -> Result<Fetched, String>;
+    /// Reads at most `max_bytes` of the body; a longer one is an error.
+    async fn get(&self, url: &str, max_bytes: u64) -> Result<Fetched, String>;
 }
 
 /// `reqwest`-backed fetcher with a per-request timeout.
@@ -41,10 +47,19 @@ impl HttpFetcher {
 }
 
 impl Fetcher for HttpFetcher {
-    async fn get(&self, url: &str) -> Result<Fetched, String> {
-        let res = self.client.get(url).send().await.map_err(|e| e.to_string())?;
+    async fn get(&self, url: &str, max_bytes: u64) -> Result<Fetched, String> {
+        let mut res = self.client.get(url).send().await.map_err(|e| e.to_string())?;
         let status = res.status().as_u16();
-        let body = res.bytes().await.map_err(|e| e.to_string())?.to_vec();
+        if res.content_length().is_some_and(|l| l > max_bytes) {
+            return Err("The response is too large".into());
+        }
+        let mut body = Vec::new();
+        while let Some(chunk) = res.chunk().await.map_err(|e| e.to_string())? {
+            if body.len() as u64 + chunk.len() as u64 > max_bytes {
+                return Err("The response is too large".into());
+            }
+            body.extend_from_slice(&chunk);
+        }
         Ok(Fetched { status, body })
     }
 }
@@ -74,22 +89,28 @@ struct StylesBody {
     styles: Vec<Style>,
 }
 
-/// GETs `/v1/styles` and replaces the cached built-ins. Any failure (network, status,
-/// bad body, db) keeps the cache and reports `offline: true`.
-pub async fn sync_styles<F: Fetcher>(db: &Db, api_url: &str, fetcher: &F) -> StylesSync {
-    let fresh = async {
-        let res = fetcher.get(&endpoint(api_url, "/v1/styles")).await?;
+/// GETs `/v1/styles` and replaces the cached built-ins. A network, status or body failure
+/// keeps the cache and reports `offline: true`; a database failure is an error.
+pub async fn sync_styles<F: Fetcher>(db: &Db, api_url: &str, fetcher: &F) -> Result<StylesSync, String> {
+    let fetched = async {
+        let res = fetcher.get(&endpoint(api_url, "/v1/styles"), MAX_LIST).await?;
         if !(200..300).contains(&res.status) {
             return Err(format!("styles request returned {}", res.status));
         }
-        let mut body: StylesBody = serde_json::from_slice(&res.body).map_err(|e| e.to_string())?;
-        for s in &mut body.styles {
-            s.source = StyleSource::Builtin;
-        }
-        db.replace_builtin_styles(&body.styles).map_err(|e| e.to_string())
+        serde_json::from_slice::<StylesBody>(&res.body).map_err(|e| e.to_string())
     }
     .await;
-    StylesSync { styles: db.list_styles().unwrap_or_default(), offline: fresh.is_err() }
+    let offline = match fetched {
+        Ok(mut body) => {
+            for s in &mut body.styles {
+                s.source = StyleSource::Builtin;
+            }
+            db.replace_builtin_styles(&body.styles).map_err(|e| e.to_string())?;
+            false
+        }
+        Err(_) => true,
+    };
+    Ok(StylesSync { styles: db.list_styles().map_err(|e| e.to_string())?, offline })
 }
 
 /// True when the folder holds nothing but the files Tayang itself writes.
@@ -126,13 +147,17 @@ pub async fn install_template<F: Fetcher>(
     if !is_fresh_folder(&folder) {
         return Ok(false);
     }
+    if template.size > MAX_TEMPLATE {
+        return Err("This template is too large to download".into());
+    }
     let want = template.sha256.to_ascii_lowercase();
     let cached = templates_dir.join(format!("{want}.zip"));
     let bytes = match std::fs::read(&cached) {
         Ok(b) if sha256_hex(&b) == want => b,
         _ => {
             let url = endpoint(api_url, &format!("/v1/styles/{}/template", urlencode(&style_id)));
-            let res = fetcher.get(&url).await?;
+            let limit = (template.size + 1024 * 1024).min(MAX_TEMPLATE);
+            let res = fetcher.get(&url, limit).await?;
             if !(200..300).contains(&res.status) {
                 return Err(format!("Couldn't download the template (status {})", res.status));
             }
@@ -214,7 +239,7 @@ pub fn extract_zip(bytes: &[u8], dest: &Path) -> Result<usize, String> {
             std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
         let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
-        let mut buf = Vec::with_capacity(entry.size() as usize);
+        let mut buf = Vec::with_capacity(entry.size().min(1 << 20) as usize);
         entry.read_to_end(&mut buf).map_err(|e| e.to_string())?;
         std::fs::write(&target, &buf).map_err(|e| e.to_string())?;
         #[cfg(unix)]
@@ -243,9 +268,10 @@ mod tests {
     }
 
     impl Fetcher for FakeFetcher {
-        async fn get(&self, url: &str) -> Result<Fetched, String> {
+        async fn get(&self, url: &str, max_bytes: u64) -> Result<Fetched, String> {
             self.calls.lock().unwrap().push(url.to_string());
             match self.routes.get(url) {
+                Some((_, body)) if body.len() as u64 > max_bytes => Err("too large".into()),
                 Some((status, body)) => Ok(Fetched { status: *status, body: body.clone() }),
                 None => Err("offline".into()),
             }
@@ -327,7 +353,7 @@ mod tests {
         let mut f = FakeFetcher::default();
         let (k, v) = list_route(&[style("a", None), style("b", None)]);
         f.routes.insert(k, v);
-        let out = sync_styles(&db, "https://api.test/", &f).await;
+        let out = sync_styles(&db, "https://api.test/", &f).await.unwrap();
         assert!(!out.offline);
         let ids: Vec<_> = out.styles.iter().map(|s| s.id.as_str()).collect();
         assert_eq!(ids, ["a", "b"]);
@@ -338,15 +364,15 @@ mod tests {
     async fn sync_offline_keeps_cache() {
         let db = Db::open_in_memory().unwrap();
         db.replace_builtin_styles(&[style("a", None)]).unwrap();
-        let out = sync_styles(&db, "https://api.test", &FakeFetcher::default()).await;
+        let out = sync_styles(&db, "https://api.test", &FakeFetcher::default()).await.unwrap();
         assert!(out.offline);
         assert_eq!(out.styles.len(), 1);
         // Server errors and garbage bodies also keep the cache.
         let mut f = FakeFetcher::default();
         f.routes.insert("https://api.test/v1/styles".into(), (500, b"x".to_vec()));
-        assert!(sync_styles(&db, "https://api.test", &f).await.offline);
+        assert!(sync_styles(&db, "https://api.test", &f).await.unwrap().offline);
         f.routes.insert("https://api.test/v1/styles".into(), (200, b"not json".to_vec()));
-        let out = sync_styles(&db, "https://api.test", &f).await;
+        let out = sync_styles(&db, "https://api.test", &f).await.unwrap();
         assert!(out.offline);
         assert_eq!(db.list_styles().unwrap().len(), 1);
     }
@@ -424,6 +450,39 @@ mod tests {
         assert!(err.contains("checksum"), "{err}");
         assert!(!s.folder.join("a.txt").exists());
         assert!(!s.templates.exists() || std::fs::read_dir(&s.templates).unwrap().count() == 0);
+    }
+
+    #[tokio::test]
+    async fn install_refuses_oversized_templates() {
+        let z = zip_bytes(&[("a.txt", b"x")]);
+        // Declared size above the cap: refused before any download.
+        let (s, f) = setup(&z, &z);
+        let mut big = style("atlas", Some((&z, 1)));
+        big.template.as_mut().unwrap().size = 201 * 1024 * 1024;
+        s.db.replace_builtin_styles(&[big]).unwrap();
+        let e = install_template(&s.db, &f, "https://api.test", &s.templates, "p1").await.unwrap_err();
+        assert!(e.contains("too large"), "{e}");
+        assert!(f.calls.lock().unwrap().is_empty());
+        // A body longer than declared size + 1 MB is cut off by the fetcher limit.
+        let mut lying = style("atlas", Some((&z, 1)));
+        lying.template.as_mut().unwrap().size = 1;
+        s.db.replace_builtin_styles(&[lying]).unwrap();
+        let mut f2 = FakeFetcher::default();
+        f2.routes.insert(
+            "https://api.test/v1/styles/atlas/template".into(),
+            (200, vec![0u8; 2 * 1024 * 1024]),
+        );
+        assert!(install_template(&s.db, &f2, "https://api.test", &s.templates, "p1").await.is_err());
+    }
+
+    #[tokio::test]
+    async fn sync_database_error_is_an_error_not_offline() {
+        let db = Db::open_in_memory().unwrap();
+        db.break_for_test();
+        let mut f = FakeFetcher::default();
+        let (k, v) = list_route(&[style("a", None)]);
+        f.routes.insert(k, v);
+        assert!(sync_styles(&db, "https://api.test", &f).await.is_err());
     }
 
     #[tokio::test]

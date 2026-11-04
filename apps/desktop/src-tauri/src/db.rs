@@ -442,6 +442,11 @@ impl Db {
         Ok(())
     }
 
+    #[cfg(test)]
+    pub fn break_for_test(&self) {
+        self.conn().execute_batch("DROP TABLE styles").unwrap();
+    }
+
     pub fn get_style(&self, id: &str) -> Result<Option<Style>> {
         Ok(self.list_styles()?.into_iter().find(|s| s.id == id))
     }
