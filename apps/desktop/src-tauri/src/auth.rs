@@ -464,6 +464,8 @@ struct Inner {
 /// Signing in and out, and the state the UI shows. At most one poll task runs.
 pub struct Auth {
     store: Arc<dyn TokenStore>,
+    /// Held around every store call, so a check-then-delete can't interleave with a save.
+    store_lock: Arc<Mutex<()>>,
     cache: Arc<dyn AccountCache>,
     sink: Arc<dyn AuthSink>,
     client: reqwest::Client,
@@ -485,7 +487,15 @@ impl Auth {
             attempt: 0,
             poll: None,
         };
-        Ok(Arc::new(Self { store, cache, sink, client: http_client()?, tick, inner: Mutex::new(inner) }))
+        Ok(Arc::new(Self {
+            store,
+            store_lock: Arc::default(),
+            cache,
+            sink,
+            client: http_client()?,
+            tick,
+            inner: Mutex::new(inner),
+        }))
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Inner> {
@@ -512,7 +522,13 @@ impl Auth {
         f: impl FnOnce(&dyn TokenStore) -> Result<T, String> + Send + 'static,
     ) -> Result<T, String> {
         let store = self.store.clone();
-        tokio::task::spawn_blocking(move || f(store.as_ref())).await.map_err(|e| e.to_string())?
+        let lock = self.store_lock.clone();
+        tokio::task::spawn_blocking(move || {
+            let _held = lock.lock().unwrap_or_else(|e| e.into_inner());
+            f(store.as_ref())
+        })
+        .await
+        .map_err(|e| e.to_string())?
     }
 
     async fn load_token(&self, key: &str) -> Option<String> {
@@ -578,11 +594,19 @@ impl Auth {
                 make_status(AuthState::SignedIn, &base, Some(a), None, false)
             }
             Me::Unauthorized => {
+                // Only this token: a sign-in may have saved a newer one while /v1/me answered.
                 let k = key.clone();
-                if let Err(e) = self.blocking(move |s| s.delete(&k)).await {
-                    eprintln!("[auth] couldn't remove a revoked token: {e}");
+                let removed = self
+                    .blocking(move |s| match s.get(&k)? {
+                        Some(t) if t == token => s.delete(&k).map(|()| true),
+                        _ => Ok(false),
+                    })
+                    .await;
+                match removed {
+                    Ok(true) => self.cache.save(&key, None),
+                    Ok(false) => return,
+                    Err(e) => eprintln!("[auth] couldn't remove a revoked token: {e}"),
                 }
-                self.cache.save(&key, None);
                 signed_out()
             }
             Me::Unavailable => make_status(AuthState::SignedIn, &base, self.cache.load(&key), None, true),
@@ -1165,6 +1189,29 @@ mod tests {
         assert_eq!(r.auth.status().state, AuthState::SignedOut);
         assert_eq!(r.store.get(&key(&f.base)).unwrap(), None);
         assert_eq!(r.cache.load(&key(&f.base)), None);
+    }
+
+    #[tokio::test]
+    async fn a_late_401_for_an_old_token_leaves_a_newer_one_alone() {
+        let store = Arc::new(MemoryStore::default());
+        let cache = Arc::new(MemCache::default());
+        let rec = Arc::new(Rec::default());
+        let auth = Auth::new(store.clone(), cache.clone(), rec.clone(), TICK).unwrap();
+        let during = store.clone();
+        let slot: Arc<Mutex<String>> = Arc::default();
+        let k = slot.clone();
+        let f = fake(move |_, _| {
+            // While /v1/me checks the old token, a sign-in saves a new one.
+            during.set(&k.lock().unwrap(), "tyg_new").unwrap();
+            (401, r#"{"error":"unauthorized"}"#.into())
+        })
+        .await;
+        *slot.lock().unwrap() = key(&f.base);
+        store.set(&key(&f.base), "tyg_old").unwrap();
+        cache.save(&key(&f.base), Some(&account("pro")));
+        auth.refresh(&f.base).await;
+        assert_eq!(store.get(&key(&f.base)).unwrap().as_deref(), Some("tyg_new"));
+        assert_eq!(cache.load(&key(&f.base)), Some(account("pro")), "the newer sign-in's account stays");
     }
 
     #[tokio::test]
