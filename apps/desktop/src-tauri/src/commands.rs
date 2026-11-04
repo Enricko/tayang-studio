@@ -58,7 +58,14 @@ pub fn system_locale() -> Option<String> {
 }
 
 fn clean_locale(raw: Option<String>) -> Option<String> {
-    raw.map(|l| l.trim().to_string()).filter(|l| !l.is_empty())
+    raw.map(|l| l.trim().to_string()).filter(|l| !l.is_empty() && !is_posix_default(l))
+}
+
+/// `C`, `POSIX` and values like `C.UTF-8` mean "no language chosen", not a language.
+fn is_posix_default(l: &str) -> bool {
+    ["C", "POSIX"].iter().any(|p| {
+        l.strip_prefix(p).is_some_and(|rest| rest.is_empty() || rest.starts_with(['.', '@', '_', '-']))
+    })
 }
 
 #[tauri::command]
@@ -965,6 +972,11 @@ mod tests {
         assert_eq!(super::clean_locale(Some(" id-ID ".into())), Some("id-ID".into()));
         assert_eq!(super::clean_locale(Some("  ".into())), None);
         assert_eq!(super::clean_locale(None), None);
+        for unknown in ["C", "POSIX", "C.UTF-8", "POSIX.UTF-8", " C "] {
+            assert_eq!(super::clean_locale(Some(unknown.into())), None, "{unknown}");
+        }
+        assert_eq!(super::clean_locale(Some("ca-ES".into())), Some("ca-ES".into()));
+        assert_eq!(super::clean_locale(Some("Czech".into())), Some("Czech".into()));
     }
 
     #[test]
