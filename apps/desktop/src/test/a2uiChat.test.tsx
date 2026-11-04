@@ -17,7 +17,7 @@ vi.mock('@/lib/ipc', () => ({
 }));
 vi.mock('@/lib/events', () => ({ onAgentUpdate: vi.fn(async () => () => {}), onPermission: vi.fn(async () => () => {}) }));
 vi.mock('@tauri-apps/plugin-opener', () => ({ openUrl: vi.fn() }));
-import { agentPrompt } from '@/lib/ipc';
+import { agentPrompt, agentStart } from '@/lib/ipc';
 import { MessageList } from '@/components/MessageList';
 import { useChat } from '@/state/chat';
 
@@ -122,5 +122,15 @@ describe('A2UI in the chat', () => {
     // Updated in place: still one surface, now live again with the new label.
     expect(screen.getAllByTestId('a2ui-surface')).toHaveLength(1);
     expect(screen.getByRole('button', { name: 'Pick again' })).toBeEnabled();
+  });
+});
+
+describe('send agent fallback', () => {
+  it("uses the chat's last agent, not the default, when none is given", async () => {
+    vi.mocked(agentStart).mockClear();
+    await useChat.getState().send('c1', [{ type: 'text', text: 'hi' }], { agentId: 'codex' });
+    await useChat.getState().stop('c1');
+    await useChat.getState().send('c1', [{ type: 'text', text: 'again' }]);
+    expect(vi.mocked(agentStart).mock.calls.map((c) => c[1])).toEqual(['codex', 'codex']);
   });
 });

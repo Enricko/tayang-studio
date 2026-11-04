@@ -282,4 +282,77 @@ describe('A2uiSurface', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(openUrl).not.toHaveBeenCalled();
   });
+
+  it('survives a self-referencing container and a fan-out DAG with a note', () => {
+    const cyc = surfaceOf([
+      create,
+      comps([
+        { id: 'root', component: 'Column', children: ['a'] },
+        { id: 'a', component: 'Row', children: ['a', 'a', 'x'] },
+        { id: 'x', component: 'Text', text: 'leaf' },
+      ]),
+    ]);
+    const start = Date.now();
+    const r1 = render(<A2uiSurface surface={cyc} onAction={vi.fn()} />);
+    expect(screen.getAllByText('leaf')).toHaveLength(1);
+    r1.unmount();
+
+    const dag = surfaceOf([
+      create,
+      comps([
+        { id: 'root', component: 'Column', children: ['n0'] },
+        ...Array.from({ length: 20 }, (_, i) => ({
+          id: `n${i}`,
+          component: 'Column',
+          children: [`n${i + 1}`, `n${i + 1}`],
+        })),
+        { id: 'n20', component: 'Text', text: 'deep' },
+      ]),
+    ]);
+    render(<A2uiSurface surface={dag} onAction={vi.fn()} />);
+    expect(screen.getByText("Some options couldn't be shown")).toBeInTheDocument();
+    expect(Date.now() - start).toBeLessThan(2000);
+  });
+
+  it('summarizes template buttons from the item they belong to', async () => {
+    const onAction = vi.fn<(a: A2uiAction) => void>();
+    const s = surfaceOf([
+      create,
+      comps([
+        { id: 'root', component: 'List', children: { componentId: 'btn', path: '/topics' } },
+        { id: 'lbl', component: 'Text', text: { path: 'name' } },
+        { id: 'btn', component: 'Button', child: 'lbl', action: { event: { name: 'pick', context: { name: { path: 'name' } } } } },
+      ]),
+      data('/topics', [{ name: 'Kenapa rupiah melemah?' }, { name: 'Bunga KPR naik' }]),
+    ]);
+    render(<A2uiSurface surface={s} onAction={onAction} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Bunga KPR naik' }));
+    expect(onAction.mock.calls[0]![0].summary).toBe('Picked: Bunga KPR naik');
+    expect(onAction.mock.calls[0]![0].context).toEqual({ name: 'Bunga KPR naik' });
+  });
+
+  it('ignores a ChoicePicker the button does not read', async () => {
+    const onAction = vi.fn<(a: A2uiAction) => void>();
+    const s = surfaceOf([
+      create,
+      comps([
+        { id: 'root', component: 'Column', children: ['pick', 'go'] },
+        { id: 'pick', component: 'ChoicePicker', maxAllowedSelections: 1, options: [{ label: 'A', value: 'a' }], selections: { path: '/other' } },
+        { id: 't', component: 'Text', text: 'Go' },
+        { id: 'go', component: 'Button', child: 't', action: { event: { name: 'go' } } },
+      ]),
+      data('/other', ['a']),
+    ]);
+    render(<A2uiSurface surface={s} onAction={onAction} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Go' }));
+    expect(onAction.mock.calls[0]![0].summary).toBe('Picked: Go');
+  });
+});
+
+describe('pointer limits', () => {
+  it('creates arrays for numeric segments and refuses sparse writes', () => {
+    expect(setAt({}, '/a/0', 'x')).toEqual({ a: ['x'] });
+    expect(setAt({ a: ['x'] }, '/a/1', 'y')).toEqual({ a: ['x', 'y'] });
+    expect(setAt({ a: ['x'] }, '/a/99999999', 'y')).toEqual({ a: ['x'] });
+  });
 });
