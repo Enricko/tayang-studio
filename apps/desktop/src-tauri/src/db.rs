@@ -204,9 +204,13 @@ impl Db {
             })
     }
 
-    /// Merges `patch` over the current settings, validates, and persists every key.
-    /// Defaults use the home passed to the last `get_settings` call.
+    /// Merges `patch` over the current settings, validates, and persists only the patched
+    /// keys, so unset keys (like the home-based working folder) keep following their defaults.
+    /// The returned value uses the home from the last `get_settings` call for unset defaults.
     pub fn update_settings(&self, patch: Value) -> Result<Settings> {
+        if !patch.is_object() {
+            return Err(DbError("settings patch must be a JSON object".into()));
+        }
         let home = self.home.lock().unwrap_or_else(|e| e.into_inner()).clone();
         let mut merged = self.settings_value(&home)?;
         merge_patch(&mut merged, &patch);
@@ -214,7 +218,8 @@ impl Db {
         let full = serde_json::to_value(&settings)?;
         let mut conn = self.conn();
         let tx = conn.transaction()?;
-        for (k, v) in full.as_object().into_iter().flatten() {
+        for k in patch.as_object().into_iter().flat_map(|o| o.keys()) {
+            let Some(v) = full.get(k) else { continue };
             tx.execute(
                 "INSERT INTO settings (key, value) VALUES (?1, ?2) \
                  ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -562,7 +567,21 @@ mod tests {
         assert_eq!(again.default_agent, AgentId::Gemini);
         assert_eq!(again.working_folder, home.join("Tayang").to_string_lossy());
         assert!(db.update_settings(json!({"fps": "fast"})).is_err());
+        assert!(db.update_settings(json!([1])).is_err());
+        assert!(db.update_settings(json!("x")).is_err());
         assert_eq!(db.get_settings(&home).fps, 60);
+    }
+
+    #[test]
+    fn update_settings_before_get_keeps_home_default() {
+        let db = db();
+        db.update_settings(json!({"fps": 24})).unwrap();
+        let home = PathBuf::from("/home/u");
+        let s = db.get_settings(&home);
+        assert_eq!(s.fps, 24);
+        assert_eq!(s.working_folder, home.join("Tayang").to_string_lossy());
+        let other = PathBuf::from("/home/v");
+        assert_eq!(db.get_settings(&other).working_folder, other.join("Tayang").to_string_lossy());
     }
 
     #[test]
