@@ -44,6 +44,14 @@ tayang-desktop/
 - App data is stored in a local SQLite database, so the desktop app keeps its data on this computer and doesn't need the API (your agent still needs its own internet connection).
 - The API is optional and only adds the online features.
 
+## Privacy
+
+Tayang sends a random install ID, your system (macOS, Windows or Linux), its version and the app version once a day. Nothing about you or your videos. The API stores no IP address, name or path.
+
+To turn it off, open Settings › Account and switch off "Share anonymous install stats".
+
+For the owner: set the secret with `wrangler secret put ADMIN_TOKEN`, then `GET /v1/stats` with `Authorization: Bearer <ADMIN_TOKEN>` returns the counts. `pnpm --filter @tayang/api stats -- --remote` prints the same table straight from D1 (use `--local` for the dev database). Set `TAYANG_API_URL` when starting the desktop app to point it at another API; it is used instead of the saved API URL and never stored.
+
 ## Credits
 
 UI polished with unslop by Damir Sokolovsky (@heydamir), CC BY 4.0.

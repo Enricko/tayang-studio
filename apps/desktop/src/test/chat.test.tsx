@@ -64,6 +64,10 @@ const settings: Settings = {
   format: '9:16',
   fps: 30,
   onboarded: true,
+  apiUrl: 'https://api.tayang.app',
+  installId: '',
+  shareInstallStats: true,
+  lastPingAt: null,
 };
 
 const mk = (id: string, title: string): Project => ({

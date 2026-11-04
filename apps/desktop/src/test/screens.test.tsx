@@ -61,6 +61,10 @@ const settings: Settings = {
   format: '9:16',
   fps: 30,
   onboarded: true,
+  apiUrl: 'https://api.tayang.app',
+  installId: '',
+  shareInstallStats: true,
+  lastPingAt: null,
 };
 
 const project = (id: string, title: string, status: Project['status'], scheduledAt: string | null = null): Project => ({
@@ -257,6 +261,19 @@ describe('Settings', () => {
     const sw = await screen.findByRole('switch', { name: 'Check every frame before showing me' });
     await userEvent.click(sw);
     await waitFor(() => expect(ipc.updateSettings).toHaveBeenCalledWith({ frameCheck: false }));
+  });
+
+  it('toggles shareInstallStats through updateSettings and explains what is sent', async () => {
+    render(<SettingsScreen />);
+    const sw = await screen.findByRole('switch', { name: 'Share anonymous install stats' });
+    expect(sw).toBeChecked();
+    expect(
+      screen.getByText(
+        'Sends a random install ID, your system (macOS, Windows or Linux), its version and the app version once a day. Nothing about you or your videos.',
+      ),
+    ).toBeInTheDocument();
+    await userEvent.click(sw);
+    await waitFor(() => expect(ipc.updateSettings).toHaveBeenCalledWith({ shareInstallStats: false }));
   });
 
   it('says existing projects stay put when the working folder changes', async () => {

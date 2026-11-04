@@ -314,6 +314,22 @@ export function Settings() {
             </div>
             <Button onClick={() => void openUrl('https://tayang.app')}>Sign in to tayang.app</Button>
           </div>
+          <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3">
+            <div className="mr-auto flex flex-col gap-1">
+              <label htmlFor="share-install-stats" className="text-sm font-medium">
+                Share anonymous install stats
+              </label>
+              <span className="text-xs text-text-3">
+                Sends a random install ID, your system (macOS, Windows or Linux), its version and the app version once a day. Nothing about you or your videos.
+              </span>
+            </div>
+            <Switch
+              id="share-install-stats"
+              checked={settings.shareInstallStats}
+              aria-label="Share anonymous install stats"
+              onCheckedChange={(v) => void save({ shareInstallStats: v })}
+            />
+          </div>
         </section>
       </div>
     </div>
