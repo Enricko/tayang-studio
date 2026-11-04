@@ -753,7 +753,10 @@ impl Db {
     /// Returns how many changed.
     pub fn fail_stale_jobs(&self, note: &str) -> Result<usize> {
         Ok(self.conn().execute(
-            "UPDATE jobs SET status = 'failed', note = ?1, updated_at = ?2 WHERE status = 'working'",
+            // A permission request (needs-you, no note) died with its session too; a build turn that
+            // stopped without a video (needs-you with its note) still waits for the user.
+            "UPDATE jobs SET status = 'failed', note = ?1, updated_at = ?2 \
+             WHERE status = 'working' OR (status = 'needs-you' AND note IS NULL)",
             rusqlite::params![note, now()],
         )?)
     }
@@ -1338,7 +1341,14 @@ mod tests {
         w.source_url = Some("https://youtu.be/abc".into());
         db.upsert_job(&w).unwrap();
         db.upsert_job(&job("d", JobStatus::Done)).unwrap();
-        assert_eq!(db.fail_stale_jobs("closed").unwrap(), 1);
+        db.upsert_job(&job("p", JobStatus::NeedsYou)).unwrap();
+        let mut stopped = job("s", JobStatus::NeedsYou);
+        stopped.note = Some("No video yet. The agent stopped before rendering".into());
+        db.upsert_job(&stopped).unwrap();
+        assert_eq!(db.fail_stale_jobs("closed").unwrap(), 2);
+        let after = db.list_jobs().unwrap();
+        assert_eq!(after.iter().find(|j| j.id == "p").unwrap().status, JobStatus::Failed);
+        assert_eq!(after.iter().find(|j| j.id == "s").unwrap().status, JobStatus::NeedsYou);
         let jobs = db.list_jobs().unwrap();
         let w = jobs.iter().find(|j| j.id == "w").unwrap();
         assert_eq!((w.status, w.note.as_deref()), (JobStatus::Failed, Some("closed")));
