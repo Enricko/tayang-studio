@@ -87,7 +87,7 @@ describe('the Videos card poster', () => {
     setUiLanguage('id');
     vi.mocked(videoThumbnail).mockResolvedValue(null);
     const { unmount } = render(<VideoPoster project={proj()} />);
-    expect(await screen.findByText('Belum ada preview')).toBeInTheDocument();
+    expect(await screen.findByText('Belum ada pratinjau')).toBeInTheDocument();
     unmount();
     useRender.getState().start('p1', { source: 'agent' });
     render(<VideoPoster project={proj()} />);

@@ -399,7 +399,7 @@ export const id: Translations = {
     rowAria: 'Pemakaian {{label}}',
   },
   videos: {
-    noPreview: 'Belum ada preview',
+    noPreview: 'Belum ada pratinjau',
     renderingNow: 'Sedang merender…',
     title: 'Video',
     subtitle: 'Semua yang sudah kamu buat, tersimpan di komputer ini',
