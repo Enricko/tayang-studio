@@ -6,6 +6,24 @@ const LANGUAGE: Record<VideoLanguage, string> = { id: 'Indonesian', en: 'English
 /** Sent before a project chat's prompt when the frame check is turned off in Settings. */
 export const SKIP_FRAME_CHECK = 'Skip the frame check this time.';
 
+const NOTE_LABELS: [keyof Style['notes'], string][] = [
+  ['camera', 'Camera'],
+  ['pacing', 'Pacing'],
+  ['type', 'Type'],
+  ['color', 'Color'],
+  ['captions', 'Captions'],
+  ['transitions', 'Transitions'],
+];
+
+/** The style's prompt followed by one `Label: note` line per non-empty aspect. */
+function styleSection(style: Style): string {
+  const notes = NOTE_LABELS.flatMap(([k, label]) => {
+    const v = style.notes[k]?.trim();
+    return v ? [`${label}: ${v}`] : [];
+  });
+  return [`Style: ${style.name}`, style.prompt, ...notes].join('\n');
+}
+
 /** The project's AGENTS.md. The quality loop is only included when `settings.frameCheck` is on. */
 export function buildProjectBrief(
   p: Project,
@@ -33,7 +51,7 @@ export function buildProjectBrief(
         ]),
     '',
     '## Style',
-    style ? `Style: ${style.name}\n${style.prompt}` : 'No style selected. Choose a clean, readable look and keep it consistent.',
+    style ? styleSection(style) : 'No style selected. Choose a clean, readable look and keep it consistent.',
     ...(style?.template
       ? [
           '',

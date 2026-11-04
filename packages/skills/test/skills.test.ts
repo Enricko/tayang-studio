@@ -205,6 +205,21 @@ describe('brief', () => {
     );
     expect(FRAME_CHECK_PROMPT).toContain('Frames checked');
   });
+  it('lists the style notes after the prompt, in order, skipping empty ones', () => {
+    const project = { title: 'Promo', kind: 'promo', format: '9:16', language: 'id' } as Project;
+    const styled: Style = {
+      ...STYLE,
+      notes: { transitions: 'Whip pans', camera: 'Slow push', color: '  ', pacing: 'Fast cuts' },
+    };
+    const b = buildProjectBrief(project, styled, { fps: 30, frameCheck: false });
+    expect(b).toContain(
+      'Style: Bold explainer\nNavy background, white heavy sans.\nCamera: Slow push\nPacing: Fast cuts\nTransitions: Whip pans',
+    );
+    expect(b).not.toContain('Color:');
+    expect(buildProjectBrief(project, STYLE, { fps: 30, frameCheck: false })).toContain(
+      'Style: Bold explainer\nNavy background, white heavy sans.\n',
+    );
+  });
   it('leaves out the frame check when it is off', () => {
     const project = { title: 'Promo', kind: 'promo', format: '9:16', language: 'id' } as Project;
     const b = buildProjectBrief(project, null, { fps: 30, frameCheck: false });

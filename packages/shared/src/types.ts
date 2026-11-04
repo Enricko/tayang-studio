@@ -127,6 +127,8 @@ export interface Style {
   previewVideoUrl?: string | null;
   template?: StyleTemplate | null;
   version?: number;
+  /** Id of the built-in style this one was cloned from (its template is downloaded under that id). */
+  basedOn?: string | null;
 }
 
 export type JobKind = 'build' | 'render' | 'install' | 'study-style' | 'script';
