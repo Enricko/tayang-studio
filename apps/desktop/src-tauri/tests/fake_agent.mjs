@@ -21,6 +21,10 @@
 //
 // session/new reports `modes` (default, acceptEdits, plan, auto); --no-auto-mode leaves "auto"
 // out, --bad-set-mode makes session/set_mode fail, --no-modes omits `modes` altogether.
+// --clamp-auto: set_mode "auto" is accepted but the session ends up in acceptEdits (as claude-agent-acp
+// does on models without Auto support); --slow-set-mode delays every set_mode answer by 150 ms;
+// --bad-set-mode-default fails set_mode "default"; --hang-set-mode never answers set_mode.
+// Every accepted set_mode is followed by a current_mode_update before its answer.
 // With the --hang argument, initialize is never answered.
 // With the --needs-auth argument, session/new fails with -32000 "Authentication required".
 import { createInterface } from "node:readline";
@@ -228,8 +232,20 @@ function handle(msg) {
         send({ id, error: { code: -32602, message: "mode not allowed" } });
         return;
       }
-      currentMode = params.modeId;
-      send({ id, result: {} });
+      if (process.argv.includes("--hang-set-mode")) return;
+      if (process.argv.includes("--bad-set-mode-default") && params.modeId === "default") {
+        send({ id, error: { code: -32603, message: "cannot leave auto" } });
+        return;
+      }
+      setTimeout(
+        () => {
+          currentMode =
+            params.modeId === "auto" && process.argv.includes("--clamp-auto") ? "acceptEdits" : params.modeId;
+          update({ sessionUpdate: "current_mode_update", currentModeId: currentMode });
+          send({ id, result: {} });
+        },
+        process.argv.includes("--slow-set-mode") ? 150 : 0,
+      );
       return;
     case "session/prompt":
       if (params?.sessionId !== sessionId) {

@@ -395,8 +395,9 @@ pub fn wants_skills(chat_id: &str) -> bool {
 /// Without `skills` (internal sessions) there is no `_meta` at all.
 fn session_options(agent: AgentId, plugin: Option<&Path>, skills: bool) -> crate::acp::SessionOptions {
     let env = vec![("TAYANG_STUDIO".to_string(), "1".to_string())];
+    let use_modes = agent == AgentId::Claude;
     if agent != AgentId::Claude || !skills {
-        return crate::acp::SessionOptions { meta: None, env, auto: false };
+        return crate::acp::SessionOptions { meta: None, env, auto: false, use_modes, mode_timeout: None };
     }
     let mut meta = serde_json::json!({ "systemPrompt": { "append": TAYANG_APPEND } });
     if let Some(path) = plugin {
@@ -404,7 +405,7 @@ fn session_options(agent: AgentId, plugin: Option<&Path>, skills: bool) -> crate
             "options": { "plugins": [{ "type": "local", "path": path.to_string_lossy() }] }
         });
     }
-    crate::acp::SessionOptions { meta: Some(meta), env, auto: false }
+    crate::acp::SessionOptions { meta: Some(meta), env, auto: false, use_modes, mode_timeout: None }
 }
 
 /// Starts the chat's agent. Resolves `true` when Claude started without the Tayang

@@ -584,9 +584,10 @@ impl Db {
         )?)
     }
 
-    /// Removes a job from the board. Deleting a job that isn't there is fine.
+    /// Removes a job from the board. A job that is working is never deleted (the board may be
+    /// stale), and deleting a job that isn't there is fine.
     pub fn delete_job(&self, id: &str) -> Result<()> {
-        self.conn().execute("DELETE FROM jobs WHERE id = ?1", [id])?;
+        self.conn().execute("DELETE FROM jobs WHERE id = ?1 AND status <> 'working'", [id])?;
         Ok(())
     }
 
@@ -860,10 +861,15 @@ mod tests {
         };
         db.upsert_job(&job("a")).unwrap();
         db.upsert_job(&job("b")).unwrap();
+        let mut working = job("w");
+        working.status = JobStatus::Working;
+        db.upsert_job(&working).unwrap();
         db.delete_job("a").unwrap();
         db.delete_job("missing").unwrap();
+        // A job that is working again (stale board) is never deleted.
+        db.delete_job("w").unwrap();
         let ids: Vec<_> = db.list_jobs().unwrap().into_iter().map(|j| j.id).collect();
-        assert_eq!(ids, ["b"]);
+        assert!(ids.contains(&"w".to_string()) && ids.contains(&"b".to_string()) && !ids.contains(&"a".to_string()));
     }
 
     #[test]

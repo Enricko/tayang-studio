@@ -242,6 +242,12 @@ pub struct SessionOptions {
     pub env: Vec<(String, String)>,
     /// Start in auto mode: commands run without asking (see `AcpManager::set_auto`).
     pub auto: bool,
+    /// Use the agent's own `auto` mode (`session/set_mode`) for auto mode. Only Claude's
+    /// adapter has one that means "run commands without asking"; every other agent is
+    /// approved by Tayang.
+    pub use_modes: bool,
+    /// How long `session/set_mode` may take before Tayang approves requests itself.
+    pub mode_timeout: Option<Duration>,
 }
 
 /// How auto mode was applied to a session.
@@ -260,6 +266,8 @@ pub enum AutoMethod {
 struct ModeState {
     available: Vec<String>,
     current: Option<String>,
+    /// Bumped by every `current_mode_update` the agent sends.
+    updates: u64,
 }
 
 fn parse_modes(created: &Value) -> ModeState {
@@ -273,6 +281,7 @@ fn parse_modes(created: &Value) -> ModeState {
             })
             .unwrap_or_default(),
         current: modes.get("currentModeId").and_then(Value::as_str).map(str::to_string),
+        updates: 0,
     }
 }
 
@@ -304,6 +313,8 @@ fn spawn_agent(command: &[String], cwd: &Path, env: &[(String, String)]) -> Resu
 // ---------------------------------------------------------------------------
 
 const PROTOCOL_VERSION: u64 = 1;
+/// How long `session/set_mode` may take before Tayang approves requests itself.
+const SET_MODE_TIMEOUT: Duration = Duration::from_secs(10);
 const CRASH_MESSAGE: &str = "The agent stopped unexpectedly";
 /// How long a stopped agent gets to exit after SIGTERM before SIGKILL.
 const KILL_GRACE: Duration = Duration::from_millis(1500);
@@ -409,6 +420,13 @@ struct SessionCore {
     modes: Mutex<ModeState>,
     /// Answer permission requests with allow-once instead of asking the user.
     auto_approve: AtomicBool,
+    /// The user wants auto mode. While the agent's own `auto` mode isn't the current mode
+    /// (it was clamped, or is still switching), Tayang approves requests itself.
+    want_auto: AtomicBool,
+    use_modes: bool,
+    mode_timeout: Duration,
+    /// Serializes `set_auto` calls of this session.
+    auto_lock: tokio::sync::Mutex<()>,
     tools: Mutex<HashMap<String, ToolState>>,
     prompting: AtomicBool,
     stopping: AtomicBool,
@@ -474,7 +492,7 @@ impl SessionCore {
             })
             .unwrap_or_default();
 
-        if self.auto_approve.load(Ordering::SeqCst) {
+        if self.approving() {
             if let Some(allow) = options.iter().find(|o| o.kind == PermissionOptionKind::AllowOnce) {
                 let what = command.clone().unwrap_or_else(|| title.clone());
                 self.rpc.respond(
@@ -548,8 +566,23 @@ impl SessionCore {
                     });
                 }
             }
+            "current_mode_update" => {
+                if let Some(mode) = update.get("currentModeId").and_then(Value::as_str) {
+                    let mut modes = self.modes.lock().unwrap();
+                    modes.current = Some(mode.to_string());
+                    modes.updates += 1;
+                }
+            }
             _ => {}
         }
+    }
+
+    /// Whether Tayang answers permission requests itself: it is asked to, or the user wants
+    /// auto mode but the agent isn't in its own `auto` mode.
+    fn approving(&self) -> bool {
+        self.auto_approve.load(Ordering::SeqCst)
+            || (self.want_auto.load(Ordering::SeqCst)
+                && self.modes.lock().unwrap().current.as_deref() != Some("auto"))
     }
 
     /// Merges a `tool_call` / `tool_call_update` (or a permission's `toolCall`)
@@ -640,19 +673,25 @@ impl SessionCore {
         Ok(())
     }
 
-    /// `session/set_mode`; the error text is the agent's message.
+    /// `session/set_mode`; the error text is the agent's message. Gives up after the
+    /// session's mode timeout.
     async fn set_mode(&self, mode_id: &str) -> Result<()> {
-        self.rpc
-            .request("session/set_mode", json!({ "sessionId": self.session_id(), "modeId": mode_id }))
-            .await
-            .map_err(|e| {
-                if e.is_closed() {
-                    AcpError("The agent is not running".into())
-                } else {
-                    AcpError(e.message)
-                }
-            })?;
-        self.modes.lock().unwrap().current = Some(mode_id.to_string());
+        let before = self.modes.lock().unwrap().updates;
+        let sent = self
+            .rpc
+            .request("session/set_mode", json!({ "sessionId": self.session_id(), "modeId": mode_id }));
+        match tokio::time::timeout(self.mode_timeout, sent).await {
+            Err(_) => return Err(AcpError("The agent did not answer the mode change".into())),
+            Ok(Err(e)) if e.is_closed() => return Err(AcpError("The agent is not running".into())),
+            Ok(Err(e)) => return Err(AcpError(e.message)),
+            Ok(Ok(_)) => {}
+        }
+        // The agent reports the mode it really ended up in (`current_mode_update`); only
+        // assume the requested one when it said nothing.
+        let mut modes = self.modes.lock().unwrap();
+        if modes.updates == before {
+            modes.current = Some(mode_id.to_string());
+        }
         Ok(())
     }
 
@@ -660,37 +699,41 @@ impl SessionCore {
         self.modes.lock().unwrap().available.iter().any(|m| m == mode_id)
     }
 
-    async fn set_auto(&self, on: bool) -> AutoMethod {
-        if on {
-            if self.has_mode("auto") {
-                match self.set_mode("auto").await {
-                    Ok(()) => {
-                        self.auto_approve.store(false, Ordering::SeqCst);
-                        return AutoMethod::Mode;
-                    }
-                    Err(e) => eprintln!(
-                        "[agent {}] auto mode unavailable ({e}); approving requests from Tayang",
-                        self.chat_id
-                    ),
-                }
-            } else {
-                eprintln!(
-                    "[agent {}] agent has no auto mode; approving requests from Tayang",
-                    self.chat_id
-                );
-            }
-            self.auto_approve.store(true, Ordering::SeqCst);
-            AutoMethod::Approve
-        } else {
+    /// Turns auto mode on or off. Calls are serialized per session. Turning it off fails
+    /// (and the caller must stop the session) when the agent can't leave its auto mode.
+    async fn set_auto(&self, on: bool) -> Result<AutoMethod> {
+        let _turn = self.auto_lock.lock().await;
+        if !on {
+            self.want_auto.store(false, Ordering::SeqCst);
             self.auto_approve.store(false, Ordering::SeqCst);
             let was_auto = self.modes.lock().unwrap().current.as_deref() == Some("auto");
-            if was_auto && self.has_mode("default") {
-                if let Err(e) = self.set_mode("default").await {
-                    eprintln!("[agent {}] could not leave auto mode: {e}", self.chat_id);
+            if self.use_modes && was_auto {
+                if !self.has_mode("default") {
+                    return Err(AcpError("The agent has no mode to leave auto mode with".into()));
                 }
+                self.set_mode("default").await?;
             }
-            AutoMethod::Off
+            return Ok(AutoMethod::Off);
         }
+        self.want_auto.store(true, Ordering::SeqCst);
+        if self.use_modes && self.has_mode("auto") {
+            match self.set_mode("auto").await {
+                Ok(()) if self.modes.lock().unwrap().current.as_deref() == Some("auto") => {
+                    self.auto_approve.store(false, Ordering::SeqCst);
+                    return Ok(AutoMethod::Mode);
+                }
+                Ok(()) => eprintln!(
+                    "[agent {}] the agent did not stay in auto mode; approving requests from Tayang",
+                    self.chat_id
+                ),
+                Err(e) => eprintln!(
+                    "[agent {}] auto mode unavailable ({e}); approving requests from Tayang",
+                    self.chat_id
+                ),
+            }
+        }
+        self.auto_approve.store(true, Ordering::SeqCst);
+        Ok(AutoMethod::Approve)
     }
 
     fn session_id(&self) -> &str {
@@ -913,6 +956,10 @@ impl AgentSession {
             session_id: OnceLock::new(),
             modes: Mutex::new(ModeState::default()),
             auto_approve: AtomicBool::new(false),
+            want_auto: AtomicBool::new(false),
+            use_modes: options.use_modes,
+            mode_timeout: options.mode_timeout.unwrap_or(SET_MODE_TIMEOUT),
+            auto_lock: tokio::sync::Mutex::new(()),
             tools: Mutex::new(HashMap::new()),
             prompting: AtomicBool::new(false),
             stopping: AtomicBool::new(false),
@@ -1054,10 +1101,16 @@ impl AcpManager {
 
     /// Turns auto mode on or off for a running session. On: the agent's `auto`
     /// mode when it lists one, otherwise (or when switching fails) Tayang approves
-    /// each request with its allow-once option. Off: asking again.
+    /// each request with its allow-once option. Off: asking again; when the agent can't leave
+    /// its auto mode that is an error and the session is stopped.
     pub async fn set_auto(&self, chat_id: &str, on: bool) -> Result<AutoMethod> {
         let session = self.session(chat_id)?;
-        Ok(session.core.set_auto(on).await)
+        let result = session.core.set_auto(on).await;
+        if result.is_err() {
+            // Fail closed: a session that may still be in auto mode must not outlive the toggle.
+            let _ = self.stop(chat_id).await;
+        }
+        result
     }
 
     /// Sends `session/set_mode`; the error is the agent's message.
