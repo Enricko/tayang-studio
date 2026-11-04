@@ -44,6 +44,13 @@ const Kbd = ({ children }: { children: React.ReactNode }) => (
   </kbd>
 );
 
+/** The largest box of `aspect` (width / height) that fits a stage of this size; null before it has one. */
+export function frameBox(stageWidth: number, stageHeight: number, aspect: number) {
+  if (stageWidth <= 0 || stageHeight <= 0 || !(aspect > 0)) return null;
+  const width = Math.min(stageWidth, stageHeight * aspect);
+  return { width, height: width / aspect };
+}
+
 export function Preview({
   projectId,
   chatId,
@@ -74,6 +81,21 @@ export function Preview({
   const [sending, setSending] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
+
+  // The stage's content size, measured: the frame box is sized from it in px on every platform.
+  const [stage, setStage] = useState<{ width: number; height: number } | null>(null);
+  const observer = useRef<ResizeObserver | null>(null);
+  const stageRef = useCallback((el: HTMLDivElement | null) => {
+    observer.current?.disconnect();
+    observer.current = null;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    observer.current = new ResizeObserver((entries) => {
+      const r = entries[0]?.contentRect;
+      if (!r) return;
+      setStage((s) => (s && s.width === r.width && s.height === r.height ? s : { width: r.width, height: r.height }));
+    });
+    observer.current.observe(el);
+  }, []);
 
   const messages = useChat((s) => s.messages[chatId]) ?? NO_MESSAGES;
   const lastAgent = [...messages].reverse().find((m) => m.role === 'agent');
@@ -196,6 +218,7 @@ export function Preview({
 
   // The frame box takes the video's own shape, as large as the stage allows.
   const aspect = info.width > 0 && info.height > 0 ? info.width / info.height : 9 / 16;
+  const box = stage ? frameBox(stage.width, stage.height, aspect) : null;
   const current = formatTimecode(secAt(frame, fps), fps);
   const length = formatTimecode(durationSec, fps);
 
@@ -211,18 +234,21 @@ export function Preview({
         </div>
       )}
       <div
+        ref={stageRef}
         data-testid="preview-stage"
-        className="flex min-h-40 flex-1 items-center justify-center px-4 pt-4 [container-type:size]"
+        className="flex min-h-40 flex-1 items-center justify-center px-4 pt-4"
       >
         <div
           ref={boxRef}
           data-testid="preview-frame"
           onClick={onBoxClick}
           className={cn(
-            'relative max-h-full overflow-hidden rounded-xl border border-border bg-black',
+            'relative max-h-full max-w-full overflow-hidden rounded-xl border border-border bg-black',
+            !box && 'h-full',
             marking && 'cursor-crosshair',
           )}
-          style={{ aspectRatio: String(aspect), width: `min(100cqw, calc(100cqh * ${aspect}))` }}
+          // Measured: exactly the video's rect, so marks map onto the picture. Until then, CSS keeps the shape.
+          style={box ? { width: box.width, height: box.height } : { aspectRatio: String(aspect) }}
         >
           <video
             ref={videoRef}

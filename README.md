@@ -11,6 +11,8 @@ pnpm dev:desktop
 
 Requires Node 22+, pnpm and Rust. See [docs/development.md](docs/development.md) for the full setup, API deployment and where data lives.
 
+On Linux the app runs on WebKitGTK 2.40 or later. On older versions it still works, but the preview panel always shows its narrow layout (short button labels, no frame chip, no key hints), because those layouts use CSS container queries.
+
 ## Layout
 
 ```

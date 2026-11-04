@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 
@@ -12,7 +12,7 @@ vi.mock('@/lib/ipc', () => ({
 }));
 
 import * as ipc from '@/lib/ipc';
-import { Preview } from '@/screens/preview/Preview';
+import { Preview, frameBox } from '@/screens/preview/Preview';
 import { Scrubber } from '@/screens/preview/Scrubber';
 import { MessageList } from '@/components/MessageList';
 import { setUiLanguage } from '@/i18n';
@@ -173,6 +173,54 @@ describe('Preview layout', () => {
     expect(screen.getByTestId('timecode')).toHaveAttribute('title', 'Frame 1');
     await userEvent.keyboard('{Shift>}{ArrowRight}{/Shift}');
     expect(screen.getByTestId('timecode')).toHaveAttribute('title', 'Frame 31');
+  });
+
+  it('sizes the frame box from the measured stage, keeping the video shape, so marks land on the picture', async () => {
+    let report: ResizeObserverCallback = () => {};
+    const observed: Element[] = [];
+    class MeasuringRO {
+      constructor(cb: ResizeObserverCallback) {
+        report = cb;
+      }
+      observe(el: Element) {
+        observed.push(el);
+      }
+      unobserve() {}
+      disconnect() {}
+    }
+    vi.stubGlobal('ResizeObserver', MeasuringRO);
+    const measure = (width: number, height: number) =>
+      act(() => report([{ contentRect: { width, height } } as ResizeObserverEntry], {} as ResizeObserver));
+    try {
+      render(<Preview projectId="p1" chatId="c1" />);
+      await screen.findByRole('slider');
+      expect(observed).toContain(screen.getByTestId('preview-stage'));
+      const box = screen.getByTestId('preview-frame');
+      // tall stage: the width limits (9:16 video)
+      measure(300, 800);
+      expect(box.style.width).toBe('300px');
+      expect(box.style.height).toBe(`${(300 * 16) / 9}px`);
+      // wide stage: the height limits
+      measure(600, 480);
+      expect(box.style.width).toBe(`${(480 * 9) / 16}px`);
+      expect(box.style.height).toBe('480px');
+      // a mark at the box's middle is the picture's middle
+      box.getBoundingClientRect = () =>
+        ({ left: 0, top: 0, width: 270, height: 480, right: 270, bottom: 480, x: 0, y: 0, toJSON() {} }) as DOMRect;
+      await userEvent.click(screen.getByRole('button', { name: 'Mark a spot' }));
+      fireEvent.click(box, { clientX: 135, clientY: 240 });
+      expect(screen.getByTestId('mark-1').style.left).toBe('50%');
+      expect(screen.getByTestId('mark-1').style.top).toBe('50%');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('frameBox fits the shape inside the stage', () => {
+    expect(frameBox(300, 800, 9 / 16)).toEqual({ width: 300, height: (300 * 16) / 9 });
+    expect(frameBox(600, 480, 9 / 16)).toEqual({ width: 270, height: 480 });
+    expect(frameBox(500, 500, 16 / 9)).toEqual({ width: 500, height: 281.25 });
+    expect(frameBox(0, 500, 9 / 16)).toBeNull();
   });
 
   it('puts the frames-checked chip on the video, top left, not in the hint row', async () => {
