@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/Button';
 import { Sidebar, type SidebarKey } from '@/components/Sidebar';
-import { detectUiLanguage, setUiLanguage } from '@/i18n';
+import { setUiLanguage } from '@/i18n';
+import { systemLanguage } from '@/lib/language';
 import { getSettings, syncStyles, updateSettings } from '@/lib/ipc';
 import { useWindowDrag } from '@/lib/windowDrag';
 import { Agents } from '@/screens/Agents';
@@ -48,14 +49,17 @@ export default function App() {
   const load = useCallback(() => {
     setLoadError(false);
     getSettings()
-      .then((st) => {
-        useApp.getState().setSettings(st);
-        // First run has no saved language: follow the system's, then remember it.
-        setUiLanguage(st.uiLanguage ?? detectUiLanguage());
+      .then(async (st) => {
+        // First run has no saved language: follow the system's. The language is set before the settings
+        // so the first paint is already in it, and the store has it even if saving it fails.
+        const lang = st.uiLanguage ?? (await systemLanguage());
+        setUiLanguage(lang);
+        useApp.getState().setSettings(st.uiLanguage ? st : { ...st, uiLanguage: lang });
         if (!st.uiLanguage) {
           void Promise.resolve()
-            .then(() => updateSettings({ uiLanguage: detectUiLanguage() }))
-            .then((next) => next && useApp.getState().setSettings(next))
+            .then(() => updateSettings({ uiLanguage: lang }))
+            // The user may have picked a language on Welcome meanwhile: that choice stands.
+            .then((next) => next && useApp.getState().settings?.uiLanguage === lang && useApp.getState().setSettings(next))
             .catch(() => {});
         }
         // Built-in styles in the background, like the install ping: never blocks, failures are ignored.

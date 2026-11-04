@@ -5,12 +5,13 @@ import type { Settings } from '@tayang/shared';
 vi.mock('@/lib/ipc', () => ({
   getSettings: vi.fn(),
   updateSettings: vi.fn(),
+  systemLocale: vi.fn(),
   listProjects: vi.fn().mockResolvedValue([]),
   syncStyles: vi.fn().mockResolvedValue({ styles: [], offline: false }),
 }));
 vi.mock('@/lib/events', () => ({ onAgentUpdate: vi.fn(), onPermission: vi.fn() }));
 
-import { getSettings, syncStyles, updateSettings } from '@/lib/ipc';
+import { getSettings, syncStyles, systemLocale, updateSettings } from '@/lib/ipc';
 import App from '@/App';
 import { useApp } from '@/state/app';
 
@@ -49,6 +50,39 @@ describe('App start', () => {
 
 describe('App interface language', () => {
   beforeEach(() => useApp.setState({ route: { name: 'welcome' }, settings: null }));
+
+  it('first run: asks the system (through Rust) for its language, not the webview', async () => {
+    vi.spyOn(navigator, 'language', 'get').mockReturnValue('en-US');
+    vi.mocked(systemLocale).mockResolvedValue('id-ID');
+    vi.mocked(getSettings).mockResolvedValue(base);
+    vi.mocked(updateSettings).mockClear().mockImplementation(async (p) => ({ ...base, ...p }));
+    render(<App />);
+    expect(await screen.findByRole('button', { name: 'Mulai' })).toBeInTheDocument();
+    expect(updateSettings).toHaveBeenCalledWith({ uiLanguage: 'id' });
+    vi.mocked(systemLocale).mockReset();
+    vi.restoreAllMocks();
+  });
+
+  it('first run: keeps the language in the store when saving it fails', async () => {
+    vi.mocked(systemLocale).mockResolvedValue('id_ID');
+    vi.mocked(getSettings).mockResolvedValue(base);
+    vi.mocked(updateSettings).mockClear().mockRejectedValue(new Error('disk full'));
+    render(<App />);
+    expect(await screen.findByRole('button', { name: 'Mulai' })).toBeInTheDocument();
+    expect(useApp.getState().settings?.uiLanguage).toBe('id');
+    vi.mocked(systemLocale).mockReset();
+  });
+
+  it('first run: falls back to the webview language when Rust cannot say', async () => {
+    vi.spyOn(navigator, 'language', 'get').mockReturnValue('id-ID');
+    vi.mocked(systemLocale).mockRejectedValue(new Error('no locale'));
+    vi.mocked(getSettings).mockResolvedValue(base);
+    vi.mocked(updateSettings).mockClear().mockImplementation(async (p) => ({ ...base, ...p }));
+    render(<App />);
+    expect(await screen.findByRole('button', { name: 'Mulai' })).toBeInTheDocument();
+    vi.mocked(systemLocale).mockReset();
+    vi.restoreAllMocks();
+  });
 
   it('first run: follows an Indonesian system language, saves it, and sets <html lang>', async () => {
     vi.spyOn(navigator, 'language', 'get').mockReturnValue('id-ID');

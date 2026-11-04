@@ -23,6 +23,8 @@ export const checkTools = (agent: AgentId) => invoke<ToolStatus[]>('check_tools'
 export const getSettings = () => invoke<Settings>('get_settings');
 export const updateSettings = (patch: Partial<Settings>) =>
   invoke<Settings>('update_settings', { patch });
+/** The operating system's preferred language (`id-ID`), or null when it can't be read. */
+export const systemLocale = () => invoke<string | null>('system_locale');
 export const pickFolder = () => invoke<string | null>('pick_folder');
 
 // ---- usage ----

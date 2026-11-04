@@ -17,6 +17,7 @@ import {
 import { onAgentUpdate, onPermission } from '@/lib/events';
 import { extractA2ui } from '@/a2ui/parse';
 import { agentErrorText, AGENT_NAMES } from '@/lib/agents';
+import { uiLanguage } from '@/i18n';
 import { stored } from '@/lib/stored';
 import { useApp } from '@/state/app';
 import { refreshJobs } from '@/state/jobs';
@@ -373,7 +374,7 @@ export const useChat = create<ChatState>((set, get) => {
         const lead: MessagePart[] = [];
         // Claude loads the Tayang plugin itself (unless the app shipped without it); other agents get
         // the skills as text, once per session.
-        const uiLang = useApp.getState().settings?.uiLanguage;
+        const uiLang = uiLanguage();
         if (fresh && !isInternalChat(chatId)) {
           if (agent !== 'claude' || noPlugin) lead.push({ type: 'text', text: buildSessionPreamble(uiLang) });
           else if (languageHint(uiLang)) lead.push({ type: 'text', text: languageHint(uiLang) });

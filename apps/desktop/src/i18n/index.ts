@@ -40,7 +40,11 @@ export function detectUiLanguage(systemLanguage: string | undefined = globalThis
 /** Switches the interface at once, no restart. */
 export function setUiLanguage(language: UiLanguage): void {
   void i18n.changeLanguage(language);
-  if (typeof document !== 'undefined') document.documentElement.lang = language;
 }
+
+// Whoever changes the language, the page's `lang` follows.
+i18n.on('languageChanged', (l) => {
+  if (typeof document !== 'undefined') document.documentElement.lang = l;
+});
 
 export { type Translations } from './en';
