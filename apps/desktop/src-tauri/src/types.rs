@@ -123,6 +123,16 @@ pub enum ProjectStatus {
     Scheduled,
 }
 
+/// Whether a finished video still waits for the user's approval.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ReviewState {
+    #[default]
+    None,
+    Pending,
+    Approved,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Project {
@@ -136,6 +146,12 @@ pub struct Project {
     pub status: ProjectStatus,
     pub style_id: Option<String>,
     pub scheduled_at: Option<String>,
+    #[serde(default)]
+    pub review_state: ReviewState,
+    #[serde(default)]
+    pub posted_at: Option<String>,
+    #[serde(default)]
+    pub reminded_at: Option<String>,
     pub duration_sec: Option<f64>,
     pub created_at: String,
     pub updated_at: String,

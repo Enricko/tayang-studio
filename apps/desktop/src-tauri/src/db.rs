@@ -37,7 +37,8 @@ CREATE TABLE IF NOT EXISTS projects (
   id TEXT PRIMARY KEY, title TEXT NOT NULL, slug TEXT NOT NULL, folder TEXT NOT NULL,
   kind TEXT NOT NULL, format TEXT NOT NULL, language TEXT NOT NULL, status TEXT NOT NULL,
   style_id TEXT, scheduled_at TEXT, duration_sec REAL,
-  created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+  review_state TEXT NOT NULL DEFAULT 'none', posted_at TEXT, reminded_at TEXT
 );
 CREATE TABLE IF NOT EXISTS chats (
   id TEXT PRIMARY KEY, project_id TEXT, agent_id TEXT NOT NULL,
@@ -62,10 +63,11 @@ CREATE TABLE IF NOT EXISTS jobs (
 // Column lists use camelCase aliases so rows deserialize straight into the serde types.
 const PROJECT_SELECT: &str = "SELECT id, title, slug, folder, kind, format, language, status, \
     style_id AS styleId, scheduled_at AS scheduledAt, duration_sec AS durationSec, \
-    created_at AS createdAt, updated_at AS updatedAt FROM projects";
-const PROJECT_KEYS: [&str; 13] = [
+    created_at AS createdAt, updated_at AS updatedAt, review_state AS reviewState, \
+    posted_at AS postedAt, reminded_at AS remindedAt FROM projects";
+const PROJECT_KEYS: [&str; 16] = [
     "id", "title", "slug", "folder", "kind", "format", "language", "status", "styleId",
-    "scheduledAt", "durationSec", "createdAt", "updatedAt",
+    "scheduledAt", "durationSec", "createdAt", "updatedAt", "reviewState", "postedAt", "remindedAt",
 ];
 const CHAT_SELECT: &str = "SELECT id, project_id AS projectId, agent_id AS agentId, title, \
     created_at AS createdAt FROM chats";
@@ -166,6 +168,7 @@ impl Db {
         conn.execute_batch(SCHEMA)?;
         Self::migrate_styles(&conn)?;
         Self::migrate_jobs(&conn)?;
+        Self::migrate_projects(&conn)?;
         Ok(Db { conn: Mutex::new(conn), home: Mutex::new(Default::default()) })
     }
 
@@ -265,8 +268,9 @@ impl Db {
         let vals = bind_values(p, &PROJECT_KEYS)?;
         self.conn().execute(
             "INSERT INTO projects (id, title, slug, folder, kind, format, language, status, \
-             style_id, scheduled_at, duration_sec, created_at, updated_at) \
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)",
+             style_id, scheduled_at, duration_sec, created_at, updated_at, \
+             review_state, posted_at, reminded_at) \
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)",
             params_from_iter(vals),
         )?;
         Ok(())
@@ -300,7 +304,7 @@ impl Db {
         self.conn().execute(
             "UPDATE projects SET title=?1, slug=?2, folder=?3, kind=?4, format=?5, language=?6, \
              status=?7, style_id=?8, scheduled_at=?9, duration_sec=?10, created_at=?11, \
-             updated_at=?12 WHERE id=?13",
+             updated_at=?12, review_state=?13, posted_at=?14, reminded_at=?15 WHERE id=?16",
             params_from_iter(vals),
         )?;
         Ok(updated)
@@ -435,6 +439,25 @@ impl Db {
         }
         for id in LEGACY_BUILTIN_IDS {
             conn.execute("DELETE FROM styles WHERE id = ?1 AND source = 'builtin'", [id])?;
+        }
+        Ok(())
+    }
+
+    /// Adds the review and posting columns to databases created before them.
+    fn migrate_projects(conn: &Connection) -> Result<()> {
+        let mut stmt = conn.prepare("PRAGMA table_info(projects)")?;
+        let have = stmt
+            .query_map([], |r| r.get::<_, String>(1))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        drop(stmt);
+        for (col, def) in [
+            ("review_state", "TEXT NOT NULL DEFAULT 'none'"),
+            ("posted_at", "TEXT"),
+            ("reminded_at", "TEXT"),
+        ] {
+            if !have.iter().any(|c| c == col) {
+                conn.execute_batch(&format!("ALTER TABLE projects ADD COLUMN {col} {def}"))?;
+            }
         }
         Ok(())
     }
@@ -652,6 +675,9 @@ mod tests {
             status: ProjectStatus::Draft,
             style_id: None,
             scheduled_at: None,
+            review_state: ReviewState::None,
+            posted_at: None,
+            reminded_at: None,
             duration_sec: None,
             created_at: "2026-01-01T00:00:00Z".into(),
             updated_at: updated.into(),
@@ -921,6 +947,46 @@ mod tests {
         drop(db);
         // Opening again must not try to add the column twice.
         assert_eq!(Db::open(&path).unwrap().list_jobs().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn projects_migration_adds_review_and_posting_columns_to_an_old_database() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("tayang.db");
+        {
+            let c = Connection::open(&path).unwrap();
+            c.execute_batch(
+                "CREATE TABLE projects (id TEXT PRIMARY KEY, title TEXT NOT NULL, slug TEXT NOT NULL, \
+                 folder TEXT NOT NULL, kind TEXT NOT NULL, format TEXT NOT NULL, language TEXT NOT NULL, \
+                 status TEXT NOT NULL, style_id TEXT, scheduled_at TEXT, duration_sec REAL, \
+                 created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+                 INSERT INTO projects VALUES ('old','T','t','/w/t','promo','portrait','id','rendered',NULL,'2026-11-05T09:00:00Z',NULL,'c','u');",
+            )
+            .unwrap();
+        }
+        let db = Db::open(&path).unwrap();
+        let p = db.get_project("old").unwrap().unwrap();
+        assert_eq!(p.review_state, ReviewState::None);
+        assert_eq!(p.posted_at, None);
+        assert_eq!(p.reminded_at, None);
+        assert_eq!(p.scheduled_at.as_deref(), Some("2026-11-05T09:00:00Z"));
+        drop(db);
+        // Opening again must not try to add the columns twice.
+        assert_eq!(Db::open(&path).unwrap().list_projects().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn review_and_posting_fields_round_trip() {
+        let db = db();
+        db.insert_project(&project("a", "2026-01-01T00:00:00Z")).unwrap();
+        let u = db
+            .update_project(
+                "a",
+                json!({"reviewState": "pending", "postedAt": "2026-11-05T10:00:00Z", "remindedAt": "2026-11-05T08:00:00Z"}),
+            )
+            .unwrap();
+        assert_eq!(u.review_state, ReviewState::Pending);
+        assert_eq!(db.get_project("a").unwrap().unwrap(), u);
     }
 
     #[test]
