@@ -1,13 +1,14 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
+import tauriConf from '../../src-tauri/tauri.conf.json?raw';
 
 vi.mock('@tauri-apps/plugin-opener', () => ({ openUrl: vi.fn().mockResolvedValue(undefined) }));
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { extractA2ui } from '@/a2ui/parse';
 import { applyMessages, emptySurfaces, type Surface } from '@/a2ui/surface';
 import { getAt, setAt } from '@/a2ui/pointer';
-import { A2uiSurface, type A2uiAction } from '@/a2ui/render';
+import { A2uiSurface, API_IMAGE_ORIGINS, type A2uiAction } from '@/a2ui/render';
 
 const V = 'v0.9';
 const surfaceOf = (messages: unknown[], id = 's1'): Surface => applyMessages(emptySurfaces(), messages).surfaces[id]!;
@@ -242,19 +243,33 @@ describe('A2uiSurface', () => {
     expect(screen.getAllByText("This option can't be shown here")).toHaveLength(2);
   });
 
-  it('only shows https or asset images', () => {
+  it('only shows asset images and the Tayang API, which the CSP allows', () => {
+    const urls = [
+      'https://example.com/a.png',
+      'javascript:alert(1)',
+      'asset://localhost/w/p1/frame.png',
+      'http://asset.localhost/w/p1/frame.png',
+      'https://api.tayang.app/v1/styles/atlas-journey/preview',
+      'https://api.tayang.app.evil.com/a.png',
+      'http://localhost:8787/v1/styles/x/preview',
+    ];
     const s = surfaceOf([
       create,
       comps([
-        { id: 'root', component: 'Column', children: ['a', 'b'] },
-        { id: 'a', component: 'Image', url: 'https://example.com/a.png' },
-        { id: 'b', component: 'Image', url: 'javascript:alert(1)' },
+        { id: 'root', component: 'Column', children: urls.map((_, i) => `i${i}`) },
+        ...urls.map((url, i) => ({ id: `i${i}`, component: 'Image', url })),
       ]),
     ]);
     const { container } = render(<A2uiSurface surface={s} onAction={vi.fn()} />);
-    const imgs = container.querySelectorAll('img');
-    expect(imgs).toHaveLength(1);
-    expect(imgs[0]!.getAttribute('src')).toBe('https://example.com/a.png');
+    expect([...container.querySelectorAll('img')].map((i) => i.getAttribute('src'))).toEqual([
+      'asset://localhost/w/p1/frame.png',
+      'http://asset.localhost/w/p1/frame.png',
+      'https://api.tayang.app/v1/styles/atlas-journey/preview',
+      'http://localhost:8787/v1/styles/x/preview',
+    ]);
+    const csp: string = JSON.parse(tauriConf).app.security.csp;
+    const imgSrc = csp.split(';').find((d) => d.trim().startsWith('img-src'))!.trim().split(/\s+/);
+    for (const origin of API_IMAGE_ORIGINS) expect(imgSrc).toContain(origin);
   });
 
   it('openUrl needs a confirm and https', async () => {

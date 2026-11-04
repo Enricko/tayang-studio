@@ -68,14 +68,17 @@ const isBinding = (v: unknown): v is { path: string } => isObj(v) && typeof v.pa
 /** Paths without a leading slash are relative to the template item being rendered. */
 const absPath = (path: string, base: string) => (path.startsWith('/') ? path : `${base}/${path}`.replace(/\/+/g, '/'));
 
-/** Image URLs the agent may show: https, or the app's own asset protocol. */
+/** The API origins the app's CSP `img-src` allows (tauri.conf.json); keep the two in step. */
+export const API_IMAGE_ORIGINS = ['https://api.tayang.app', 'http://localhost:8787', 'http://127.0.0.1:8787'];
+
+/** Image URLs the agent may show: the app's own asset protocol, or the Tayang API. Nothing else loads. */
 export function safeImageUrl(url: unknown): string | null {
   if (typeof url !== 'string') return null;
   try {
     const u = new URL(url);
-    if (u.protocol === 'https:') return url;
     if (u.protocol === 'asset:') return url;
     if (u.protocol === 'http:' && u.hostname === 'asset.localhost') return url;
+    if (API_IMAGE_ORIGINS.includes(u.origin)) return url;
   } catch {
     /* not a URL */
   }
