@@ -295,6 +295,14 @@ pub struct Settings {
     pub format: VideoFormat,
     pub fps: u32,
     pub onboarded: bool,
+    /// Base URL of the optional Tayang API; empty turns every online feature off.
+    pub api_url: String,
+    /// Random uuid v4 made on first run (empty until then); never derived from the machine.
+    pub install_id: String,
+    /// Sends the anonymous daily install ping.
+    pub share_install_stats: bool,
+    /// RFC 3339 time of the last successful ping.
+    pub last_ping_at: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

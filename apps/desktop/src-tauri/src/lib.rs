@@ -4,6 +4,7 @@ pub mod db;
 pub mod media;
 pub mod projects;
 pub mod system;
+pub mod telemetry;
 pub mod types;
 pub mod usage;
 
@@ -31,6 +32,14 @@ pub fn run() {
                 acp: acp::AcpManager::new(),
                 media: media::MediaTools::from_env_or_path(),
                 home,
+            });
+            // Anonymous install ping, in the background; never blocks the UI, failures are ignored.
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let info = tauri::async_runtime::spawn_blocking(|| system::system_info(&system::RealExec)).await;
+                if let (Ok(info), Some(state)) = (info, handle.try_state::<AppState>()) {
+                    telemetry::ping_if_due(&state.db, &state.home, &info, chrono::Utc::now()).await;
+                }
             });
             Ok(())
         })

@@ -177,7 +177,22 @@ impl Db {
             "format": "9:16",
             "fps": 30,
             "onboarded": false,
+            "apiUrl": crate::telemetry::default_api_url(),
+            "installId": "",
+            "shareInstallStats": true,
+            "lastPingAt": null,
         })
+    }
+
+    /// The install id, made (uuid v4) and saved the first time it's asked for.
+    pub fn ensure_install_id(&self, home: &Path) -> Result<String> {
+        let current = self.get_settings(home).install_id;
+        if !current.is_empty() {
+            return Ok(current);
+        }
+        let id = uuid::Uuid::new_v4().to_string();
+        self.update_settings(json!({ "installId": id }))?;
+        Ok(id)
     }
 
     fn settings_value(&self, home: &Path) -> Result<Value> {
