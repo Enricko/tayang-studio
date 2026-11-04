@@ -239,7 +239,7 @@ fn chrome_found(exec: &dyn Exec, os: OsKind) -> bool {
             let rel = r"Google\Chrome\Application\chrome.exe";
             ["ProgramFiles", "ProgramFiles(x86)", "LocalAppData"]
                 .iter()
-                .filter_map(|var| std::env::var_os(var))
+                .filter_map(std::env::var_os)
                 .any(|base| PathBuf::from(base).join(rel).exists())
         }
         OsKind::Linux => ["google-chrome", "chromium", "chromium-browser"]
