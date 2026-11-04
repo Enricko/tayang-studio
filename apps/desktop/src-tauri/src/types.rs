@@ -636,6 +636,33 @@ mod tests {
         .unwrap();
         assert_eq!(np.style_id, None);
     }
+
+    #[test]
+    fn autopilot_json_matches_the_typescript_shape() {
+        let a: AutopilotInput = serde_json::from_value(json!({
+            "name": "Kopi", "niche": "Coffee", "language": "id", "styleId": "s", "agentId": "claude",
+            "frequency": {"kind": "weekly", "days": [1, 3], "time": "08:00"},
+            "lengthSec": 30, "review": true, "posting": "manual"
+        }))
+        .unwrap();
+        assert_eq!(a.id, None);
+        assert_eq!(a.frequency, AutopilotFrequency::Weekly { days: vec![1, 3], time: "08:00".into() });
+        let daily = serde_json::to_value(AutopilotFrequency::Daily { times: vec!["09:00".into()] }).unwrap();
+        assert_eq!(daily, json!({"kind": "daily", "times": ["09:00"]}));
+        let slot = AutopilotSlot {
+            id: "i".into(),
+            autopilot_id: "a".into(),
+            due_at: "2026-11-05T09:00:00Z".into(),
+            status: SlotStatus::Making,
+            project_id: None,
+            error: None,
+        };
+        assert_eq!(
+            serde_json::to_value(slot).unwrap(),
+            json!({"id": "i", "autopilotId": "a", "dueAt": "2026-11-05T09:00:00Z", "status": "making", "projectId": null, "error": null})
+        );
+        assert!(serde_json::from_value::<AutopilotInput>(json!({"posting": "automatic"})).is_err());
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -671,31 +698,4 @@ pub struct AgentUsage {
     pub model_weekly: Option<ModelUsage>,
     pub updated_at: String,
     pub message: Option<String>,
-
-    #[test]
-    fn autopilot_json_matches_the_typescript_shape() {
-        let a: AutopilotInput = serde_json::from_value(json!({
-            "name": "Kopi", "niche": "Coffee", "language": "id", "styleId": "s", "agentId": "claude",
-            "frequency": {"kind": "weekly", "days": [1, 3], "time": "08:00"},
-            "lengthSec": 30, "review": true, "posting": "manual"
-        }))
-        .unwrap();
-        assert_eq!(a.id, None);
-        assert_eq!(a.frequency, AutopilotFrequency::Weekly { days: vec![1, 3], time: "08:00".into() });
-        let daily = serde_json::to_value(AutopilotFrequency::Daily { times: vec!["09:00".into()] }).unwrap();
-        assert_eq!(daily, json!({"kind": "daily", "times": ["09:00"]}));
-        let slot = AutopilotSlot {
-            id: "i".into(),
-            autopilot_id: "a".into(),
-            due_at: "2026-11-05T09:00:00Z".into(),
-            status: SlotStatus::Making,
-            project_id: None,
-            error: None,
-        };
-        assert_eq!(
-            serde_json::to_value(slot).unwrap(),
-            json!({"id": "i", "autopilotId": "a", "dueAt": "2026-11-05T09:00:00Z", "status": "making", "projectId": null, "error": null})
-        );
-        assert!(serde_json::from_value::<AutopilotInput>(json!({"posting": "automatic"})).is_err());
-    }
 }
