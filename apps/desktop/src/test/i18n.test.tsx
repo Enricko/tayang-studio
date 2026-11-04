@@ -118,7 +118,7 @@ describe('Indonesian interface', () => {
     expect(updateSettings).toHaveBeenCalledWith({ uiLanguage: 'id' });
     expect(useApp.getState().settings?.uiLanguage).toBe('id');
     expect(document.documentElement.lang).toBe('id');
-    expect(screen.getByRole('heading', { level: 2, name: 'Bawaan video' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Default video' })).toBeInTheDocument();
     // and back, with no restart
     await userEvent.click(within(screen.getByRole('tablist', { name: 'Bahasa' })).getByRole('tab', { name: 'English' }));
     expect(await screen.findByRole('heading', { level: 1, name: 'Settings' })).toBeInTheDocument();
@@ -139,7 +139,7 @@ describe('Indonesian interface', () => {
     expect(screen.getByRole('button', { name: 'EN' })).toHaveAttribute('aria-pressed', 'true');
     await userEvent.click(screen.getByRole('button', { name: 'ID' }));
     expect(await screen.findByRole('button', { name: 'Mulai' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Video motion,tanpa pusing nulis prompt.');
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Video motion graphic,tanpa pusing nulis prompt.');
     expect(screen.getByRole('button', { name: 'ID' })).toHaveAttribute('aria-pressed', 'true');
     expect(updateSettings).toHaveBeenCalledWith({ uiLanguage: 'id' });
     expect(document.documentElement.lang).toBe('id');
@@ -166,8 +166,8 @@ describe('Indonesian interface', () => {
     expect(ago('2026-11-04T10:00:00Z', now)).toBe('2 jam lalu');
     expect(ago('2026-11-03T08:00:00Z', now)).toBe('kemarin');
     expect(ago('2026-10-30T12:00:00Z', now)).toBe('30 Okt');
-    expect(formatResetIn('2026-11-04T13:41:00Z', now)).toBe('1j 41m');
-    expect(formatResetIn('2026-11-08T02:00:00Z', now)).toBe('3hr 14j');
+    expect(formatResetIn('2026-11-04T13:41:00Z', now)).toBe('1 j 41 mnt');
+    expect(formatResetIn('2026-11-08T02:00:00Z', now)).toBe('3 hr 14 j');
   });
 });
 
@@ -177,15 +177,15 @@ describe('saved text', () => {
     expect(note).toBe("Switched to Gemini CLI. It starts fresh and doesn't see the earlier messages.");
     expect(localized(note)).toBe(note);
     setUiLanguage('id');
-    expect(localized(note)).toBe('Beralih ke Gemini CLI. Ia mulai dari awal dan tidak melihat pesan sebelumnya.');
+    expect(localized(note)).toBe('Beralih ke Gemini CLI. Agen ini mulai dari nol dan tidak melihat pesan sebelumnya.');
     expect(localized(CLOSED_NOTE)).toBe(id.agents.closedNote);
-    expect(localized(stored('chat.ranWithoutAsking', { what: 'npm test' }))).toBe('Dijalankan tanpa bertanya: npm test');
+    expect(localized(stored('chat.ranWithoutAsking', { what: 'npm test' }))).toBe('Dijalankan tanpa minta izin: npm test');
   });
 
   it('translates a saved text inside another, and leaves anything else alone', () => {
     setUiLanguage('id');
     const nested = stored('chat.templateProblem', { problem: stored('chat.templateGone') });
-    expect(localized(nested)).toBe('Template belum bisa disiapkan: gaya itu sudah tidak ada di pustakamu. Lanjut tanpa template.');
+    expect(localized(nested)).toBe('Template belum bisa disiapkan: gaya itu sudah tidak ada di koleksimu. Lanjut tanpa template.');
     expect(localized('Kenapa rupiah melemah?')).toBe('Kenapa rupiah melemah?');
     expect(localized('Couldn’t reach the agent (code 7)')).toBe('Couldn’t reach the agent (code 7)');
   });

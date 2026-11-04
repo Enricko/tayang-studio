@@ -19,17 +19,19 @@ export function mmss(sec: number | null): string {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
-/** Time until a reset: "42m", "1h 41m", "3d 13h" (Indonesian: "42m", "1j 41m", "3hr 13j"). Past times read "now". */
+/** Time until a reset: "42m", "1h 41m", "3d 13h" (through `Intl`, so Indonesian reads "42 mnt", "1 j 41 mnt"). Past times read "now". */
 export function formatResetIn(iso: string | null, now: Date = new Date()): string {
   if (!iso) return '';
   const ms = new Date(iso).getTime() - now.getTime();
   if (!Number.isFinite(ms)) return '';
   const min = Math.floor(ms / 60000);
   if (min < 1) return i18n.t('common.now');
-  const m = (n: number) => i18n.t('common.unitMinute', { n });
-  const h = (n: number) => i18n.t('common.unitHour', { n });
+  const unit = (n: number, u: 'minute' | 'hour' | 'day') =>
+    new Intl.NumberFormat(locale(), { style: 'unit', unit: u, unitDisplay: 'narrow' }).format(n);
+  const m = (n: number) => unit(n, 'minute');
+  const h = (n: number) => unit(n, 'hour');
   if (min < 60) return m(min);
   if (min < 60 * 24) return `${h(Math.floor(min / 60))} ${m(min % 60)}`;
   const days = Math.floor(min / 1440);
-  return `${i18n.t('common.unitDay', { n: days })} ${h(Math.floor((min % 1440) / 60))}`;
+  return `${unit(days, 'day')} ${h(Math.floor((min % 1440) / 60))}`;
 }

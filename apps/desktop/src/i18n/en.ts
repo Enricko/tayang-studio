@@ -12,9 +12,6 @@ export const en = {
     back: 'Back',
     continue: 'Continue',
     now: 'now',
-    unitMinute: '{{n}}m',
-    unitHour: '{{n}}h',
-    unitDay: '{{n}}d',
   },
   sidebar: {
     main: 'Main',

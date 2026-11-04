@@ -644,7 +644,7 @@ describe('ChatProject', () => {
     expect(saved.some((s) => s.includes('Sign in to Claude Code: open a terminal and run `claude` once, then try again'))).toBe(true);
     await act(async () => setUiLanguage('id'));
     expect(
-      await screen.findByText('Masuk ke Claude Code: buka terminal dan jalankan `claude` sekali, lalu coba lagi'),
+      await screen.findByText('Login ke Claude Code: buka terminal, jalankan `claude` sekali, lalu coba lagi'),
     ).toBeInTheDocument();
   });
 
