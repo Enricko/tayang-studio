@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { FOREGROUND_RULE, buildSessionPreamble, languageHint, sessionFacts, stripFramesToken } from '@tayang/skills';
+import { FOREGROUND_RULE, RENDERS_RULE, buildSessionPreamble, languageHint, sessionFacts, stripFramesToken } from '@tayang/skills';
 import type { AgentId, AgentUpdate, ChatMessage, FileInfo, JobStatus, MessagePart, PermissionRequest } from '@tayang/shared';
 import {
   addMessage,
@@ -708,8 +708,8 @@ export const useChat = create<ChatState>((set, get) => {
           const projectId = opts?.job?.projectId ?? chatJobs.get(chatId)?.projectId;
           const facts = { ...localClock(), ...(projectId ? { projectId } : {}) };
           if (agent !== 'claude' || noPlugin) lead.push({ type: 'text', text: buildSessionPreamble(uiLang, facts) });
-          // The foreground rule too: a project made before it has no copy in its AGENTS.md or CLAUDE.md.
-          else lead.push({ type: 'text', text: [languageHint(uiLang), sessionFacts(facts), FOREGROUND_RULE].filter(Boolean).join('\n\n') });
+          // The foreground and renders/ rules too: a project made before them has no copy in its AGENTS.md or CLAUDE.md.
+          else lead.push({ type: 'text', text: [languageHint(uiLang), sessionFacts(facts), FOREGROUND_RULE, RENDERS_RULE].filter(Boolean).join('\n\n') });
         }
         const recap = pendingRecap.get(chatId);
         if (recap?.text) {

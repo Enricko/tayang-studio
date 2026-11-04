@@ -152,7 +152,7 @@ describe('agent plugin', () => {
       durationSec: null, createdAt: '', updatedAt: '' } as const;
     // With and without a template (a template's pipeline may write elsewhere).
     expect(buildProjectBrief(p, null, { fps: 30, frameCheck: false })).toContain(RENDERS_RULE);
-    const tmpl = { id: 's', name: 'Atlas', template: { url: 'x' } } as never;
+    const tmpl = { id: 's', name: 'Atlas', notes: {}, template: { url: 'x' } } as never;
     expect(buildProjectBrief(p, tmpl, { fps: 30, frameCheck: true })).toContain(RENDERS_RULE);
   });
 });
