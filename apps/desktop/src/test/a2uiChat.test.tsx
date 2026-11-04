@@ -33,6 +33,7 @@ import { BUSY_NOTE, failChatJob, useChat } from '@/state/chat';
 import { needsYou } from '@/state/jobs';
 import { setUiLanguage } from '@/i18n';
 import { renderTiming } from '@/lib/renderCheck';
+import { FOREGROUND_RULE } from '@tayang/skills';
 
 /** What the agent got, without the session facts line a new session starts with. */
 const noFacts = <T,>(parts: T[]): T[] =>
@@ -327,6 +328,12 @@ describe('skills preamble', () => {
     expect(text).toContain('## Scheduling videos');
     expect(text).toContain('time zone is');
     expect(text).not.toContain('Tayang id is');
+  });
+
+  it('tells Claude with the plugin to run renders in the foreground, for projects made before the rule', async () => {
+    await useChat.getState().send('c9', [{ type: 'text', text: 'go' }], { agentId: 'claude', job: { projectId: 'p7', title: 'Jalur Rempah' } });
+    const lead = vi.mocked(agentPrompt).mock.calls[0]![1][0]!;
+    expect(lead.type === 'text' && lead.text).toContain(FOREGROUND_RULE);
   });
 });
 
