@@ -58,6 +58,8 @@ import { Videos } from '@/screens/Videos';
 import { useApp } from '@/state/app';
 import { useStudy } from '@/state/study';
 import { useChat } from '@/state/chat';
+import { setUiLanguage } from '@/i18n';
+import { localized } from '@/lib/stored';
 
 const settings: Settings = {
   workingFolder: '/w/Tayang',
@@ -1355,5 +1357,29 @@ describe('Settings', () => {
   it('says existing projects stay put when the working folder changes', async () => {
     render(<SettingsScreen />);
     expect(await screen.findByText('Existing projects stay where they are')).toBeInTheDocument();
+  });
+});
+
+describe('Style study job notes in another language', () => {
+  it('saves the failed study note in English while the screen is in Indonesian', async () => {
+    vi.mocked(ipc.studyDir).mockResolvedValue('/w/s');
+    setUiLanguage('id');
+    render(<Style />);
+    await userEvent.type(screen.getByLabelText('Link video'), 'https://youtu.be/abc');
+    await userEvent.click(screen.getByRole('button', { name: 'Pelajari video' }));
+    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
+    const chatId = vi.mocked(ipc.agentPrompt).mock.calls[0]![0];
+    act(() => updateHandlers.forEach((h) => h({ chatId, update: { kind: 'error', message: 'Authentication required' } })));
+    const sayIt = 'Login ke Claude Code: buka terminal, jalankan `claude` sekali, lalu coba lagi';
+    expect(await screen.findByText(sayIt)).toBeInTheDocument();
+    await waitFor(() =>
+      expect(vi.mocked(ipc.upsertJob).mock.calls.at(-1)![0]).toMatchObject({
+        status: 'failed',
+        title: 'Study a video for a new style',
+        note: 'Sign in to Claude Code: open a terminal and run `claude` once, then try again',
+      }),
+    );
+    // and the cancelled note, too
+    expect(localized('Sign in to Claude Code: open a terminal and run `claude` once, then try again')).toBe(sayIt);
   });
 });

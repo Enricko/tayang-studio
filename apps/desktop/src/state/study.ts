@@ -183,7 +183,7 @@ export const useStudy = create<StudyState>((set, get) => {
           if (update.toolCallId.startsWith('auto-')) set((s) => ({ ranLog: [...s.ranLog, update.title] }));
           else set((s) => ({ toolCalls: s.toolCalls + (update.status === 'done' ? 1 : 0) }));
         }
-        else if (update.kind === 'error') void fail(agentErrorText(update.message, agent));
+        else if (update.kind === 'error') void fail(agentErrorText(update.message, agent), agentErrorText(update.message, agent, 'en'));
         else if (update.kind === 'done') void finish();
       }),
       onPermission((req) => {
@@ -229,7 +229,10 @@ export const useStudy = create<StudyState>((set, get) => {
         await agentPrompt(studyChatId(studyId), [{ type: 'text', text: buildStudyStylePrompt(url, dir) }]);
       } catch (e) {
         if (gone()) return await abandon();
-        await fail(agentErrorText(e instanceof Error ? e.message : String(e), agentId));
+        {
+          const message = e instanceof Error ? e.message : String(e);
+          await fail(agentErrorText(message, agentId), agentErrorText(message, agentId, 'en'));
+        }
       }
     },
 

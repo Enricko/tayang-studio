@@ -24,14 +24,16 @@ const SIGN_IN_COMMAND: Record<AgentId, string> = {
 /** JSON-RPC -32000 is ACP's "authentication required". */
 const AUTH = /\bauth|sign[ -]?in|log[ -]?in|-32000/i;
 
-/** What the user sees when the agent fails: its own message, or how to sign in. */
-/** `lng: 'en'` gives the English text that gets saved with a chat or job (see `lib/stored.ts`). */
+/** What the user sees when the agent fails: its own message, or how to sign in.
+ * `lng: 'en'` gives the English text that gets saved with a chat or job (see `lib/stored.ts`). */
 export function agentErrorText(message: string | null | undefined, agent: AgentId, lng?: 'en'): string {
   const msg = (message ?? '').trim();
   if (AUTH.test(msg)) {
-    const cmd = SIGN_IN_COMMAND[agent] || i18n.t('errors.yourAgentCommand');
+    const opts = lng ? { lng } : {};
+    const cmd = SIGN_IN_COMMAND[agent] || i18n.t('errors.yourAgentCommand', opts);
     const run = agent === 'custom' ? cmd : `\`${cmd}\``;
-    return i18n.t('errors.signIn', { agent: AGENT_NAMES[agent], command: run, ...(lng && { lng }) });
+    const name = agent === 'custom' ? i18n.t('agents.yourAgent', opts) : AGENT_NAMES[agent];
+    return i18n.t('errors.signIn', { agent: name, command: run, ...opts });
   }
   return msg || i18n.t('errors.agentStopped', lng ? { lng } : {});
 }
