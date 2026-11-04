@@ -658,6 +658,23 @@ describe('review fixes', () => {
     expect(slotAt(at(4, 9))).toMatchObject({ status: 'failed', error: 'Stopped' });
   });
 
+  it('Stop now fails the running slot even when reading slots fails', async () => {
+    respond = (chatId) => (chatId.startsWith('autopilot-') ? { text: topicJson('Read fails') } : { hang: true });
+    await pass(NOW);
+    await vi.waitFor(() => expect(prompts.some((x) => x.chatId.startsWith('chat-'))).toBe(true));
+    const real = vi.mocked(ipc.listSlots).getMockImplementation()!;
+    vi.mocked(ipc.listSlots).mockImplementation(async () => {
+      throw new Error('locked');
+    });
+    try {
+      await stopNow(currentSlot()!);
+      await settle(() => expect(currentSlot()).toBeNull());
+    } finally {
+      vi.mocked(ipc.listSlots).mockImplementation(real);
+    }
+    expect(slotAt(at(4, 9))).toMatchObject({ status: 'failed', error: 'Stopped' });
+  });
+
   it('Stop now leaves a slot alone that is no longer making', async () => {
     db.slots.push({ id: 'd', autopilotId: 'a1', dueAt: at(4, 7), status: 'done', projectId: 'px', error: null });
     await stopNow(clone(slot('d')));

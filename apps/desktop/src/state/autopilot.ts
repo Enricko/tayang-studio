@@ -390,13 +390,15 @@ export async function pass(now: Date = new Date()): Promise<void> {
  */
 export async function stopSlot(slot: AutopilotSlot): Promise<void> {
   const run = running;
-  if (run && run.slot.id === slot.id) {
+  const mine = !!run && run.slot.id === slot.id;
+  if (run && mine) {
     run.stopped = true;
     if (run.chatId) await useChat.getState().cancel(run.chatId);
     run.endTurn?.({ kind: 'stopped' });
   }
-  const now = (await listSlots(slot.dueAt, slot.dueAt)).find((s) => s.id === slot.id);
-  if (now?.status === 'making') await updateSlot(slot.id, { status: 'failed', error: stored('autopilot.slot.stopped') });
+  // The running slot is known to be making; any other is read again first.
+  const making = mine || (await listSlots(slot.dueAt, slot.dueAt)).find((s) => s.id === slot.id)?.status === 'making';
+  if (making) await updateSlot(slot.id, { status: 'failed', error: stored('autopilot.slot.stopped') });
   notifyAutopilotChanged();
 }
 
