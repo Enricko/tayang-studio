@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use tayang_studio_lib::acp::{AcpManager, AcpSink, PromptPart};
+use tayang_studio_lib::acp::{AcpManager, AcpSink, PromptPart, SessionOptions};
 use tayang_studio_lib::types::{AgentUpdate, PermissionOptionKind, PermissionRequest, ToolCallStatus};
 
 #[derive(Default)]
@@ -448,4 +448,43 @@ async fn dropping_the_manager_kills_the_agent() {
     let pids = agent_pids(&manager, &sink).await;
     drop(manager);
     wait_dead(&pids).await;
+}
+
+#[tokio::test]
+async fn session_options_reach_the_agent_as_meta_and_env() {
+    let ws = workspace();
+    let manager = AcpManager::new();
+    let sink = Arc::new(RecordingSink::default());
+    let meta = serde_json::json!({
+        "claudeCode": { "options": { "plugins": [{ "type": "local", "path": "/x/agent-plugin" }] } },
+        "systemPrompt": { "append": "hi" }
+    });
+    let options = SessionOptions {
+        meta: Some(meta.clone()),
+        env: vec![("TAYANG_STUDIO".into(), "1".into())],
+    };
+    manager
+        .start_with("c1", &fake_agent(), &ws.cwd, sink.clone(), options)
+        .await
+        .expect("agent starts");
+    manager.prompt("c1", vec![PromptPart::Text("whoami".into())]).await.unwrap();
+    sink.wait_finished().await;
+    let reply = sink.texts().join("");
+    let json: serde_json::Value = serde_json::from_str(reply.strip_prefix("whoami ").unwrap()).unwrap();
+    assert_eq!(json["meta"], meta);
+    assert_eq!(json["env"], "1");
+    manager.stop("c1").await.unwrap();
+}
+
+#[tokio::test]
+async fn plain_start_sends_no_meta_and_no_env() {
+    let ws = workspace();
+    let (manager, sink) = started("c1", &ws).await;
+    manager.prompt("c1", vec![PromptPart::Text("whoami".into())]).await.unwrap();
+    sink.wait_finished().await;
+    let reply = sink.texts().join("");
+    let json: serde_json::Value = serde_json::from_str(reply.strip_prefix("whoami ").unwrap()).unwrap();
+    assert!(json["meta"].is_null());
+    assert!(json["env"].is_null());
+    manager.stop("c1").await.unwrap();
 }

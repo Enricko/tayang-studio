@@ -332,6 +332,47 @@ fn project_folder_for_chat(state: &AppState, chat_id: &str) -> CmdResult<Option<
     Ok(Some(PathBuf::from(project.folder)))
 }
 
+/// Added to Claude's system prompt for sessions Tayang starts.
+pub const TAYANG_APPEND: &str = "You are running inside Tayang Studio, a desktop app for making motion videos. \
+Follow the tayang-studio and a2ui-options skills. The user sees your replies in a chat that draws A2UI, \
+so offer every choice as an A2UI card.";
+
+/// The Tayang agent plugin in the repo, used when the bundled copy is missing (`tauri dev`).
+fn dev_plugin_dir() -> Option<PathBuf> {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("..")
+        .join("packages")
+        .join("skills")
+        .join("agent-plugin");
+    dir.join(".claude-plugin").join("plugin.json").is_file().then_some(dir)
+}
+
+/// `<resource dir>/agent-plugin` when it holds the plugin, else the repo copy.
+fn plugin_dir(resource_dir: Option<&Path>) -> Option<PathBuf> {
+    resource_dir
+        .map(|r| r.join("agent-plugin"))
+        .filter(|p| p.join(".claude-plugin").join("plugin.json").is_file())
+        .or_else(dev_plugin_dir)
+}
+
+/// Claude gets the plugin and the system prompt through `_meta` (so nothing is
+/// installed in the user's own `~/.claude`); every agent gets `TAYANG_STUDIO=1`.
+fn session_options(agent: AgentId, plugin: Option<&Path>) -> crate::acp::SessionOptions {
+    let env = vec![("TAYANG_STUDIO".to_string(), "1".to_string())];
+    if agent != AgentId::Claude {
+        return crate::acp::SessionOptions { meta: None, env };
+    }
+    let mut meta = serde_json::json!({ "systemPrompt": { "append": TAYANG_APPEND } });
+    if let Some(path) = plugin {
+        meta["claudeCode"] = serde_json::json!({
+            "options": { "plugins": [{ "type": "local", "path": path.to_string_lossy() }] }
+        });
+    }
+    crate::acp::SessionOptions { meta: Some(meta), env }
+}
+
 #[tauri::command]
 pub async fn agent_start(
     app: AppHandle,
@@ -347,9 +388,11 @@ pub async fn agent_start(
     command[0] = found.to_string_lossy().into_owned();
     let folder = project_folder_for_chat(&state, &chat_id)?;
     let cwd = resolve_cwd(&state.working(), &chat_id, folder.as_deref())?;
+    let resource_dir = app.path().resource_dir().ok();
+    let options = session_options(agent_id, plugin_dir(resource_dir.as_deref()).as_deref());
     state
         .acp
-        .start(&chat_id, &command, &cwd, Arc::new(TauriSink(app)))
+        .start_with(&chat_id, &command, &cwd, Arc::new(TauriSink(app)), options)
         .await
         .map_err(err)
 }
@@ -751,6 +794,50 @@ pub async fn install_style_template(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn session_options_for_claude_load_the_plugin() {
+        let plugin = PathBuf::from("/res/agent-plugin");
+        let o = session_options(AgentId::Claude, Some(&plugin));
+        assert_eq!(o.env, vec![("TAYANG_STUDIO".to_string(), "1".to_string())]);
+        let meta = o.meta.unwrap();
+        let path = meta["claudeCode"]["options"]["plugins"][0]["path"].as_str().unwrap();
+        assert_eq!(PathBuf::from(path), plugin);
+        assert_eq!(meta["claudeCode"]["options"]["plugins"][0]["type"], "local");
+        assert_eq!(meta["systemPrompt"]["append"], TAYANG_APPEND);
+    }
+
+    #[test]
+    fn session_options_for_other_agents_only_set_env() {
+        for id in [AgentId::Opencode, AgentId::Codex, AgentId::Gemini] {
+            let o = session_options(id, Some(Path::new("/x")));
+            assert!(o.meta.is_none());
+            assert_eq!(o.env, vec![("TAYANG_STUDIO".to_string(), "1".to_string())]);
+        }
+    }
+
+    #[test]
+    fn claude_without_a_plugin_folder_still_gets_the_append() {
+        let o = session_options(AgentId::Claude, None);
+        let meta = o.meta.unwrap();
+        assert!(meta["claudeCode"].is_null());
+        assert_eq!(meta["systemPrompt"]["append"], TAYANG_APPEND);
+    }
+
+    #[test]
+    fn plugin_dir_prefers_resources_then_dev_folder() {
+        let tmp = tempfile::tempdir().unwrap();
+        assert_eq!(plugin_dir(Some(tmp.path())), dev_plugin_dir());
+        let real = tmp.path().join("agent-plugin").join(".claude-plugin");
+        std::fs::create_dir_all(&real).unwrap();
+        std::fs::write(real.join("plugin.json"), "{}").unwrap();
+        assert_eq!(plugin_dir(Some(tmp.path())), Some(tmp.path().join("agent-plugin")));
+    }
+
+    #[test]
+    fn dev_plugin_folder_exists_in_the_repo() {
+        assert!(dev_plugin_dir().is_some());
+    }
 
     #[test]
     fn timecode_matches_ts() {

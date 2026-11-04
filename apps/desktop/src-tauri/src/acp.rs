@@ -234,12 +234,21 @@ async fn drain_stderr(stderr: impl AsyncRead + Unpin, label: String) {
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
-fn spawn_agent(command: &[String], cwd: &Path) -> Result<Child> {
+/// Extras for one agent session: `meta` is sent as `_meta` on `session/new`,
+/// `env` is set on the agent process.
+#[derive(Debug, Clone, Default)]
+pub struct SessionOptions {
+    pub meta: Option<Value>,
+    pub env: Vec<(String, String)>,
+}
+
+fn spawn_agent(command: &[String], cwd: &Path, env: &[(String, String)]) -> Result<Child> {
     let (program, args) = command
         .split_first()
         .ok_or_else(|| AcpError("No agent command was given".into()))?;
     let mut cmd = Command::new(program);
     cmd.args(args)
+        .envs(env.iter().map(|(k, v)| (k, v)))
         .env("PATH", crate::system::augmented_path())
         .current_dir(cwd)
         .stdin(Stdio::piped())
@@ -533,7 +542,7 @@ impl SessionCore {
         Ok(json!({}))
     }
 
-    async fn handshake(&self) -> Result<()> {
+    async fn handshake(&self, meta: Option<Value>) -> Result<()> {
         let init = self
             .rpc
             .request(
@@ -560,12 +569,13 @@ impl SessionCore {
                 version.map_or_else(|| "unknown".to_string(), |v| v.to_string())
             )));
         }
+        let mut new_params = json!({ "cwd": self.cwd.to_string_lossy(), "mcpServers": [] });
+        if let Some(meta) = meta {
+            new_params["_meta"] = meta;
+        }
         let created = self
             .rpc
-            .request(
-                "session/new",
-                json!({ "cwd": self.cwd.to_string_lossy(), "mcpServers": [] }),
-            )
+            .request("session/new", new_params)
             .await
             .map_err(start_error)?;
         let session_id = created
@@ -767,6 +777,7 @@ pub struct AgentSession {
 }
 
 impl AgentSession {
+    #[allow(clippy::too_many_arguments)]
     async fn launch(
         uid: u64,
         permissions: Arc<Permissions>,
@@ -775,10 +786,11 @@ impl AgentSession {
         cwd: &Path,
         sink: Arc<dyn AcpSink>,
         start_timeout: Duration,
+        options: SessionOptions,
     ) -> Result<AgentSession> {
         let cwd = std::path::absolute(cwd)
             .map_err(|e| AcpError(format!("Invalid working folder {}: {e}", cwd.display())))?;
-        let mut child = spawn_agent(command, &cwd)?;
+        let mut child = spawn_agent(command, &cwd, &options.env)?;
         let (stdin, stdout, stderr) = match (child.stdin.take(), child.stdout.take(), child.stderr.take()) {
             (Some(i), Some(o), Some(e)) => (i, o, e),
             _ => return Err(AcpError("Could not connect to the agent".into())),
@@ -806,7 +818,7 @@ impl AgentSession {
             kill_tx: Mutex::new(Some(kill_tx)),
             supervisor: Mutex::new(Some(supervisor)),
         };
-        match tokio::time::timeout(start_timeout, session.core.handshake()).await {
+        match tokio::time::timeout(start_timeout, session.core.handshake(options.meta)).await {
             Ok(Ok(())) => Ok(session),
             Ok(Err(e)) => {
                 session.shutdown().await;
@@ -890,6 +902,18 @@ impl AcpManager {
         cwd: &Path,
         sink: Arc<dyn AcpSink>,
     ) -> Result<()> {
+        self.start_with(chat_id, command, cwd, sink, SessionOptions::default()).await
+    }
+
+    /// Like `start`, with `_meta` for `session/new` and extra environment variables.
+    pub async fn start_with(
+        &self,
+        chat_id: &str,
+        command: &[String],
+        cwd: &Path,
+        sink: Arc<dyn AcpSink>,
+        options: SessionOptions,
+    ) -> Result<()> {
         let _ = self.stop(chat_id).await;
         let uid = self.next_uid.fetch_add(1, Ordering::SeqCst);
         let session =
@@ -901,6 +925,7 @@ impl AcpManager {
                 cwd,
                 sink,
                 self.start_timeout,
+                options,
             )
             .await?;
         let previous = self

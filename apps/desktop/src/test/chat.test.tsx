@@ -218,6 +218,34 @@ describe('ChatProject', () => {
     await waitFor(() => expect(ipc.agentStart).toHaveBeenCalledWith('c1', 'gemini'));
   });
 
+  it('prefixes the Tayang skills on the first prompt of a non-Claude session only', async () => {
+    const user = userEvent.setup();
+    vi.mocked(ipc.getChat).mockResolvedValue({ ...chat('c1', 'p1'), agentId: 'gemini' });
+    render(<ChatProject chatId="c1" />);
+    await screen.findByText('Kenapa rupiah melemah?', { selector: 'span' });
+    await user.type(screen.getByRole('textbox', { name: 'Message' }), 'one');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalledTimes(1));
+    const first = JSON.stringify(vi.mocked(ipc.agentPrompt).mock.calls[0]![1]);
+    expect(first).toContain('a2ui');
+    expect(first).toContain('one');
+    await emit('c1', { kind: 'done', stopReason: 'end_turn' });
+    await user.type(screen.getByRole('textbox', { name: 'Message' }), 'two');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalledTimes(2));
+    expect(JSON.stringify(vi.mocked(ipc.agentPrompt).mock.calls[1]![1])).not.toContain('a2ui');
+  });
+
+  it('does not prefix the skills for Claude, which loads the plugin', async () => {
+    const user = userEvent.setup();
+    render(<ChatProject chatId="c1" />);
+    await screen.findByText('Kenapa rupiah melemah?', { selector: 'span' });
+    await user.type(screen.getByRole('textbox', { name: 'Message' }), 'one');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalledTimes(1));
+    expect(JSON.stringify(vi.mocked(ipc.agentPrompt).mock.calls[0]![1])).not.toContain('a2ui');
+  });
+
   it('shows an error message and re-enables the composer', async () => {
     const user = userEvent.setup();
     render(<ChatProject chatId="c1" />);
