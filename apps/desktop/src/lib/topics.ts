@@ -2,6 +2,7 @@ import type { Chat, MessagePart, NewProject, Project, Settings, Style, VideoKind
 import { buildProjectBrief, SKIP_FRAME_CHECK, splitTopicJson, topicIdeaFromAction } from '@tayang/skills';
 import { extractA2ui } from '@/a2ui/parse';
 import { createChat, createProject, installStyleTemplate, listStyles, syncStyles, writeBrief } from '@/lib/ipc';
+import { advanceProject } from '@/lib/projectStatus';
 import { i18n } from '@/i18n';
 import { stored } from '@/lib/stored';
 import { useApp } from '@/state/app';
@@ -129,6 +130,8 @@ export async function createTopicProject(idea: TopicIdea, opts: TopicProjectOpts
     try {
       const r = await installStyleTemplate(project.id);
       if (!r.installed) reason = stored('chat.templateFilesMissing');
+      // The style is in place: the project is being built.
+      else await advanceProject(project.id, 'building');
     } catch (e) {
       reason = e instanceof Error ? e.message : String(e);
     }
