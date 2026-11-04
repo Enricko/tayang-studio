@@ -747,7 +747,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let study = tmp.path().join("study");
         std::fs::create_dir_all(&study).unwrap();
-        let hang = script_tool(tmp.path(), "hang.sh", "sleep 30");
+        let hang = script_tool(tmp.path(), "hang.sh", "exec sleep 30");
         let tools = MediaTools { ffmpeg: hang.clone(), ffprobe: hang };
         let source = study.join("source.mp4");
         std::fs::write(&source, "x").unwrap();
