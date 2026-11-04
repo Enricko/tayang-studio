@@ -211,8 +211,8 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
         >
           <ResizeHandle
             label={t('layout.resizePreview')}
-            edge="left"
-            controls="chat-preview"
+            side="left"
+            aria-controls="chat-preview"
             value={fitted.preview}
             min={PREVIEW.min}
             max={fitted.previewMax}

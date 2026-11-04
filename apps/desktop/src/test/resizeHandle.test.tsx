@@ -8,7 +8,7 @@ function setup(props: Partial<React.ComponentProps<typeof ResizeHandle>> = {}) {
   const onResize = vi.fn();
   const onReset = vi.fn();
   render(
-    <ResizeHandle label="Resize" value={300} min={200} max={360} edge="right" onResize={onResize} onReset={onReset} {...props} />,
+    <ResizeHandle label="Resize" value={300} min={200} max={360} side="right" onResize={onResize} onReset={onReset} {...props} />,
   );
   return { onResize, onReset, handle: screen.getByRole('separator', { name: 'Resize' }) };
 }
@@ -47,7 +47,7 @@ describe('ResizeHandle', () => {
   });
 
   it('a handle on the left edge grows its panel with ArrowLeft', async () => {
-    const { handle, onResize } = setup({ edge: 'left' });
+    const { handle, onResize } = setup({ side: 'left' });
     handle.focus();
     await userEvent.keyboard('{ArrowLeft}');
     expect(onResize).toHaveBeenLastCalledWith(316);
@@ -94,7 +94,7 @@ describe('ResizeHandle', () => {
   });
 
   it('a left-edge handle grows its panel when dragged left', () => {
-    const { handle, onResize } = setup({ edge: 'left' });
+    const { handle, onResize } = setup({ side: 'left' });
     handle.setPointerCapture = () => {};
     fireEvent.pointerDown(handle, { clientX: 500, pointerId: 1, button: 0 });
     fireEvent.pointerMove(handle, { clientX: 450, pointerId: 1 });

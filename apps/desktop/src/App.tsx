@@ -156,8 +156,8 @@ function Shell({ route }: { route: Route }) {
         <Sidebar active={SIDEBAR_KEY[route.name] ?? 'chat'} collapsed={fitted.collapsed} />
         <ResizeHandle
           label={t('layout.resizeSidebar')}
-          edge="right"
-          controls="app-sidebar"
+          side="right"
+          aria-controls="app-sidebar"
           value={fitted.sidebar}
           min={SIDEBAR.min}
           ariaMin={SIDEBAR.rail}

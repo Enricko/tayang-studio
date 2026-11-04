@@ -13,7 +13,7 @@ export interface ResizeHandleProps {
   /** The lowest width the panel can show (a collapsed rail), when lower than `min`. */
   ariaMin?: number;
   /** The panel edge the handle sits on: a handle on the left edge grows its panel when moved left. */
-  edge: 'left' | 'right';
+  side: 'left' | 'right';
   /**
    * A new width. From the keyboard it is already within min and max; from a drag it is raw, so a
    * collapsible panel can snap. Drags report at most once per animation frame.
@@ -23,8 +23,8 @@ export interface ResizeHandleProps {
   onReset(): void;
   /** Enter: collapse or restore, for a panel that can. */
   onToggle?(): void;
-  /** The panel it resizes. */
-  controls?: string;
+  /** The id of the panel it resizes. */
+  'aria-controls'?: string;
   className?: string;
 }
 
@@ -38,14 +38,14 @@ export function ResizeHandle({
   min,
   max,
   ariaMin,
-  edge,
+  side,
   onResize,
   onReset,
   onToggle,
-  controls,
+  'aria-controls': controls,
   className,
 }: ResizeHandleProps) {
-  const dir = edge === 'right' ? 1 : -1;
+  const dir = side === 'right' ? 1 : -1;
   const [dragging, setDragging] = useState(false);
   const drag = useRef<{ x: number; w: number; pending: number | null; frame: number } | null>(null);
   const resize = useRef(onResize);
@@ -139,7 +139,7 @@ export function ResizeHandle({
       onLostPointerCapture={() => drag.current && end()}
       className={cn(
         'group absolute inset-y-0 z-20 flex w-2 cursor-col-resize touch-none justify-center outline-none',
-        edge === 'right' ? 'right-0 translate-x-1/2' : 'left-0 -translate-x-1/2',
+        side === 'right' ? 'right-0 translate-x-1/2' : 'left-0 -translate-x-1/2',
         className,
       )}
     >
