@@ -183,18 +183,30 @@ pub fn system_info(exec: &dyn Exec) -> SystemInfo {
     SystemInfo { os, os_version: os_version(exec, os), package_manager }
 }
 
+type AgentDef = (AgentId, &'static str, &'static str, &'static [&'static str]);
+
+const AGENT_DEFS: [AgentDef; 4] = [
+    (
+        AgentId::Claude,
+        "Claude Code",
+        "claude",
+        &["npx", "-y", "@agentclientprotocol/claude-agent-acp"],
+    ),
+    (AgentId::Opencode, "OpenCode", "opencode", &["opencode", "acp"]),
+    (AgentId::Gemini, "Gemini CLI", "gemini", &["gemini", "--experimental-acp"]),
+    (AgentId::Codex, "Codex", "codex", &["npx", "-y", "@zed-industries/codex-acp"]),
+];
+
+/// The command that starts this agent in ACP mode; `None` for `custom`.
+pub fn acp_command(id: AgentId) -> Option<Vec<String>> {
+    AGENT_DEFS
+        .iter()
+        .find(|d| d.0 == id)
+        .map(|d| d.3.iter().map(|s| s.to_string()).collect())
+}
+
 pub fn detect_agents(exec: &dyn Exec) -> Vec<AgentInfo> {
-    let defs: [(AgentId, &str, &str, &[&str]); 4] = [
-        (
-            AgentId::Claude,
-            "Claude Code",
-            "claude",
-            &["npx", "-y", "@agentclientprotocol/claude-agent-acp"],
-        ),
-        (AgentId::Opencode, "OpenCode", "opencode", &["opencode", "acp"]),
-        (AgentId::Gemini, "Gemini CLI", "gemini", &["gemini", "--experimental-acp"]),
-        (AgentId::Codex, "Codex", "codex", &["npx", "-y", "@zed-industries/codex-acp"]),
-    ];
+    let defs = AGENT_DEFS;
     defs.iter()
         .map(|(id, name, bin, acp)| {
             let installed = exec.which(bin).is_some();
