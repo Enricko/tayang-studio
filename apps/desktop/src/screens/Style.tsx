@@ -436,7 +436,10 @@ function Detail({
       await deleteStyle(style.id);
       onDeleted(style.id);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      const message = e instanceof Error ? e.message : String(e);
+      // Rust refuses while an autopilot uses the style, naming it.
+      const inUse = /^style-in-use:([\s\S]+)$/.exec(message);
+      setError(inUse ? t('style.inUse', { name: inUse[1]! }) : message);
     }
   };
 

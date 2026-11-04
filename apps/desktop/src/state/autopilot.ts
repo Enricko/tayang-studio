@@ -194,7 +194,9 @@ async function pickTopic(run: Run): Promise<AutopilotTopic> {
   useChat.setState((s) => ({ messages: { ...s.messages, [chatId]: [] } }));
 
   const titles = await previousTitles(a.id);
-  const style = (await listStyles().catch(() => [])).find((s) => s.id === a.styleId);
+  const style = (await listStyles()).find((s) => s.id === a.styleId);
+  // Never a video without the look the user picked.
+  if (!style) throw new SlotError(stored('autopilot.slot.styleMissing'));
   const used = new Set(titles.map(sameTitle));
   const ask = async (text: string) => {
     const reply = replyOf(await turn(run, chatId, [{ type: 'text', text }], { agentId: a.agentId }));
@@ -203,7 +205,7 @@ async function pickTopic(run: Run): Promise<AutopilotTopic> {
   };
   const first = buildAutopilotTopicPrompt({
     niche: a.niche,
-    style: style ?? { name: a.styleId },
+    style,
     language: a.language,
     lengthSec: a.lengthSec,
     previousTitles: titles,

@@ -564,7 +564,8 @@ mod tests {
         let z = zip_bytes(&[("tayang.json", b"{}"), ("src/index.ts", b"export {}")]);
         let (s, mut f) = setup(&z, &z);
         clone_of_atlas(&s, Some("atlas"), StyleTemplate { sha256: sha256_hex(&z), size: z.len() as u64, version: 1 });
-        s.db.replace_builtin_styles(&[]).unwrap();
+        // Sync now keeps an original a clone is based on; an older version could have dropped it.
+        s.db.remove_style_row("atlas");
         f.routes.insert("https://api.test/v1/styles/mine-9/template".into(), (200, z.clone()));
         // Not a built-in any more: its own id is asked, and the snapshot hash is checked.
         assert!(install_template(&s.db, &f, "https://api.test", &s.templates, "p1").await.unwrap());

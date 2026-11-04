@@ -647,6 +647,19 @@ describe('Style popup', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
+  it('Delete of a style an autopilot uses is refused and says which autopilot, in the user language', async () => {
+    const copied: StyleT = { id: 'c1', name: 'Zoom cut', source: 'copied', sourceUrl: null, notes: {}, prompt: 'Zoom.', createdAt: '2026-11-04T00:00:00Z' };
+    vi.mocked(ipc.syncStyles).mockResolvedValue({ styles: [atlas], offline: false });
+    vi.mocked(ipc.listStyles).mockResolvedValue([atlas, copied]);
+    vi.mocked(ipc.deleteStyle).mockRejectedValue(new Error('style-in-use:Kopi pagi'));
+    setUiLanguage('id');
+    render(<Style />);
+    const dialog = await openCard('Zoom cut');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Hapus' }));
+    expect(await within(dialog).findByText('Gaya ini dipakai autopilot Kopi pagi. Ganti gaya autopilot itu dulu.')).toBeInTheDocument();
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+
   it('Delete moves focus to the neighbouring card', async () => {
     const copied: StyleT = { id: 'c1', name: 'Zoom cut', source: 'copied', sourceUrl: null, notes: {}, prompt: 'Zoom.', createdAt: '2026-11-04T00:00:00Z' };
     vi.mocked(ipc.syncStyles).mockResolvedValue({ styles: [atlas], offline: false });

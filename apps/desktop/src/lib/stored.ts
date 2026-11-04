@@ -33,6 +33,7 @@ export const STORED_KEYS = [
   'autopilot.slot.noRender',
   'autopilot.slot.timedOut',
   'autopilot.slot.busy',
+  'autopilot.slot.styleMissing',
   'schedule.agent.done',
   'schedule.agent.failed',
   'schedule.agent.count',

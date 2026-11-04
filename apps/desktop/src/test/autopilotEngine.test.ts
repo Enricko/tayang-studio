@@ -407,6 +407,15 @@ describe('making a video', () => {
     expect(slotAt(at(5, 9)).status).toBe('done');
   });
 
+  it("fails the slot clearly when the autopilot's style is missing, and builds nothing without it", async () => {
+    vi.mocked(ipc.listStyles).mockResolvedValue([]);
+    await runOnce();
+    expect(slotAt(at(4, 9))).toMatchObject({ status: 'failed', error: "This autopilot's style is missing", projectId: null });
+    expect(ipc.createProject).not.toHaveBeenCalled();
+    setUiLanguage('id');
+    expect(localized(slotAt(at(4, 9)).error!)).toBe('Gaya autopilot ini sudah tidak ada');
+  });
+
   it('asks to render once more when the turn ends without a file, then fails and keeps the project', async () => {
     respond = (chatId) => (chatId.startsWith('autopilot-') ? { text: topicJson('No file') } : { text: 'All done' });
     await runOnce();

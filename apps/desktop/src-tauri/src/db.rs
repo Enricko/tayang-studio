@@ -11,6 +11,10 @@ use std::sync::Mutex;
 #[derive(Debug)]
 pub struct DbError(pub String);
 
+/// `delete_style`'s refusal while an autopilot uses the style, followed by that autopilot's name; the
+/// UI says it in the user's language.
+pub const STYLE_IN_USE: &str = "style-in-use:";
+
 impl std::fmt::Display for DbError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.0)
@@ -575,12 +579,19 @@ impl Db {
     pub fn replace_builtin_styles(&self, styles: &[Style]) -> Result<()> {
         let mut conn = self.conn();
         let tx = conn.transaction()?;
-        tx.execute("DELETE FROM styles WHERE source = 'builtin'", [])?;
+        // A built-in the API no longer offers stays while an autopilot uses it or a clone is based on it:
+        // a style in use never vanishes.
+        tx.execute(
+            "DELETE FROM styles WHERE source = 'builtin' \
+             AND id NOT IN (SELECT style_id FROM autopilots) \
+             AND id NOT IN (SELECT based_on FROM styles WHERE based_on IS NOT NULL)",
+            [],
+        )?;
         for s in styles {
             let existing: Option<String> =
                 tx.query_row("SELECT source FROM styles WHERE id = ?1", [&s.id], |r| r.get(0)).optional()?;
-            if existing.is_some() {
-                // Only built-in rows were deleted above, so this one belongs to the user.
+            if existing.as_deref().is_some_and(|src| src != "builtin") {
+                // Not a built-in: this one belongs to the user.
                 eprintln!("style sync: skipping built-in \"{}\", a style of that id already exists", s.id);
                 continue;
             }
@@ -699,8 +710,21 @@ impl Db {
         if Self::is_builtin(&conn, id)? {
             return Err(DbError("built-in styles cannot be deleted".into()));
         }
+        // An autopilot would quietly lose its look: the user changes that autopilot first.
+        let user: Option<String> = conn
+            .query_row("SELECT name FROM autopilots WHERE style_id = ?1 ORDER BY created_at LIMIT 1", [id], |r| r.get(0))
+            .optional()?;
+        if let Some(name) = user {
+            return Err(DbError(format!("{STYLE_IN_USE}{name}")));
+        }
         conn.execute("DELETE FROM styles WHERE id = ?1", [id])?;
         Ok(())
+    }
+
+    /// Tests: a style row gone the way older versions could lose it (a built-in dropped by sync).
+    #[cfg(test)]
+    pub fn remove_style_row(&self, id: &str) {
+        self.conn().execute("DELETE FROM styles WHERE id = ?1", [id]).unwrap();
     }
 
     fn is_builtin(conn: &Connection, id: &str) -> Result<bool> {
@@ -1129,12 +1153,13 @@ mod tests {
         };
         db.save_style(&clone).unwrap();
         assert_eq!(db.get_style("mine-1").unwrap().unwrap(), clone);
-        // Editing keeps every field; a later sync neither touches nor deletes it.
+        // Editing keeps every field; a later sync neither touches nor deletes it, nor the original
+        // it is based on (a style in use never vanishes).
         let edited = Style { name: "Mine".into(), ..clone.clone() };
         db.save_style(&edited).unwrap();
         db.replace_builtin_styles(&[]).unwrap();
         assert_eq!(db.get_style("mine-1").unwrap().unwrap(), edited);
-        assert!(db.get_style("atlas").unwrap().is_none());
+        assert!(db.get_style("atlas").unwrap().is_some());
     }
 
     #[test]
@@ -1469,6 +1494,37 @@ mod tests {
         let kept: Vec<_> = left.iter().map(|s| (s.autopilot_id.as_str(), s.status)).collect();
         assert_eq!(kept, vec![(b.id.as_str(), SlotStatus::Planned), (a.id.as_str(), SlotStatus::Done)]);
         assert_eq!(db.list_projects().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_style_an_autopilot_uses_cannot_be_deleted() {
+        let db = adb();
+        db.save_autopilot(&input("Kopi pagi")).unwrap();
+        assert_eq!(db.delete_style("s1").unwrap_err().0, "style-in-use:Kopi pagi");
+        assert!(db.get_style("s1").unwrap().is_some());
+        db.delete_style("s2").unwrap();
+    }
+
+    #[test]
+    fn sync_keeps_a_built_in_an_autopilot_or_a_clone_still_uses() {
+        let db = adb();
+        db.replace_builtin_styles(&[builtin("used", false), builtin("cloned", false), builtin("gone", false)]).unwrap();
+        let mut i = input("A");
+        i.style_id = "used".into();
+        db.save_autopilot(&i).unwrap();
+        db.save_style(&Style { id: "mine-1".into(), source: StyleSource::Mine, based_on: Some("cloned".into()), ..builtin("x", false) })
+            .unwrap();
+        // The API stops offering all three: only the unused one goes.
+        db.replace_builtin_styles(&[builtin("new", false)]).unwrap();
+        for id in ["used", "cloned", "new", "mine-1"] {
+            assert!(db.get_style(id).unwrap().is_some(), "{id}");
+        }
+        assert!(db.get_style("gone").unwrap().is_none());
+        // Offered again later, the kept row is updated in place.
+        let mut back = builtin("used", true);
+        back.name = "Used v2".into();
+        db.replace_builtin_styles(&[back]).unwrap();
+        assert_eq!(db.get_style("used").unwrap().unwrap().name, "Used v2");
     }
 
     #[test]
