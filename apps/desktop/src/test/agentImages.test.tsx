@@ -243,12 +243,41 @@ describe('the image strip', () => {
     expect(first).toHaveFocus();
   });
 
-  it('shows a muted tile, never a broken image, when the file is gone', () => {
+  it('tries once more, then shows a muted tile, never a broken image, when the file is gone', () => {
     render(<MessageList messages={[user, agent(2)]} streaming={false} />);
     const strip = screen.getByRole('group', { name: 'Images the agent made' });
+    // A file still being written can fail once: it is read again before giving up.
+    fireEvent.error(within(strip).getAllByRole('img')[0]!);
+    expect(within(strip).getAllByRole('img')[0]!.getAttribute('src')).toMatch(/[?&]r=1$/);
+    expect(within(strip).queryByText('Image no longer available')).toBeNull();
     fireEvent.error(within(strip).getAllByRole('img')[0]!);
     expect(within(strip).getByText('Image no longer available')).toBeInTheDocument();
     expect(within(strip).getAllByRole('img')).toHaveLength(1);
+  });
+
+  it('returns focus to the thumbnail after a mouse click opened the lightbox', async () => {
+    render(<MessageList messages={[user, agent(2)]} streaming={false} />);
+    const second = screen.getByRole('button', { name: 'Open image s2.png' });
+    // WebKit does not focus a button on a mouse click.
+    fireEvent.click(second);
+    expect(second).not.toHaveFocus();
+    await screen.findByRole('dialog', { name: 's2.png' });
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(second).toHaveFocus();
+  });
+
+  it('steps from a missing image straight to the next one', async () => {
+    render(<MessageList messages={[user, agent(2)]} streaming={false} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Open image s1.png' }));
+    const dialog = await screen.findByRole('dialog', { name: 's1.png' });
+    fireEvent.error(within(dialog).getByRole('img'));
+    fireEvent.error(within(dialog).getByRole('img'));
+    expect(within(dialog).getByText('Image no longer available')).toBeInTheDocument();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Next image' }));
+    const next = screen.getByRole('dialog', { name: 's2.png' });
+    expect(within(next).queryByText('Image no longer available')).toBeNull();
+    expect(within(next).getByRole('img')).toHaveAttribute('alt', 's2.png');
   });
 
   it('reads in Indonesian', async () => {

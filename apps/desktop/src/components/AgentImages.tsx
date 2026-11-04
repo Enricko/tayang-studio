@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronLeft, ChevronRight, FolderOpen, ImageOff } from 'lucide-react';
 import { revealItemInDir } from '@tauri-apps/plugin-opener';
@@ -17,6 +17,21 @@ export const isImagePart = (p: MessagePart): p is ImagePart => p.type === 'file'
 /** The file's URL, new again whenever the file was rewritten. */
 const srcOf = (p: ImagePart) => `${assetUrl(p.path)}${p.modifiedAt ? `?v=${encodeURIComponent(p.modifiedAt)}` : ''}`;
 
+/**
+ * The image's URL and whether it is gone. A file still being written can fail to decode, so a failed
+ * image is read once more (`r=1`) before it counts as gone. A new file starts over at once.
+ */
+function useImage(part: ImagePart) {
+  const base = srcOf(part);
+  const [failed, setFailed] = useState({ base, times: 0 });
+  const times = failed.base === base ? failed.times : 0;
+  return {
+    src: times ? `${base}${base.includes('?') ? '&' : '?'}r=1` : base,
+    gone: times > 1,
+    onError: () => setFailed({ base, times: times + 1 }),
+  };
+}
+
 function Missing({ className = '' }: { className?: string }) {
   const { t } = useTranslation();
   return (
@@ -27,16 +42,14 @@ function Missing({ className = '' }: { className?: string }) {
   );
 }
 
-function Thumb({ part, onOpen }: { part: ImagePart; onOpen(): void }) {
+function Thumb({ part, onOpen }: { part: ImagePart; onOpen(thumb: HTMLElement): void }) {
   const { t } = useTranslation();
-  const [gone, setGone] = useState(false);
-  const src = srcOf(part);
-  useEffect(() => setGone(false), [src]);
+  const { src, gone, onError } = useImage(part);
   if (gone) return <Missing className="h-24 w-24" />;
   return (
     <button
       type="button"
-      onClick={onOpen}
+      onClick={(e) => onOpen(e.currentTarget)}
       aria-label={t('chat.images.open', { name: part.name })}
       title={part.name}
       className="cursor-pointer overflow-hidden rounded-md border border-border bg-card p-0"
@@ -46,7 +59,7 @@ function Thumb({ part, onOpen }: { part: ImagePart; onOpen(): void }) {
         alt={part.name}
         loading="lazy"
         decoding="async"
-        onError={() => setGone(true)}
+        onError={onError}
         className="block h-24 w-auto max-w-[180px] min-w-12 object-cover"
       />
     </button>
@@ -63,8 +76,9 @@ export function ImageStrip({ parts, all }: { parts: ImagePart[]; all: ImagePart[
   const [open, setOpen] = useState<number | null>(null);
   /** The thumbnail that opened the lightbox: focus goes back to it when it closes. */
   const opener = useRef<HTMLElement | null>(null);
-  const openAt = (i: number) => {
-    opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  // The clicked thumbnail itself: WebKit does not focus a button on a mouse click.
+  const openAt = (i: number, thumb: HTMLElement) => {
+    opener.current = thumb;
     setOpen(i);
   };
   const shown = expanded ? parts : parts.slice(0, VISIBLE);
@@ -72,7 +86,7 @@ export function ImageStrip({ parts, all }: { parts: ImagePart[]; all: ImagePart[
   return (
     <div role="group" aria-label={t('chat.images.label')} className="flex flex-wrap gap-2">
       {shown.map((p) => (
-        <Thumb key={p.path} part={p} onOpen={() => openAt(all.indexOf(p))} />
+        <Thumb key={p.path} part={p} onOpen={(thumb) => openAt(all.indexOf(p), thumb)} />
       ))}
       {more > 0 && (
         <button
@@ -101,9 +115,7 @@ function Lightbox({
   returnFocus(): void;
 }) {
   const { t } = useTranslation();
-  const [gone, setGone] = useState(false);
   const part = index === null ? null : images[index];
-  useEffect(() => setGone(false), [part]);
   const step = (d: number) => index !== null && images.length > 1 && onIndex((index + d + images.length) % images.length);
   return (
     <Dialog open={!!part} onOpenChange={(o) => !o && onIndex(null)}>
@@ -122,11 +134,7 @@ function Lightbox({
           <>
             <DialogTitle className="max-w-full truncate pr-8 text-[14px] font-medium">{part.name}</DialogTitle>
             <DialogDescription className="sr-only">{t('chat.images.position', { n: index! + 1, count: images.length })}</DialogDescription>
-            {gone ? (
-              <Missing className="h-40 w-64" />
-            ) : (
-              <img src={srcOf(part)} alt={part.name} onError={() => setGone(true)} className="max-h-[75vh] max-w-full object-contain" />
-            )}
+            <FullImage part={part} />
             <div className="flex items-center gap-2">
               {images.length > 1 && (
                 <Button variant="ghost" size="icon" aria-label={t('chat.images.previous')} onClick={() => step(-1)} className="size-8 px-0">
@@ -148,4 +156,10 @@ function Lightbox({
       </DialogContent>
     </Dialog>
   );
+}
+
+function FullImage({ part }: { part: ImagePart }) {
+  const { src, gone, onError } = useImage(part);
+  if (gone) return <Missing className="h-40 w-64" />;
+  return <img src={src} alt={part.name} onError={onError} className="max-h-[75vh] max-w-full object-contain" />;
 }
