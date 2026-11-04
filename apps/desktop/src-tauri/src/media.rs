@@ -378,11 +378,41 @@ fn build_into(tools: &MediaTools, source: &Path, dir: &Path, limit: std::time::D
     Some(clip_ok)
 }
 
+/// `<working>/.tayang/style-study`, only when it is the real thing: the working folder is absolute, and neither
+/// `.tayang` nor `style-study` is a symlink (so nothing can point the deletes elsewhere). `Ok(None)` when it
+/// doesn't exist yet.
+fn confined_study_root(working: &Path) -> Result<Option<PathBuf>> {
+    if !working.is_absolute() {
+        return Err("The working folder must be an absolute path".into());
+    }
+    let tayang = working.join(".tayang");
+    let root = tayang.join("style-study");
+    for p in [&tayang, &root] {
+        match std::fs::symlink_metadata(p) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(e) => return Err(e.to_string()),
+            Ok(m) if m.file_type().is_symlink() || !m.is_dir() => {
+                return Err(format!("{} is not a plain folder", p.display()))
+            }
+            Ok(_) => {}
+        }
+    }
+    let want = std::fs::canonicalize(working).map_err(|e| e.to_string())?.join(".tayang").join("style-study");
+    if std::fs::canonicalize(&root).map_err(|e| e.to_string())? != want {
+        return Err("The study folder is not where it should be".into());
+    }
+    Ok(Some(root))
+}
+
 /// Deletes one study's folder `<working>/.tayang/style-study/<id>` (the download, frames, everything). The id
-/// is validated and the path must stay inside the working folder; a missing folder is fine, a symlink is
-/// removed as a link without following it.
+/// is validated and the study root must be the real folder inside the working folder; a missing folder is
+/// fine, a symlinked study folder is removed as a link without following it.
 pub fn remove_study_dir(working: &Path, study_id: &str) -> Result<()> {
-    let dir = crate::commands::study_path(working, study_id)?;
+    if !valid_style_id(study_id) {
+        return Err("That style study id isn't valid".into());
+    }
+    let Some(root) = confined_study_root(working)? else { return Ok(()) };
+    let dir = root.join(study_id);
     match std::fs::symlink_metadata(&dir) {
         Err(_) => Ok(()),
         Ok(m) if m.file_type().is_symlink() => std::fs::remove_file(&dir).map_err(|e| e.to_string()),
@@ -390,14 +420,18 @@ pub fn remove_study_dir(working: &Path, study_id: &str) -> Result<()> {
     }
 }
 
-/// Startup sweep: nothing can be running when the app starts, so every leftover study folder goes.
+/// Startup sweep: nothing can be running when the app starts, so every leftover study folder goes. Only direct
+/// children named like study ids are touched, and nothing at all unless the study root is confined.
 pub fn sweep_study_dirs(working: &Path) {
-    let root = working.join(".tayang").join("style-study");
+    let Ok(Some(root)) = confined_study_root(working) else { return };
     let Ok(rd) = std::fs::read_dir(&root) else { return };
     for e in rd.flatten() {
+        if !valid_style_id(&e.file_name().to_string_lossy()) {
+            continue;
+        }
         let p = e.path();
-        let is_dir = e.file_type().map(|t| t.is_dir()).unwrap_or(false);
-        let _ = if is_dir { std::fs::remove_dir_all(&p) } else { std::fs::remove_file(&p) };
+        let Ok(t) = e.file_type() else { continue };
+        let _ = if t.is_dir() { std::fs::remove_dir_all(&p) } else { std::fs::remove_file(&p) };
     }
 }
 
@@ -825,6 +859,99 @@ mod tests {
         assert!(outside.join("keep.txt").exists());
     }
 
+    /// `<tmp>/work` with `.tayang`, and a victim folder with a file that must survive.
+    #[cfg(unix)]
+    fn confinement_fixture() -> (tempfile::TempDir, PathBuf, PathBuf) {
+        let tmp = tempfile::tempdir().unwrap();
+        let work = tmp.path().join("work");
+        std::fs::create_dir_all(&work).unwrap();
+        let victim = tmp.path().join("victim");
+        std::fs::create_dir_all(victim.join("study1")).unwrap();
+        std::fs::write(victim.join("precious.txt"), "x").unwrap();
+        std::fs::write(victim.join("study1").join("a.txt"), "x").unwrap();
+        (tmp, work, victim)
+    }
+
+    #[cfg(unix)]
+    fn assert_untouched(victim: &Path) {
+        assert!(victim.join("precious.txt").exists() && victim.join("study1").join("a.txt").exists(), "victim was touched");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlinked_tayang_folder_is_never_swept_or_followed() {
+        let (_t, work, victim) = confinement_fixture();
+        std::fs::create_dir_all(victim.join("style-study").join("study1")).unwrap();
+        std::fs::write(victim.join("style-study").join("study1").join("b.txt"), "x").unwrap();
+        std::os::unix::fs::symlink(&victim, work.join(".tayang")).unwrap();
+        sweep_study_dirs(&work);
+        assert!(remove_study_dir(&work, "study1").is_err());
+        assert_untouched(&victim);
+        assert!(victim.join("style-study").join("study1").join("b.txt").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlinked_study_root_is_never_swept_or_followed() {
+        for target in ["victim", "work"] {
+            let (_t, work, victim) = confinement_fixture();
+            std::fs::create_dir_all(work.join(".tayang")).unwrap();
+            let goal = if target == "victim" { victim.clone() } else { work.clone() };
+            std::os::unix::fs::symlink(&goal, work.join(".tayang").join("style-study")).unwrap();
+            if target == "work" {
+                std::fs::create_dir_all(work.join("study1")).unwrap();
+                std::fs::write(work.join("study1").join("project.txt"), "x").unwrap();
+            }
+            sweep_study_dirs(&work);
+            assert!(remove_study_dir(&work, "study1").is_err(), "{target}");
+            assert_untouched(&victim);
+            if target == "work" {
+                assert!(work.join("study1").join("project.txt").exists());
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlinked_study_folder_is_unlinked_not_followed_by_the_sweep() {
+        let (_t, work, victim) = confinement_fixture();
+        let root = work.join(".tayang").join("style-study");
+        std::fs::create_dir_all(&root).unwrap();
+        std::os::unix::fs::symlink(&victim, root.join("evil")).unwrap();
+        std::fs::create_dir_all(root.join("real1")).unwrap();
+        sweep_study_dirs(&work);
+        assert!(std::fs::symlink_metadata(root.join("evil")).is_err(), "the link is gone");
+        assert!(!root.join("real1").exists());
+        assert_untouched(&victim);
+    }
+
+    #[test]
+    fn the_sweep_only_deletes_children_named_like_study_ids() {
+        let tmp = tempfile::tempdir().unwrap();
+        let work = tmp.path().join("work");
+        let root = work.join(".tayang").join("style-study");
+        for n in ["abc123", "has space", ".hidden", "é"] {
+            std::fs::create_dir_all(root.join(n)).unwrap();
+        }
+        sweep_study_dirs(&work);
+        assert!(!root.join("abc123").exists());
+        for n in ["has space", ".hidden", "é"] {
+            assert!(root.join(n).exists(), "{n}");
+        }
+    }
+
+    #[test]
+    fn a_relative_working_folder_is_refused() {
+        let rel = PathBuf::from(format!("target/rel-sweep-{}", std::process::id()));
+        let kept = rel.join(".tayang").join("style-study").join("a1");
+        std::fs::create_dir_all(&kept).unwrap();
+        sweep_study_dirs(&rel);
+        assert!(remove_study_dir(&rel, "a1").is_err());
+        assert!(kept.exists());
+        let _ = std::fs::remove_dir_all(&rel);
+        sweep_study_dirs(Path::new("")); // must not touch the current folder either
+    }
+
     #[test]
     fn the_startup_sweep_deletes_every_study_folder() {
         let tmp = tempfile::tempdir().unwrap();
@@ -834,7 +961,6 @@ mod tests {
             std::fs::create_dir_all(root.join(id)).unwrap();
             std::fs::write(root.join(id).join("source.mp4"), "x").unwrap();
         }
-        std::fs::write(root.join("stray.txt"), "x").unwrap();
         sweep_study_dirs(&working);
         assert_eq!(std::fs::read_dir(&root).unwrap().count(), 0);
         sweep_study_dirs(&tmp.path().join("nothing")); // no folder: fine
