@@ -101,12 +101,49 @@ describe('App sidebar resizing', () => {
     expect(nav).not.toHaveAttribute('data-collapsed');
   });
 
-  it('⌘\\ and Ctrl+\\ toggle the collapse', async () => {
+  it('⌘\\ on a Mac and Ctrl+\\ elsewhere toggle the collapse', async () => {
+    const ua = vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue('Mozilla/5.0 (Macintosh; Intel Mac OS X 15_0)');
     const { panel } = await renderApp();
     act(() => void fireEvent.keyDown(window, { key: '\\', metaKey: true }));
     expect(panel.style.width).toBe(`${SIDEBAR.rail}px`);
     act(() => void fireEvent.keyDown(window, { key: '\\', ctrlKey: true }));
+    expect(panel.style.width).toBe(`${SIDEBAR.rail}px`); // Ctrl on a Mac: not ours
+    ua.mockReturnValue('Mozilla/5.0 (X11; Linux x86_64)');
+    act(() => void fireEvent.keyDown(window, { key: '\\', ctrlKey: true }));
     expect(panel.style.width).toBe(`${SIDEBAR.default}px`);
+    act(() => void fireEvent.keyDown(window, { key: '\\', metaKey: true }));
+    expect(panel.style.width).toBe(`${SIDEBAR.default}px`);
+    ua.mockRestore();
+  });
+
+  it('the shortcut leaves typing, key repeat and open dialogs alone', async () => {
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue('Mozilla/5.0 (X11; Linux x86_64)');
+    const { panel } = await renderApp();
+    const width = panel.style.width;
+    const field = document.createElement('textarea');
+    const input = document.createElement('input');
+    const editable = document.createElement('div');
+    editable.setAttribute('contenteditable', 'true');
+    document.body.append(field, input, editable);
+    for (const target of [field, input, editable]) {
+      act(() => void fireEvent.keyDown(target, { key: '\\', ctrlKey: true }));
+      expect(panel.style.width).toBe(width);
+    }
+    act(() => void fireEvent.keyDown(window, { key: '\\', ctrlKey: true, repeat: true }));
+    expect(panel.style.width).toBe(width);
+    const dialog = document.createElement('div');
+    dialog.setAttribute('role', 'dialog');
+    dialog.setAttribute('aria-modal', 'true');
+    document.body.append(dialog);
+    act(() => void fireEvent.keyDown(window, { key: '\\', ctrlKey: true }));
+    expect(panel.style.width).toBe(width);
+    dialog.remove();
+    act(() => void fireEvent.keyDown(window, { key: '\\', ctrlKey: true }));
+    expect(panel.style.width).toBe(`${SIDEBAR.rail}px`);
+    field.remove();
+    input.remove();
+    editable.remove();
+    vi.restoreAllMocks();
   });
 
   it('Enter on the handle toggles, double-click resets', async () => {

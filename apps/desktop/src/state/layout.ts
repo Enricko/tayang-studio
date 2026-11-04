@@ -148,12 +148,19 @@ export function useWindowWidthSync() {
   }, []);
 }
 
+const isMac = () => typeof navigator !== 'undefined' && /Mac/i.test(navigator.userAgent);
+const TYPING = 'input, textarea, select, [contenteditable]:not([contenteditable="false"])';
+
 /** ⌘\ (Ctrl+\ elsewhere) collapses or restores the sidebar. Mount once. */
 export function useSidebarShortcut() {
   useEffect(() => {
     const on = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
+      if (!(isMac() ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey) || e.altKey || e.shiftKey) return;
       if (e.key !== '\\' && e.code !== 'Backslash') return;
+      // Not while typing, holding the keys down, or with a dialog in front.
+      if (e.repeat || e.defaultPrevented) return;
+      if (e.target instanceof Element && e.target.closest(TYPING)) return;
+      if (document.querySelector('[role=dialog][aria-modal=true], [role=alertdialog][aria-modal=true]')) return;
       e.preventDefault();
       useLayout.getState().toggleCollapsed();
     };
