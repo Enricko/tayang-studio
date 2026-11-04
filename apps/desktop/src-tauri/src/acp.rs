@@ -3,16 +3,20 @@
 //! Hand-rolled newline-delimited JSON-RPC 2.0 following the ACP v1 schema
 //! (https://agentclientprotocol.com). One agent process per chat.
 
-use crate::types::{AgentUpdate, PermissionRequest};
+use crate::types::{AgentUpdate, PermissionRequest, ToolCallStatus};
+use base64::engine::general_purpose::STANDARD as BASE64;
+use base64::Engine;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::{mpsc, oneshot};
+use tokio::task::JoinHandle;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AcpError(pub String);
@@ -233,40 +237,403 @@ fn spawn_agent(command: &[String], cwd: &Path) -> Result<Child> {
 // Sessions
 // ---------------------------------------------------------------------------
 
-pub struct AgentSession;
+const PROTOCOL_VERSION: u64 = 1;
+const START_TIMEOUT: Duration = Duration::from_secs(120);
+/// After the process exits, how long to keep reading output it already wrote.
+const DRAIN_GRACE: Duration = Duration::from_secs(2);
 
+#[derive(Debug, Clone)]
+struct ToolState {
+    title: String,
+    status: ToolCallStatus,
+}
+
+fn map_tool_status(s: &str) -> Option<ToolCallStatus> {
+    match s {
+        "pending" => Some(ToolCallStatus::Pending),
+        "in_progress" => Some(ToolCallStatus::Running),
+        "completed" => Some(ToolCallStatus::Done),
+        "failed" => Some(ToolCallStatus::Failed),
+        _ => None,
+    }
+}
+
+fn content_text(content: &Value) -> Option<String> {
+    (content.get("type")?.as_str()? == "text")
+        .then(|| content.get("text")?.as_str().map(str::to_string))
+        .flatten()
+}
+
+/// State shared by the reader, the supervisor and prompt tasks of one agent process.
+struct SessionCore {
+    chat_id: String,
+    cwd: PathBuf,
+    rpc: Rpc,
+    sink: Arc<dyn AcpSink>,
+    session_id: OnceLock<String>,
+    tools: Mutex<HashMap<String, ToolState>>,
+    prompting: AtomicBool,
+    stopping: AtomicBool,
+}
+
+impl SessionCore {
+    fn emit(&self, u: AgentUpdate) {
+        self.sink.update(&self.chat_id, u);
+    }
+
+    fn handle_line(self: &Arc<Self>, line: &str) {
+        match parse_message(line) {
+            Some(Incoming::Response { id, result }) => self.rpc.resolve(id, result),
+            Some(Incoming::Notification { method, params }) => {
+                if method == "session/update" {
+                    self.on_session_update(&params);
+                }
+            }
+            Some(Incoming::Request { id, method, params }) => self.on_request(id, &method, params),
+            None => {}
+        }
+    }
+
+    fn on_request(self: &Arc<Self>, id: Value, method: &str, _params: Value) {
+        self.rpc.respond(
+            id,
+            Err(RpcError::new(METHOD_NOT_FOUND, format!("Method not found: {method}"))),
+        );
+    }
+
+    fn on_session_update(&self, params: &Value) {
+        if let (Some(ours), Some(theirs)) =
+            (self.session_id.get(), params.get("sessionId").and_then(Value::as_str))
+        {
+            if ours != theirs {
+                return;
+            }
+        }
+        let Some(update) = params.get("update") else { return };
+        let kind = update.get("sessionUpdate").and_then(Value::as_str).unwrap_or_default();
+        match kind {
+            "agent_message_chunk" | "agent_thought_chunk" => {
+                let Some(text) = update.get("content").and_then(content_text) else { return };
+                self.emit(if kind == "agent_message_chunk" {
+                    AgentUpdate::Text { text }
+                } else {
+                    AgentUpdate::Thought { text }
+                });
+            }
+            "tool_call" | "tool_call_update" => {
+                if let Some(u) = self.track_tool(update) {
+                    self.emit(u);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Merges a `tool_call` / `tool_call_update` (or a permission's `toolCall`)
+    /// into the remembered state and returns the resulting `tool` update.
+    fn track_tool(&self, call: &Value) -> Option<AgentUpdate> {
+        let id = call.get("toolCallId")?.as_str()?;
+        let mut tools = self.tools.lock().unwrap();
+        let state = tools.entry(id.to_string()).or_insert_with(|| ToolState {
+            title: "Tool call".into(),
+            status: ToolCallStatus::Pending,
+        });
+        if let Some(title) = call.get("title").and_then(Value::as_str) {
+            state.title = title.to_string();
+        }
+        if let Some(status) = call.get("status").and_then(Value::as_str).and_then(map_tool_status) {
+            state.status = status;
+        }
+        Some(AgentUpdate::Tool {
+            tool_call_id: id.to_string(),
+            title: state.title.clone(),
+            status: state.status,
+        })
+    }
+
+    async fn handshake(&self) -> Result<()> {
+        let init = self
+            .rpc
+            .request(
+                "initialize",
+                json!({
+                    "protocolVersion": PROTOCOL_VERSION,
+                    "clientCapabilities": {
+                        "fs": { "readTextFile": true, "writeTextFile": true },
+                        "terminal": false,
+                    },
+                    "clientInfo": {
+                        "name": "tayang-studio",
+                        "title": "Tayang Studio",
+                        "version": env!("CARGO_PKG_VERSION"),
+                    },
+                }),
+            )
+            .await
+            .map_err(start_error)?;
+        let version = init.get("protocolVersion").and_then(Value::as_u64);
+        if version != Some(PROTOCOL_VERSION) {
+            return Err(AcpError(format!(
+                "This agent speaks an unsupported protocol version ({})",
+                version.map_or_else(|| "unknown".to_string(), |v| v.to_string())
+            )));
+        }
+        let created = self
+            .rpc
+            .request(
+                "session/new",
+                json!({ "cwd": self.cwd.to_string_lossy(), "mcpServers": [] }),
+            )
+            .await
+            .map_err(start_error)?;
+        let session_id = created
+            .get("sessionId")
+            .and_then(Value::as_str)
+            .ok_or_else(|| AcpError("The agent did not open a session".into()))?;
+        let _ = self.session_id.set(session_id.to_string());
+        Ok(())
+    }
+
+    fn session_id(&self) -> &str {
+        self.session_id.get().map(String::as_str).unwrap_or_default()
+    }
+
+    /// Runs one `session/prompt` turn and reports how it ended.
+    async fn run_turn(&self, prompt: Vec<Value>) {
+        let res = self
+            .rpc
+            .request("session/prompt", json!({ "sessionId": self.session_id(), "prompt": prompt }))
+            .await;
+        self.prompting.store(false, Ordering::SeqCst);
+        let update = match res {
+            Ok(v) => AgentUpdate::Done {
+                stop_reason: v
+                    .get("stopReason")
+                    .and_then(Value::as_str)
+                    .unwrap_or("end_turn")
+                    .to_string(),
+            },
+            Err(e) if e.is_closed() => AgentUpdate::Done { stop_reason: "cancelled".into() },
+            Err(e) => AgentUpdate::Error { message: e.message },
+        };
+        self.emit(update);
+    }
+
+    /// Called once the agent's output is finished (or the process is gone).
+    fn on_closed(&self) {
+        self.rpc.close();
+    }
+}
+
+fn start_error(e: RpcError) -> AcpError {
+    if e.is_closed() {
+        AcpError("The agent exited before it was ready".into())
+    } else {
+        AcpError(format!("The agent could not start a session: {}", e.message))
+    }
+}
+
+async fn read_loop(stdout: impl AsyncRead + Unpin, core: Arc<SessionCore>) {
+    let mut lines = BufReader::new(stdout).lines();
+    while let Ok(Some(line)) = lines.next_line().await {
+        if !line.trim().is_empty() {
+            core.handle_line(&line);
+        }
+    }
+    core.on_closed();
+}
+
+/// Owns the child process: waits for it to exit or for a stop request.
+async fn supervise(
+    mut child: Child,
+    kill_rx: oneshot::Receiver<()>,
+    reader: JoinHandle<()>,
+    core: Arc<SessionCore>,
+) {
+    let stop_requested = tokio::select! {
+        _ = child.wait() => false,
+        _ = kill_rx => true,
+    };
+    if stop_requested {
+        let _ = child.kill().await;
+    }
+    let _ = tokio::time::timeout(DRAIN_GRACE, reader).await;
+    core.on_closed();
+}
+
+fn image_block(path: &Path) -> Result<Value> {
+    let mime = match path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_ascii_lowercase)
+        .as_deref()
+    {
+        Some("png") => "image/png",
+        Some("jpg" | "jpeg") => "image/jpeg",
+        Some("webp") => "image/webp",
+        _ => return Err(AcpError(format!("Unsupported image type: {}", path.display()))),
+    };
+    let bytes = std::fs::read(path)
+        .map_err(|e| AcpError(format!("Could not read image {}: {e}", path.display())))?;
+    Ok(json!({ "type": "image", "mimeType": mime, "data": BASE64.encode(bytes) }))
+}
+
+/// One running agent process bound to a chat.
+pub struct AgentSession {
+    core: Arc<SessionCore>,
+    kill_tx: Mutex<Option<oneshot::Sender<()>>>,
+    supervisor: Mutex<Option<JoinHandle<()>>>,
+}
+
+impl AgentSession {
+    async fn launch(
+        chat_id: &str,
+        command: &[String],
+        cwd: &Path,
+        sink: Arc<dyn AcpSink>,
+    ) -> Result<AgentSession> {
+        let cwd = std::path::absolute(cwd)
+            .map_err(|e| AcpError(format!("Invalid working folder {}: {e}", cwd.display())))?;
+        let mut child = spawn_agent(command, &cwd)?;
+        let (stdin, stdout, stderr) = match (child.stdin.take(), child.stdout.take(), child.stderr.take()) {
+            (Some(i), Some(o), Some(e)) => (i, o, e),
+            _ => return Err(AcpError("Could not connect to the agent".into())),
+        };
+        let (out_tx, out_rx) = mpsc::unbounded_channel();
+        let core = Arc::new(SessionCore {
+            chat_id: chat_id.to_string(),
+            cwd,
+            rpc: Rpc::new(out_tx),
+            sink,
+            session_id: OnceLock::new(),
+            tools: Mutex::new(HashMap::new()),
+            prompting: AtomicBool::new(false),
+            stopping: AtomicBool::new(false),
+        });
+        tokio::spawn(write_loop(stdin, out_rx));
+        tokio::spawn(drain_stderr(stderr, chat_id.to_string()));
+        let reader = tokio::spawn(read_loop(stdout, core.clone()));
+        let (kill_tx, kill_rx) = oneshot::channel();
+        let supervisor = tokio::spawn(supervise(child, kill_rx, reader, core.clone()));
+        let session = AgentSession {
+            core,
+            kill_tx: Mutex::new(Some(kill_tx)),
+            supervisor: Mutex::new(Some(supervisor)),
+        };
+        match tokio::time::timeout(START_TIMEOUT, session.core.handshake()).await {
+            Ok(Ok(())) => Ok(session),
+            Ok(Err(e)) => {
+                session.shutdown().await;
+                Err(e)
+            }
+            Err(_) => {
+                session.shutdown().await;
+                Err(AcpError("The agent did not respond in time".into()))
+            }
+        }
+    }
+
+    /// Kills the process and waits until it is gone.
+    async fn shutdown(&self) {
+        self.core.stopping.store(true, Ordering::SeqCst);
+        if let Some(tx) = self.kill_tx.lock().unwrap().take() {
+            let _ = tx.send(());
+        }
+        let handle = self.supervisor.lock().unwrap().take();
+        if let Some(handle) = handle {
+            let _ = handle.await;
+        }
+        self.core.on_closed();
+    }
+}
+
+/// All agent sessions, keyed by chat id. Shared Tauri state.
 #[derive(Default)]
-pub struct AcpManager;
+pub struct AcpManager {
+    sessions: Mutex<HashMap<String, Arc<AgentSession>>>,
+}
 
 impl AcpManager {
     pub fn new() -> Self {
-        Self
+        Self::default()
     }
 
+    fn session(&self, chat_id: &str) -> Result<Arc<AgentSession>> {
+        self.sessions
+            .lock()
+            .unwrap()
+            .get(chat_id)
+            .cloned()
+            .ok_or_else(|| AcpError("No agent is running for this chat".into()))
+    }
+
+    /// Spawns the agent in `cwd` and opens an ACP session there. Replaces any
+    /// agent already running for this chat.
     pub async fn start(
         &self,
-        _chat_id: &str,
-        _command: &[String],
-        _cwd: &Path,
-        _sink: Arc<dyn AcpSink>,
+        chat_id: &str,
+        command: &[String],
+        cwd: &Path,
+        sink: Arc<dyn AcpSink>,
     ) -> Result<()> {
-        Err(AcpError("not implemented".into()))
+        let _ = self.stop(chat_id).await;
+        let session = AgentSession::launch(chat_id, command, cwd, sink).await?;
+        let previous = self
+            .sessions
+            .lock()
+            .unwrap()
+            .insert(chat_id.to_string(), Arc::new(session));
+        if let Some(previous) = previous {
+            previous.shutdown().await;
+        }
+        Ok(())
     }
 
-    pub async fn prompt(&self, _chat_id: &str, _parts: Vec<PromptPart>) -> Result<()> {
-        Err(AcpError("not implemented".into()))
+    /// Sends a prompt; the turn runs in the background and streams to the sink,
+    /// ending with a `done` or `error` update.
+    pub async fn prompt(&self, chat_id: &str, parts: Vec<PromptPart>) -> Result<()> {
+        let session = self.session(chat_id)?;
+        let core = session.core.clone();
+        if core.rpc.is_closed() {
+            return Err(AcpError("The agent is not running".into()));
+        }
+        let prompt = parts
+            .iter()
+            .map(|p| match p {
+                PromptPart::Text(text) => Ok(json!({ "type": "text", "text": text })),
+                PromptPart::Image { path } => image_block(path),
+            })
+            .collect::<Result<Vec<_>>>()?;
+        if core.prompting.swap(true, Ordering::SeqCst) {
+            return Err(AcpError("The agent is still working on the last message".into()));
+        }
+        tokio::spawn(async move { core.run_turn(prompt).await });
+        Ok(())
     }
 
     pub fn respond_permission(&self, _request_id: &str, _option_id: Option<String>) -> Result<()> {
         Err(AcpError("not implemented".into()))
     }
 
-    pub async fn cancel(&self, _chat_id: &str) -> Result<()> {
-        Err(AcpError("not implemented".into()))
+    /// Asks the agent to stop the current turn (`session/cancel`).
+    pub async fn cancel(&self, chat_id: &str) -> Result<()> {
+        let session = self.session(chat_id)?;
+        let core = &session.core;
+        core.rpc
+            .notify("session/cancel", json!({ "sessionId": core.session_id() }))
+            .map_err(|_| AcpError("The agent is not running".into()))
     }
 
-    pub async fn stop(&self, _chat_id: &str) -> Result<()> {
-        Err(AcpError("not implemented".into()))
+    /// Kills the agent process for this chat.
+    pub async fn stop(&self, chat_id: &str) -> Result<()> {
+        let session = self
+            .sessions
+            .lock()
+            .unwrap()
+            .remove(chat_id)
+            .ok_or_else(|| AcpError("No agent is running for this chat".into()))?;
+        session.shutdown().await;
+        Ok(())
     }
 }
 
