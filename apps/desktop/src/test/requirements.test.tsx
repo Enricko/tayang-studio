@@ -97,6 +97,7 @@ describe('Requirements', () => {
 
   it('blocks start while ffmpeg is missing', async () => {
     render(<Requirements />);
+    expect(await screen.findByText(/shows you every command your agent asks to run, and nothing it asks about runs until you allow/)).toBeInTheDocument();
     expect(await screen.findByText('Install FFmpeg to continue')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Start my first video/ })).toBeDisabled();
   });

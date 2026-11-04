@@ -39,8 +39,8 @@ tayang-desktop/
 ## How it works
 
 - The agent runs over ACP. Tayang has no AI of its own: every generation goes through the agent you already use.
-- Installs go through the agent too, and nothing runs on your computer until you press Allow on the permission request.
-- You pick a working folder. Projects live there, and agent sessions never work outside it.
+- Installs go through the agent too. Tayang shows you every command your agent asks to run, and nothing it asks about runs until you allow it. An agent whose own settings already allow a command won't ask, so check your agent's permission settings (see `docs/development.md`).
+- You pick a working folder. Projects live there and keep their folder if you change it later. Agent sessions work in the working folder or in a project's own folder.
 - App data is stored in a local SQLite database, so the desktop app keeps its data on this computer and doesn't need the API (your agent still needs its own internet connection).
 - The API is optional and only adds the online features.
 

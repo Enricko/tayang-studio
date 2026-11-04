@@ -91,7 +91,8 @@ export function Requirements() {
           <h1 className="text-4xl font-semibold tracking-[-0.02em]">Check your computer</h1>
           <p className="text-base leading-[1.6] text-text-2">
             Videos render on your computer, so Tayang needs a few tools. If something is missing, your agent installs
-            it. You approve every command first.
+            it. Tayang shows you every command your agent asks to run, and nothing it asks about runs until you allow
+            it.
           </p>
         </div>
 

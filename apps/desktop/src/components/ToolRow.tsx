@@ -191,7 +191,7 @@ export function ToolRow({ tool, sys, agentName, busy, onInstall, onAskKey }: {
             {expected.join('\n')}
           </pre>
           <div className="flex items-center gap-2">
-            <span className="text-xs text-text-3">Nothing runs until you allow it</span>
+            <span className="text-xs text-text-3">Nothing it asks about runs until you allow it</span>
             <Button variant="ghost" className="ml-auto h-9 px-2 text-[13px]" onClick={() => void cancel(tool.id)}>
               Cancel
             </Button>
