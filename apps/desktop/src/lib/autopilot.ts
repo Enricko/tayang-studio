@@ -1,7 +1,7 @@
 import type { Autopilot, AutopilotFrequency } from '@tayang/shared';
 
 const parseTime = (t: string): [number, number] => {
-  const [h, m] = t.split(':').map(Number);
+  const [h = 0, m = 0] = t.split(':').map(Number);
   return [h, m];
 };
 
