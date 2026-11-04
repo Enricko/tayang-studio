@@ -203,6 +203,24 @@ describe('a new chat never disappears', () => {
     expect(screen.getByRole('textbox', { name: 'Message' })).toBeInTheDocument();
   });
 
+  it('a chat whose row is not known yet waits for it instead of opening as a project chat', async () => {
+    let found: (c: Chat | null) => void = () => {};
+    vi.mocked(ipc.getChat).mockReturnValue(new Promise((r) => (found = r)));
+    useApp.setState({ route: { name: 'chat', chatId: 'c0' } });
+    render(<ChatRoute />);
+    expect(screen.queryByRole('region', { name: 'Preview' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: 'Message' })).not.toBeInTheDocument();
+    await act(async () => found(chat('c0', null, 'Ngobrol santai')));
+    expect(await screen.findByText('Ngobrol santai')).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Preview' })).not.toBeInTheDocument();
+  });
+
+  it('a chat Rust does not know opens as before', async () => {
+    useApp.setState({ route: { name: 'chat', chatId: 'gone' } });
+    render(<ChatRoute />);
+    expect(await screen.findByRole('textbox', { name: 'Message' })).toBeInTheDocument();
+  });
+
   it('a project chat still opens with its preview', async () => {
     vi.mocked(ipc.getChat).mockResolvedValue(chat('c1', 'p1'));
     useApp.setState({ route: { name: 'chat', chatId: 'c1' } });

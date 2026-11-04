@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { getChat } from '@/lib/ipc';
 import { ChatNew } from '@/screens/ChatNew';
 import { ChatProject } from '@/screens/ChatProject';
@@ -15,19 +15,22 @@ export const useSoloChat = (chatId: string | null) =>
 
 /**
  * The chat screens: New chat, a chat without a project, a project's chat. A chat whose row this
- * session hasn't seen yet opens as a project chat until Rust says otherwise.
+ * session hasn't seen yet waits for Rust's answer, so it never opens in the wrong layout; one Rust
+ * doesn't know opens as a project chat, as before.
  */
 export function ChatRoute() {
   const route = useApp((s) => s.route);
   const chatId = route.name === 'chat' ? route.chatId : null;
   const row = useChat((s) => (chatId ? s.rows[chatId] : undefined));
+  /** The chat whose lookup came back without a row (or failed). */
+  const [missing, setMissing] = useState<string | null>(null);
 
   useEffect(() => {
     if (!chatId || row) return;
     let alive = true;
     getChat(chatId)
-      .then((c) => alive && c && useChat.getState().rememberChat(c))
-      .catch(() => {});
+      .then((c) => alive && (c ? useChat.getState().rememberChat(c) : setMissing(chatId)))
+      .catch(() => alive && setMissing(chatId));
     return () => {
       alive = false;
     };
@@ -35,6 +38,7 @@ export function ChatRoute() {
 
   if (route.name === 'chat-new') return <ChatNew key="chat-new" />;
   if (route.name !== 'chat') return null;
+  if (!row && missing !== route.chatId) return null;
   if (row && !row.projectId) {
     return <ChatThread key={route.chatId} chatId={route.chatId} draft={route.draft} styleId={route.styleId} />;
   }
