@@ -464,6 +464,7 @@ mod tests {
             review_state: ReviewState::None,
             posted_at: None,
             reminded_at: None,
+            review_reminded_at: None,
             duration_sec: None,
             created_at: "t".into(),
             updated_at: "t".into(),

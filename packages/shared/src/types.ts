@@ -56,6 +56,8 @@ export interface Project {
   postedAt: string | null;
   /** When the post-time reminder was shown (RFC 3339); cleared when the schedule changes. */
   remindedAt: string | null;
+  /** When the "review before it's due" reminder was shown (RFC 3339); cleared when the schedule changes. */
+  reviewRemindedAt: string | null;
   durationSec: number | null;
   createdAt: string;
   updatedAt: string;

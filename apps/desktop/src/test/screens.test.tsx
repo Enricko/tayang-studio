@@ -93,7 +93,7 @@ const project = (id: string, title: string, status: Project['status'], scheduled
   scheduledAt,
   reviewState: 'none',
   postedAt: null,
-  remindedAt: null,
+  remindedAt: null, reviewRemindedAt: null,
   durationSec: 30,
   createdAt: '2026-11-01T00:00:00Z',
   updatedAt: '2026-11-02T00:00:00Z',

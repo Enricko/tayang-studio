@@ -172,6 +172,7 @@ pub fn create_project(
         review_state: ReviewState::None,
         posted_at: None,
         reminded_at: None,
+        review_reminded_at: None,
         duration_sec: None,
         created_at: now.clone(),
         updated_at: now,
@@ -200,7 +201,7 @@ pub fn schedule_project(db: &Db, project_id: &str, at: Option<String>) -> CmdRes
                 .map_err(|_| format!("That date and time isn't valid: {at}"))
         })
         .transpose()?;
-    db.update_project(project_id, serde_json::json!({ "scheduledAt": at, "remindedAt": null }))
+    db.update_project(project_id, serde_json::json!({ "scheduledAt": at, "remindedAt": null, "reviewRemindedAt": null }))
         .map_err(err)
 }
 
@@ -1037,6 +1038,7 @@ mod tests {
             review_state: ReviewState::Pending,
             posted_at: None,
             reminded_at: Some("2026-11-01T00:00:00Z".into()),
+            review_reminded_at: None,
             duration_sec: None,
             created_at: "t".into(),
             updated_at: "t".into(),
@@ -1055,10 +1057,11 @@ mod tests {
         let p = schedule_project(&db, "p", Some("2026-11-05T09:00:00+07:00".into())).unwrap();
         assert_eq!(p.scheduled_at.as_deref(), Some("2026-11-05T02:00:00Z"));
         assert_eq!(p.reminded_at, None);
-        db.update_project("p", serde_json::json!({ "remindedAt": "2026-11-05T01:00:00Z" })).unwrap();
+        db.update_project("p", serde_json::json!({ "remindedAt": "2026-11-05T01:00:00Z", "reviewRemindedAt": "2026-11-05T00:00:00Z" })).unwrap();
         let p = schedule_project(&db, "p", None).unwrap();
         assert_eq!(p.scheduled_at, None);
         assert_eq!(p.reminded_at, None);
+        assert_eq!(p.review_reminded_at, None);
         assert_eq!(db.get_project("p").unwrap().unwrap().scheduled_at, None);
     }
 
@@ -1276,6 +1279,7 @@ mod tests {
             review_state: ReviewState::None,
             posted_at: None,
             reminded_at: None,
+            review_reminded_at: None,
             duration_sec: None,
             created_at: String::new(),
             updated_at: String::new(),
@@ -1360,6 +1364,7 @@ mod tests {
             review_state: ReviewState::None,
             posted_at: None,
             reminded_at: None,
+            review_reminded_at: None,
             duration_sec: None,
             created_at: String::new(),
             updated_at: String::new(),

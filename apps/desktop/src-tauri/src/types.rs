@@ -152,6 +152,9 @@ pub struct Project {
     pub posted_at: Option<String>,
     #[serde(default)]
     pub reminded_at: Option<String>,
+    /// When the "review before it's due" reminder was shown; separate from `reminded_at`.
+    #[serde(default)]
+    pub review_reminded_at: Option<String>,
     pub duration_sec: Option<f64>,
     pub created_at: String,
     pub updated_at: String,

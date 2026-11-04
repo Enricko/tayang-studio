@@ -15,7 +15,7 @@ const p = (extra: Partial<Project>): Project => ({
   scheduledAt: null,
   reviewState: 'none',
   postedAt: null,
-  remindedAt: null,
+  remindedAt: null, reviewRemindedAt: null,
   durationSec: null,
   createdAt: '',
   updatedAt: '',

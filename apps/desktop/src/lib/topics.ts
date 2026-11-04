@@ -92,7 +92,7 @@ export async function startTopic(
     folder: '',
     status: 'draft',
     styleId: style?.id ?? null,
-    scheduledAt: null, reviewState: 'none', postedAt: null, remindedAt: null,
+    scheduledAt: null, reviewState: 'none', postedAt: null, remindedAt: null, reviewRemindedAt: null,
     durationSec: null,
     createdAt: '',
     updatedAt: '',
