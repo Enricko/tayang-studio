@@ -238,6 +238,7 @@ export const en = {
     conversation: 'Conversation',
     preview: 'Preview',
     loadingOptions: 'Loading options…',
+    copyCode: 'Copy code',
     brokenBlock: "Couldn't show these options",
     working: 'Working',
     scrollToBottom: 'Scroll to bottom',

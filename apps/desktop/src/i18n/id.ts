@@ -239,6 +239,7 @@ export const id: Translations = {
     conversation: 'Percakapan',
     preview: 'Pratinjau',
     loadingOptions: 'Memuat pilihan…',
+    copyCode: 'Salin kode',
     brokenBlock: 'Pilihan ini tidak bisa ditampilkan',
     working: 'Sedang bekerja',
     scrollToBottom: 'Ke bawah',
