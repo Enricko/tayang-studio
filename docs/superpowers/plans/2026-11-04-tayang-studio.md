@@ -399,3 +399,20 @@ Added mid-run at the owner's request (reference: Orca's usage bar — "33% used 
 - Command `get_agent_usage(force: bool) -> AgentUsage[]` (installed agents only; results cached 5 min unless `force`).
 - UI: `useUsage` store (load on app start, poll every 5 min, refresh button, keeps last good value on error). `<UsageBar />` at the bottom of the sidebar: default-agent logo, a thin bar for the 5h window, text `33% used 1h 41m · 48% used 3d 13h · 26% used Fable` (reset countdown `1h 41m`, `3d 13h`); clicking opens `<UsagePopover />` (shadcn Popover): header "Usage" + "all agents" + refresh icon; Detailed/Compact segmented toggle (persist choice in settings or localStorage); one row per installed agent with logo, name, "Resets in 1h 39m", and 5h / wk / model bars with percentages (Compact = one line per agent); footer rows "Usage details & history" (→ Agents screen) and "Manage accounts…" (→ Settings). Bars turn orange at ≥ 80% (accent), otherwise neutral.
 - [ ] Steps: failing tests (parse_claude_usage fixtures incl. weekly_scoped Fable, epoch vs ISO resets, 401 → signed-out; UsageBar text formatting `formatResetIn`; popover rows) → implement → green → commit in small steps.
+
+---
+
+### Task 17: Flat composer and file attachments
+
+Added mid-run at the owner's request ("make the chat style flat color, also add attach file"; screenshot shows the composer with a lighter inner textarea box on a darker card).
+
+**Files:** Modify `apps/desktop/src/components/Composer.tsx` (+ any chat bubble/card styles that use two-tone nested surfaces), `src/state/chat.ts`, `src/lib/ipc.ts`; `packages/shared/src/types.ts`; `apps/desktop/src-tauri/src/{commands.rs,lib.rs,types.rs}`; Test: `src/test/chat.test.tsx` (+ Rust unit tests).
+
+**Requirements:**
+- Flat composer: one surface color for the whole composer (card `#1A1A1A`, 1px hairline border `#262626`/`#333333`, radius 12) — the textarea is transparent with no inner box, border, ring or shadow; the toolbar sits on the same surface. Same flat treatment for chat message cards/bubbles that currently nest a lighter box inside a darker one. Focus: border color changes to `#3A3A3A` only (no glow ring).
+- Attach files: a paperclip icon button (lucide `Paperclip`, ghost, `aria-label="Attach files"`) in the composer toolbar, left of the agent selector's neighbor items; opens the dialog plugin's multi-file picker. Also accept files dropped onto the composer (Tauri `onDragDropEvent` on the window, only while the pointer is over the composer; highlight the composer border while dragging).
+- New `MessagePart` variant `{ type: 'file'; path: string; name: string; mime: string; size: number }`.
+- New Tauri command `attach_file(chatId: string, sourcePath: string) -> MessagePart(file)`: copies the file into the chat's working directory under `attachments/` (same cwd rules as agent_start: project folder / `.tayang/chats/<id>`), unique name on collision, max 50 MB (error "That file is larger than 50 MB"), returns the copied path. The agent can only read files inside its cwd, so copying is required.
+- Attachments show as removable chips above the textarea (file icon + name + size; image files show a tiny thumbnail via assetUrl).
+- agent_prompt: `file` parts → images (png/jpg/jpeg/webp/gif) as image content blocks; other files as text "Attached file: <relative path inside this folder> (<name>, <size>)".
+- Copy rules apply.
