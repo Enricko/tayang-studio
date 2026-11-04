@@ -114,6 +114,8 @@ export interface BillingStatus {
   currentPeriodEnd: string | null;
   active: boolean;
   pending: PendingPayment | null;
+  /** The order of the last completed payment: the app's proof that *its* payment arrived. */
+  lastPaidOrderId: string | null;
 }
 
 // ---- plan order and periods: the API applies these, and the app previews them ----
