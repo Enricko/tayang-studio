@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { buildSessionPreamble } from '@tayang/skills';
 import type { AgentId, AgentUpdate, ChatMessage, JobStatus, MessagePart, PermissionRequest } from '@tayang/shared';
 import {
   addMessage,
@@ -218,11 +219,19 @@ export const useChat = create<ChatState>((set, get) => {
         chatAgent.set(chatId, agent);
         if (opts?.job) chatJobs.set(chatId, opts.job);
         writeJob(chatId, 'working');
+        let fresh = false;
         if (!get().started[chatId]) {
           await agentStart(chatId, agent);
           set((s) => ({ started: { ...s.started, [chatId]: true } }));
+          fresh = true;
         }
-        await agentPrompt(chatId, opts?.promptParts ? [...attached, ...opts.promptParts] : visible);
+        const promptParts = opts?.promptParts ? [...attached, ...opts.promptParts] : visible;
+        // Claude loads the Tayang plugin itself; other agents get the skills as text, once per session.
+        const withSkills: MessagePart[] =
+          fresh && agent !== 'claude'
+            ? [{ type: 'text', text: buildSessionPreamble() }, ...promptParts]
+            : promptParts;
+        await agentPrompt(chatId, withSkills);
         return null;
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e);
