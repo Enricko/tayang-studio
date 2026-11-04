@@ -9,21 +9,124 @@ use std::path::Path;
 
 pub const USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
 
-pub fn read_claude_token(_exec: &dyn Exec, _home: &Path) -> Option<String> {
-    todo!()
+use serde_json::Value;
+
+fn token_from_json(json: &str) -> Option<String> {
+    let v: Value = serde_json::from_str(json.trim()).ok()?;
+    let t = v.get("claudeAiOauth")?.get("accessToken")?.as_str()?.trim();
+    (!t.is_empty()).then(|| t.to_string())
 }
 
-pub fn parse_claude_usage(_json: &str, _now: DateTime<Utc>) -> AgentUsage {
-    todo!()
+/// Claude Code's OAuth token: the macOS keychain first, then `~/.claude/.credentials.json`
+/// (where Linux and Windows keep it). The caller must never log or return it.
+pub fn read_claude_token(exec: &dyn Exec, home: &Path) -> Option<String> {
+    if cfg!(target_os = "macos") {
+        let out = exec.run("security", &["find-generic-password", "-s", "Claude Code-credentials", "-w"]);
+        if let Some(t) = out.as_deref().and_then(token_from_json) {
+            return Some(t);
+        }
+    }
+    let file = std::fs::read_to_string(home.join(".claude").join(".credentials.json")).ok()?;
+    token_from_json(&file)
+}
+
+fn percent(w: &Value) -> Option<f64> {
+    ["utilization", "used_percentage", "percent"]
+        .iter()
+        .find_map(|k| w.get(*k).and_then(Value::as_f64))
+        .map(|p| p.clamp(0.0, 100.0))
+}
+
+/// ISO strings are normalised to UTC; numbers are epoch seconds (or milliseconds).
+fn resets_at(w: &Value) -> Option<String> {
+    let dt = match w.get("resets_at")? {
+        Value::String(s) => DateTime::parse_from_rfc3339(s).ok()?.with_timezone(&Utc),
+        Value::Number(n) => {
+            let n = n.as_f64()?;
+            let secs = if n > 1e11 { n / 1000.0 } else { n };
+            DateTime::from_timestamp(secs as i64, 0)?
+        }
+        _ => return None,
+    };
+    Some(dt.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
+}
+
+fn window(w: &Value) -> Option<UsageWindow> {
+    Some(UsageWindow { used_percent: percent(w)?, resets_at: resets_at(w) })
+}
+
+fn model_weekly(v: &Value) -> Option<ModelUsage> {
+    if let Some(limits) = v.get("limits").and_then(Value::as_array) {
+        for l in limits {
+            if l.get("kind").and_then(Value::as_str) != Some("weekly_scoped") {
+                continue;
+            }
+            if l.get("is_active").and_then(Value::as_bool) == Some(false) {
+                continue;
+            }
+            let name = l.pointer("/scope/model/display_name").and_then(Value::as_str);
+            if let (Some(name), Some(w)) = (name, window(l)) {
+                return Some(ModelUsage { label: name.to_string(), window: w });
+            }
+        }
+    }
+    ["seven_day_fable", "fable_weekly", "fable_seven_day"]
+        .iter()
+        .find_map(|k| v.get(*k).and_then(window))
+        .map(|w| ModelUsage { label: "Fable".into(), window: w })
+}
+
+fn stamp(now: DateTime<Utc>) -> String {
+    now.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+}
+
+fn with_status(status: UsageStatus, message: &str, now: DateTime<Utc>) -> AgentUsage {
+    AgentUsage {
+        agent_id: AgentId::Claude,
+        status,
+        session: None,
+        weekly: None,
+        model_weekly: None,
+        updated_at: stamp(now),
+        message: Some(message.to_string()),
+    }
+}
+
+pub fn parse_claude_usage(json: &str, now: DateTime<Utc>) -> AgentUsage {
+    let Ok(v) = serde_json::from_str::<Value>(json) else {
+        return with_status(UsageStatus::Error, "Couldn't read the usage response", now);
+    };
+    AgentUsage {
+        agent_id: AgentId::Claude,
+        status: UsageStatus::Ok,
+        session: v.get("five_hour").and_then(window),
+        weekly: v.get("seven_day").and_then(window),
+        model_weekly: model_weekly(&v),
+        updated_at: stamp(now),
+        message: None,
+    }
 }
 
 /// Maps an HTTP status and body to a usage result.
-pub fn usage_from_response(_status: u16, _body: &str, _now: DateTime<Utc>) -> AgentUsage {
-    todo!()
+pub fn usage_from_response(status: u16, body: &str, now: DateTime<Utc>) -> AgentUsage {
+    match status {
+        200..=299 => parse_claude_usage(body, now),
+        401 | 403 => with_status(UsageStatus::SignedOut, "Sign in to Claude Code to see usage", now),
+        429 => with_status(UsageStatus::Error, "Usage is busy, try again in a minute", now),
+        _ => with_status(UsageStatus::Error, "Couldn't load usage", now),
+    }
 }
 
-pub fn unavailable(_id: AgentId, _name: &str, _now: DateTime<Utc>) -> AgentUsage {
-    todo!()
+pub fn unavailable(id: AgentId, name: &str, now: DateTime<Utc>) -> AgentUsage {
+    AgentUsage {
+        agent_id: id,
+        status: UsageStatus::Unavailable,
+        session: None,
+        weekly: None,
+        model_weekly: None,
+        updated_at: stamp(now),
+        message: Some(format!("Usage isn't available for {name} yet")),
+    }
 }
 
 #[cfg(test)]
