@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { openUrl } from '@tauri-apps/plugin-opener';
-import type { AgentInfo, Settings as SettingsT, SystemInfo, ToolId } from '@tayang/shared';
+import { DEFAULT_SETTINGS, type AgentInfo, type Settings as SettingsT, type SystemInfo, type ToolId } from '@tayang/shared';
 import { AgentLogo } from '@/components/AgentLogo';
 import { Button } from '@/components/Button';
 import { Oyen } from '@/components/Oyen';
@@ -22,6 +22,15 @@ const SECTIONS = [
   ['tools', 'Tools'],
   ['account', 'Account'],
 ] as const;
+
+function isHttpUrl(v: string): boolean {
+  try {
+    const u = new URL(v);
+    return u.protocol === 'http:' || u.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
 
 function Card({ children }: { children: ReactNode }) {
   return <div className="rounded-xl border border-border bg-card">{children}</div>;
@@ -97,6 +106,7 @@ export function Settings() {
   }, []);
   useEffect(check, [check]);
 
+  const [apiError, setApiError] = useState<string | null>(null);
   const save = async (patch: Partial<SettingsT>) => {
     setError(null);
     try {
@@ -331,12 +341,13 @@ export function Settings() {
               onCheckedChange={(v) => void save({ shareInstallStats: v })}
             />
           </div>
-          <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3">
+          <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card px-4 py-3">
             <div className="mr-auto flex flex-col gap-1">
               <label htmlFor="api-url" className="text-sm font-medium">
                 API address
               </label>
               <span className="text-xs text-text-3">Used for built-in styles and install stats</span>
+              <span className="text-xs text-text-3">Leave it empty to use {DEFAULT_SETTINGS.apiUrl}</span>
             </div>
             <Input
               id="api-url"
@@ -344,11 +355,23 @@ export function Settings() {
               defaultValue={settings.apiUrl}
               spellCheck={false}
               className="h-8 w-[260px] bg-background font-mono text-xs"
+              aria-invalid={apiError ? true : undefined}
               onBlur={(e) => {
-                const v = e.target.value.trim();
-                if (v && v !== settings.apiUrl) void save({ apiUrl: v });
+                const v = e.target.value.trim() || DEFAULT_SETTINGS.apiUrl;
+                if (!isHttpUrl(v)) {
+                  setApiError('Enter an address that starts with http:// or https://');
+                  return;
+                }
+                setApiError(null);
+                if (v !== settings.apiUrl) void save({ apiUrl: v });
+                else e.target.value = v;
               }}
             />
+            {apiError && (
+              <span role="alert" className="basis-full text-xs text-orange-light">
+                {apiError}
+              </span>
+            )}
           </div>
         </section>
       </div>
