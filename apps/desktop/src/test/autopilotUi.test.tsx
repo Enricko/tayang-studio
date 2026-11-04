@@ -26,7 +26,7 @@ vi.mock('@tauri-apps/plugin-opener', () => ({ openUrl: vi.fn() }));
 
 import * as ipc from '@/lib/ipc';
 import { Calendar } from '@/screens/Calendar';
-import { setStopNowHandler } from '@/lib/autopilotHooks';
+import { notifyAutopilotChanged, setStopNowHandler } from '@/lib/autopilotHooks';
 import { setUiLanguage } from '@/i18n';
 import { useApp } from '@/state/app';
 
@@ -105,11 +105,15 @@ describe('Autopilots panel', () => {
     expect(await screen.findByText(/No autopilots yet/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'See plans' })).toBeInTheDocument();
     expect(screen.queryByText(/Tayang reminds you/)).toBeNull();
+    expect(screen.getByText(/Automatic posting to TikTok, Reels and Shorts is coming to tayang.app plans/)).toBeInTheDocument();
   });
 
   it('shows name, niche, how often, status and the next slot, and pauses and resumes', async () => {
     vi.mocked(ipc.listAutopilots).mockResolvedValue([autopilot()]);
-    vi.mocked(ipc.setAutopilotStatus).mockResolvedValue(autopilot({ status: 'paused' }));
+    vi.mocked(ipc.setAutopilotStatus).mockImplementation(async (_id, status) => {
+      vi.mocked(ipc.listAutopilots).mockResolvedValue([autopilot({ status })]);
+      return autopilot({ status });
+    });
     render(<Calendar today={today} />);
     const row = await screen.findByTestId('autopilot-row');
     expect(within(row).getByText('Kopi')).toBeInTheDocument();
@@ -122,7 +126,6 @@ describe('Autopilots panel', () => {
     expect(await within(row).findByRole('button', { name: 'Resume Kopi' })).toBeInTheDocument();
     expect(within(row).getByText('Paused')).toBeInTheDocument();
     expect(within(row).queryByText(/^Next:/)).toBeNull();
-    vi.mocked(ipc.setAutopilotStatus).mockResolvedValue(autopilot());
     await userEvent.click(within(row).getByRole('button', { name: 'Resume Kopi' }));
     expect(ipc.setAutopilotStatus).toHaveBeenLastCalledWith('a1', 'active');
   });
@@ -135,7 +138,9 @@ describe('Autopilots panel', () => {
 
   it('asks before deleting, and deleting removes the row', async () => {
     vi.mocked(ipc.listAutopilots).mockResolvedValue([autopilot()]);
-    vi.mocked(ipc.deleteAutopilot).mockResolvedValue();
+    vi.mocked(ipc.deleteAutopilot).mockImplementation(async () => {
+      vi.mocked(ipc.listAutopilots).mockResolvedValue([]);
+    });
     render(<Calendar today={today} />);
     await userEvent.click(await screen.findByRole('button', { name: 'Delete Kopi' }));
     expect(await screen.findByText('Delete Kopi?')).toBeInTheDocument();
@@ -344,10 +349,14 @@ describe('Planned slots on the calendar', () => {
     vi.mocked(ipc.listAutopilots).mockResolvedValue([autopilot()]);
     const failed = slot('f', new Date(2026, 10, 6, 12, 0), { status: 'failed', error: 'x' });
     vi.mocked(ipc.listSlots).mockResolvedValue([failed]);
-    vi.mocked(ipc.updateSlot).mockResolvedValue({ ...failed, status: 'planned', error: null });
+    vi.mocked(ipc.updateSlot).mockImplementation(async () => {
+      const next = { ...failed, status: 'planned' as const, error: null, projectId: null };
+      vi.mocked(ipc.listSlots).mockResolvedValue([next]);
+      return next;
+    });
     render(<Calendar today={today} />);
     await userEvent.click(await screen.findByRole('button', { name: 'Try again: Kopi' }));
-    expect(ipc.updateSlot).toHaveBeenCalledWith('f', { status: 'planned', error: null });
+    expect(ipc.updateSlot).toHaveBeenCalledWith('f', { status: 'planned', error: null, projectId: null });
     expect(await screen.findByText('Planned · Kopi')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Try again: Kopi' })).toBeNull();
   });
@@ -372,5 +381,137 @@ describe('Planned slots on the calendar', () => {
     await screen.findByTestId('autopilot-row');
     await act(async () => {});
     expect(screen.queryByTestId('cal-ghost')).toBeNull();
+  });
+});
+
+describe('Autopilot fix round', () => {
+  it('shows a failed slot that kept its project, with the project title, and Try again clears the project', async () => {
+    vi.mocked(ipc.listAutopilots).mockResolvedValue([autopilot()]);
+    vi.mocked(ipc.listProjects).mockResolvedValue([
+      { id: 'pr', title: 'Kopi susu', slug: 'k', folder: '/w/k', kind: 'explainer', format: '9:16', language: 'id', status: 'draft', styleId: null, scheduledAt: null, reviewState: 'none', postedAt: null, remindedAt: null, reviewRemindedAt: null, durationSec: null, createdAt: 'c', updatedAt: 'u' },
+    ]);
+    vi.mocked(ipc.listSlots).mockResolvedValue([slot('f', new Date(2026, 10, 6, 12, 0), { status: 'failed', projectId: 'pr', error: 'x' })]);
+    vi.mocked(ipc.updateSlot).mockResolvedValue(slot('f', new Date(2026, 10, 6, 12, 0)));
+    render(<Calendar today={today} />);
+    expect(await screen.findByText('Failed · Kopi')).toBeInTheDocument();
+    expect(await screen.findByText('Kopi susu')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Try again: Kopi' }));
+    expect(ipc.updateSlot).toHaveBeenCalledWith('f', { status: 'planned', error: null, projectId: null });
+  });
+
+  it('draws no planned ghosts for a paused autopilot', async () => {
+    vi.mocked(ipc.listAutopilots).mockResolvedValue([autopilot({ status: 'paused' })]);
+    vi.mocked(ipc.listSlots).mockResolvedValue([slot('p', new Date(2026, 10, 5, 12, 0))]);
+    render(<Calendar today={today} />);
+    await screen.findByTestId('autopilot-row');
+    await act(async () => {});
+    expect(screen.queryByTestId('cal-ghost')).toBeNull();
+  });
+
+  it('reloads autopilots and slots when something announces a change', async () => {
+    vi.mocked(ipc.listAutopilots).mockResolvedValue([autopilot()]);
+    const making = slot('s', new Date(2026, 10, 4, 12, 0), { status: 'making' });
+    vi.mocked(ipc.listSlots).mockResolvedValue([making]);
+    render(<Calendar today={today} />);
+    expect(await screen.findByText('Making · Kopi')).toBeInTheDocument();
+    vi.mocked(ipc.listSlots).mockResolvedValue([{ ...making, status: 'done', projectId: 'x' }]);
+    await act(async () => notifyAutopilotChanged());
+    await waitFor(() => expect(screen.queryByText('Making · Kopi')).toBeNull());
+    expect(screen.queryByText('Making a video now')).toBeNull();
+  });
+
+  it('Stop now appears when the handler registers after mount, runs, then the panel reloads and drops it', async () => {
+    vi.mocked(ipc.listAutopilots).mockResolvedValue([autopilot()]);
+    const making = slot('s', new Date(2026, 10, 4, 12, 0), { status: 'making' });
+    vi.mocked(ipc.listSlots).mockResolvedValue([making]);
+    render(<Calendar today={today} />);
+    await screen.findByText('Making a video now');
+    expect(screen.queryByRole('button', { name: 'Stop now' })).toBeNull();
+    const stop = vi.fn(async () => {
+      vi.mocked(ipc.listSlots).mockResolvedValue([{ ...making, status: 'failed', error: 'Stopped' }]);
+    });
+    act(() => void setStopNowHandler(stop));
+    await userEvent.click(await screen.findByRole('button', { name: 'Stop now' }));
+    expect(stop).toHaveBeenCalledWith(making);
+    await waitFor(() => expect(screen.queryByText('Making a video now')).toBeNull());
+    expect(screen.getByText('Failed · Kopi')).toBeInTheDocument();
+  });
+
+  it('a Stop now that fails shows an error instead of an unhandled rejection', async () => {
+    vi.mocked(ipc.listAutopilots).mockResolvedValue([autopilot()]);
+    vi.mocked(ipc.listSlots).mockResolvedValue([slot('s', new Date(2026, 10, 4, 12, 0), { status: 'making' })]);
+    setStopNowHandler(async () => {
+      throw new Error('boom');
+    });
+    render(<Calendar today={today} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Stop now' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't update the autopilot");
+  });
+
+  it('deleting an autopilot that is making a video stops it first', async () => {
+    const order: string[] = [];
+    vi.mocked(ipc.listAutopilots).mockResolvedValue([autopilot()]);
+    const making = slot('s', new Date(2026, 10, 4, 12, 0), { status: 'making' });
+    vi.mocked(ipc.listSlots).mockResolvedValue([making]);
+    setStopNowHandler(async () => void order.push('stop'));
+    vi.mocked(ipc.deleteAutopilot).mockImplementation(async () => void order.push('delete'));
+    render(<Calendar today={today} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete Kopi' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete autopilot' }));
+    await waitFor(() => expect(order).toEqual(['stop', 'delete']));
+  });
+
+  it('shows an error when the autopilots cannot be loaded', async () => {
+    vi.mocked(ipc.listAutopilots).mockRejectedValue(new Error('no table'));
+    render(<Calendar today={today} />);
+    expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't load your autopilots");
+  });
+
+  it('a new autopilot starts on the default agent, not the first installed one', async () => {
+    useApp.setState({ settings: { ...settings, defaultAgent: 'gemini' } });
+    render(<Calendar today={today} />);
+    const dialog = await open();
+    await waitFor(() => expect(within(dialog).getByLabelText('Agent')).toHaveValue('gemini'));
+  });
+
+  it('refuses to save an autopilot whose agent is no longer installed', async () => {
+    vi.mocked(ipc.listAutopilots).mockResolvedValue([autopilot({ agentId: 'codex' })]);
+    render(<Calendar today={today} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit Kopi' }));
+    const dialog = await screen.findByRole('dialog');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Save autopilot' }));
+    expect(ipc.saveAutopilot).not.toHaveBeenCalled();
+    expect(within(dialog).getByText('Pick an agent')).toBeInTheDocument();
+  });
+
+  it('a saved autopilot closes the dialog even when the refresh afterwards fails, and a retry cannot duplicate it', async () => {
+    render(<Calendar today={today} />);
+    const dialog = await open();
+    await userEvent.type(within(dialog).getByLabelText('Name'), 'A');
+    await userEvent.type(within(dialog).getByLabelText('Niche'), 'B');
+    vi.mocked(ipc.listAutopilots).mockRejectedValue(new Error('x'));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Save autopilot' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(ipc.saveAutopilot).toHaveBeenCalledTimes(1);
+    expect(await screen.findByTestId('autopilot-row')).toBeInTheDocument();
+  });
+
+  it('the clock moves on: a failed slot loses Try again once its time has passed', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    try {
+      vi.setSystemTime(new Date(2026, 10, 4, 10, 0));
+      vi.mocked(ipc.listAutopilots).mockResolvedValue([autopilot()]);
+      vi.mocked(ipc.listSlots).mockResolvedValue([slot('f', new Date(2026, 10, 4, 10, 0, 30), { status: 'failed' })]);
+      render(<Calendar />);
+      await act(async () => {});
+      expect(screen.getByRole('button', { name: 'Try again: Kopi' })).toBeInTheDocument();
+      await act(async () => {
+        vi.advanceTimersByTime(61_000);
+      });
+      expect(screen.queryByRole('button', { name: 'Try again: Kopi' })).toBeNull();
+      expect(screen.getByText('Failed · Kopi')).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

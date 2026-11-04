@@ -26,6 +26,7 @@ import {
   updateSlot,
 } from '@/lib/ipc';
 import { localized } from '@/lib/stored';
+import { canStopNow, notifyAutopilotChanged, onAutopilotChanged, stopNow } from '@/lib/autopilotHooks';
 import { openProjectChat } from '@/lib/openProject';
 import { ideasFromReply, startTopic, type TopicIdea } from '@/lib/topics';
 import { cn } from '@/lib/utils';
@@ -36,8 +37,12 @@ const KINDS: VideoKind[] = ['explainer', 'promo', 'quote', 'news', 'tutorial', '
 const NO_MESSAGES: never[] = [];
 const DAY_MS = 86_400_000;
 
-/** A slot with no video yet, drawn as a ghost entry; one that is making stays until its video exists. */
-const isGhost = (s: AutopilotSlot) => s.status === 'making' || ((s.status === 'planned' || s.status === 'failed') && !s.projectId);
+/**
+ * A slot drawn as a ghost entry: one being made, a failed one (even with a kept project, so the failure
+ * and its Try again stay visible), and a planned one that has no video, unless its autopilot is paused.
+ */
+const isGhost = (s: AutopilotSlot, paused: boolean) =>
+  s.status === 'making' || s.status === 'failed' || (s.status === 'planned' && !s.projectId && !paused);
 
 type Idea = TopicIdea;
 
@@ -91,7 +96,16 @@ function agentText(parts: MessagePart[]) {
 
 export function Calendar({ today: todayProp }: { today?: Date } = {}) {
   const { t } = useTranslation();
-  const today = useMemo(() => todayProp ?? new Date(), [todayProp]);
+  // The clock moves on while the Calendar stays open (the window can sit in the tray for days).
+  const [clock, setClock] = useState(() => new Date());
+  const today = todayProp ?? clock;
+  useEffect(() => {
+    if (todayProp) return;
+    const id = setInterval(() => setClock(new Date()), 60_000);
+    return () => clearInterval(id);
+  }, [todayProp]);
+  const [reloadTick, setReloadTick] = useState(0);
+  useEffect(() => onAutopilotChanged(() => setReloadTick((n) => n + 1)), []);
   const settings = useApp((s) => s.settings);
   const blocked = useApp((s) => s.notificationsBlocked);
   const [cursor, setCursor] = useState({ y: today.getFullYear(), m: today.getMonth() });
@@ -134,8 +148,8 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
   useEffect(() => {
     listAutopilots()
       .then(setAutopilots)
-      .catch(() => {});
-  }, []);
+      .catch(() => setPanelError(t('autopilot.cantLoad')));
+  }, [reloadTick]);
 
   // Slots for the visible grid, and a day either side of today so a video being made shows on the panel.
   const gridFrom = new Date(cursor.y, cursor.m, 1 - ((new Date(cursor.y, cursor.m, 1).getDay() + 6) % 7));
@@ -150,7 +164,7 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
     return () => {
       alive = false;
     };
-  }, [gridKey, today, autopilots]);
+  }, [gridKey, dateKey(today), autopilots, reloadTick]);
 
   // When the agent's turn ends, turn its JSON into idea cards and cache them for the week.
   useEffect(() => {
@@ -225,7 +239,8 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
     }
     for (const slot of slots) {
       const at = new Date(slot.dueAt);
-      if (!isGhost(slot) || Number.isNaN(at.getTime()) || !autopilots.some((a) => a.id === slot.autopilotId)) continue;
+      const owner = autopilots.find((a) => a.id === slot.autopilotId);
+      if (!owner || !isGhost(slot, owner.status === 'paused') || Number.isNaN(at.getTime())) continue;
       (map[dateKey(at)] ??= []).push({ slot, at });
     }
     for (const list of Object.values(map)) list.sort((a, b) => a.at.getTime() - b.at.getTime());
@@ -236,6 +251,7 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
     setPanelError(null);
     try {
       await job();
+      notifyAutopilotChanged();
     } catch {
       setPanelError(t('autopilot.cantUpdate'));
     }
@@ -250,12 +266,14 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
       .catch(() => {});
   };
   const saveFromDialog = async (input: AutopilotInput) => {
-    await saveAutopilot(input);
-    setAutopilots(await listAutopilots());
+    // The saved row is what the dialog's success rests on; a failed refresh must not make it look unsaved.
+    const saved = await saveAutopilot(input);
+    setAutopilots((l) => (l.some((x) => x.id === saved.id) ? l.map((x) => (x.id === saved.id ? saved : x)) : [...l, saved]));
+    notifyAutopilotChanged();
   };
   const tryAgain = (slot: AutopilotSlot) =>
     void panelJob(async () => {
-      const next = await updateSlot(slot.id, { status: 'planned', error: null });
+      const next = await updateSlot(slot.id, { status: 'planned', error: null, projectId: null });
       setSlots((l) => l.map((x) => (x.id === next.id ? next : x)));
     });
 
@@ -373,6 +391,7 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
                         <div
                           key={slot.id}
                           data-testid="cal-ghost"
+                          role="note"
                           aria-label={t('calendar.ghost.aria', { label, time })}
                           className="flex min-w-0 flex-col gap-0.5 rounded-sm border border-dashed border-[#333] px-2 py-1 text-left text-text-2"
                         >
@@ -383,6 +402,9 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
                           <span className="truncate text-[11px] font-medium">{label}</span>
                           {slot.status === 'failed' && (
                             <>
+                              {slot.projectId && projects.find((x) => x.id === slot.projectId) && (
+                                <span className="truncate text-[10px] text-text-3">{projects.find((x) => x.id === slot.projectId)?.title}</span>
+                              )}
                               {slot.error && <span className="truncate text-[10px] text-orange-light">{localized(slot.error)}</span>}
                               {at.getTime() > today.getTime() && (
                                 <button
@@ -534,8 +556,12 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
               setAutopilots((l) => l.map((x) => (x.id === next.id ? next : x)));
             })
           }
+          onStop={(slot) => panelJob(() => stopNow(slot))}
           onDelete={(a) =>
             panelJob(async () => {
+              // A video being made for it would otherwise go on with no row or button left to stop it.
+              const making = slots.find((x) => x.autopilotId === a.id && x.status === 'making');
+              if (making && canStopNow()) await stopNow(making);
               await deleteAutopilot(a.id);
               setAutopilots((l) => l.filter((x) => x.id !== a.id));
             })

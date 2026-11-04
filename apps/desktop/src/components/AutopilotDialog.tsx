@@ -83,14 +83,14 @@ export function AutopilotDialog({
   // The style list can arrive after the dialog opens: fill the pick once it does.
   useEffect(() => {
     if (open && !styleId && styles[0]) setStyleId(styles[0].id);
-    if (open && !agentId && installed[0]) setAgentId(installed[0].id);
+    if (open && !agentId && installed[0]) setAgentId((installed.find((x) => x.id === defaults.agentId) ?? installed[0]).id);
   }, [open, styles, agents]);
 
   const problems = {
     name: !name.trim() && t('autopilot.dialog.errors.name'),
     niche: !niche.trim() && t('autopilot.dialog.errors.niche'),
     style: !styles.some((s) => s.id === styleId) && t('autopilot.dialog.errors.style'),
-    agent: !agentId && t('autopilot.dialog.errors.agent'),
+    agent: !installed.some((a) => a.id === agentId) && t('autopilot.dialog.errors.agent'),
     when:
       mode === 'daily'
         ? (times.length < 1 || times.length > MAX_TIMES || !times.every(isTime) || !sameTimes(times)) && t('autopilot.dialog.errors.times')
