@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Button } from '@/components/Button';
 import { Sidebar, type SidebarKey } from '@/components/Sidebar';
 import { getSettings } from '@/lib/ipc';
+import { useWindowDrag } from '@/lib/windowDrag';
 import { Agents } from '@/screens/Agents';
 import { Calendar } from '@/screens/Calendar';
 import { ChatNew } from '@/screens/ChatNew';
@@ -36,6 +37,7 @@ function Onboarding({ name }: { name: Route['name'] }) {
 export default function App() {
   const route = useApp((s) => s.route);
   const settings = useApp((s) => s.settings);
+  useWindowDrag();
 
   const [loadError, setLoadError] = useState(false);
 

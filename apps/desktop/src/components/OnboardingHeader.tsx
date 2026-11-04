@@ -5,8 +5,8 @@ import { cn } from '@/lib/utils';
 export function OnboardingHeader({ step, bars }: { step: 1 | 2 | 3; bars?: boolean }) {
   return (
     <div data-tauri-drag-region className="flex items-center justify-between">
-      <img data-tauri-drag-region src={logo} alt="Tayang" className="block h-8 w-auto" />
-      <div data-tauri-drag-region className="flex items-center gap-3">
+      <img src={logo} alt="Tayang" className="block h-8 w-auto" />
+      <div className="flex items-center gap-3">
         {bars && (
           <div aria-hidden="true" className="flex gap-1">
             {[1, 2, 3].slice(0, step === 3 ? 3 : 2).map((n) => (
@@ -14,7 +14,7 @@ export function OnboardingHeader({ step, bars }: { step: 1 | 2 | 3; bars?: boole
             ))}
           </div>
         )}
-        <span data-tauri-drag-region className="text-[13px] text-text-3">
+        <span className="text-[13px] text-text-3">
           Step {step} of 3
         </span>
       </div>

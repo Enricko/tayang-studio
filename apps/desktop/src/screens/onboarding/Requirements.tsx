@@ -127,7 +127,7 @@ export function Requirements() {
         {group('Required', missing.length ? `${missing.length} missing` : 'all ready', required)}
         {group('Recommended', 'you can add these later in Settings', recommended)}
 
-        <div data-tauri-drag-region className="mt-2 flex items-center gap-4">
+        <div className="mt-2 flex items-center gap-4">
           <Button variant="ghost" className="mr-auto h-12 px-0 text-[15px]" onClick={() => navigate({ name: 'connect' })}>
             Back
           </Button>

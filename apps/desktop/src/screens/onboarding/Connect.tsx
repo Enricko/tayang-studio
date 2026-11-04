@@ -116,7 +116,7 @@ export function Connect() {
           </span>
         </div>
 
-        <div data-tauri-drag-region className="mt-2 flex items-center justify-between">
+        <div className="mt-2 flex items-center justify-between">
           <Button variant="ghost" className="h-12 px-0 text-[15px]" onClick={() => navigate({ name: 'welcome' })}>
             Back
           </Button>
