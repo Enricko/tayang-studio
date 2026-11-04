@@ -263,7 +263,7 @@ pub async fn make_style_preview(
 }
 
 /// `<working>/.tayang/style-study/<id>`, rejected if it would leave the working folder.
-fn study_path(working: &Path, study_id: &str) -> CmdResult<PathBuf> {
+pub(crate) fn study_path(working: &Path, study_id: &str) -> CmdResult<PathBuf> {
     let bad = study_id.is_empty()
         || study_id == "."
         || study_id == ".."
@@ -284,6 +284,12 @@ pub fn read_style_result(state: State<'_, AppState>, study_id: String) -> CmdRes
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(format!("Can't read the style result: {e}")),
     }
+}
+
+/// Deletes a study's folder (its download, frames and result) once the study is over, however it ended.
+#[tauri::command]
+pub fn remove_study_dir(state: State<'_, AppState>, study_id: String) -> CmdResult<()> {
+    media::remove_study_dir(&state.working(), &study_id)
 }
 
 #[tauri::command]

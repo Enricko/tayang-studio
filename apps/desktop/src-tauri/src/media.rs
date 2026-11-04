@@ -42,6 +42,56 @@ fn command(program: impl AsRef<std::ffi::OsStr>) -> Command {
     cmd
 }
 
+/// Like `run`, but kills the process and fails when it runs longer than `limit`.
+fn run_within(mut cmd: Command, what: &str, limit: std::time::Duration) -> Result<std::process::Output> {
+    use std::process::Stdio;
+    let mut child = cmd
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("could not run {what}: {e}"))?;
+    // Drain the pipes on threads so a chatty process can't block on a full pipe.
+    let mut out_pipe = child.stdout.take();
+    let mut err_pipe = child.stderr.take();
+    let out_t = std::thread::spawn(move || {
+        let mut v = Vec::new();
+        if let Some(p) = out_pipe.as_mut() {
+            let _ = std::io::Read::read_to_end(p, &mut v);
+        }
+        v
+    });
+    let err_t = std::thread::spawn(move || {
+        let mut v = Vec::new();
+        if let Some(p) = err_pipe.as_mut() {
+            let _ = std::io::Read::read_to_end(p, &mut v);
+        }
+        v
+    });
+    let started = std::time::Instant::now();
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(st)) => break st,
+            Ok(None) if started.elapsed() >= limit => {
+                let _ = child.kill();
+                let _ = child.wait();
+                let _ = out_t.join();
+                let _ = err_t.join();
+                return Err(format!("{what} timed out"));
+            }
+            Ok(None) => std::thread::sleep(std::time::Duration::from_millis(20)),
+            Err(e) => return Err(format!("could not run {what}: {e}")),
+        }
+    };
+    let stdout = out_t.join().unwrap_or_default();
+    let stderr = err_t.join().unwrap_or_default();
+    if status.success() {
+        Ok(std::process::Output { status, stdout, stderr })
+    } else {
+        Err(format!("{what} failed: {}", String::from_utf8_lossy(&stderr).trim()))
+    }
+}
+
 fn run(mut cmd: Command, what: &str) -> Result<std::process::Output> {
     let out = cmd.output().map_err(|e| format!("could not run {what}: {e}"))?;
     if out.status.success() {
@@ -86,6 +136,10 @@ fn parse_fps(s: &str) -> Option<f64> {
 }
 
 pub fn probe(tools: &MediaTools, video: &Path) -> Result<MediaInfo> {
+    probe_within(tools, video, None)
+}
+
+fn probe_within(tools: &MediaTools, video: &Path, limit: Option<std::time::Duration>) -> Result<MediaInfo> {
     let mut cmd = command(&tools.ffprobe);
     cmd.args([
         "-v",
@@ -98,7 +152,10 @@ pub fn probe(tools: &MediaTools, video: &Path) -> Result<MediaInfo> {
         "json",
     ])
     .arg(video);
-    let out = run(cmd, "ffprobe")?;
+    let out = match limit {
+        Some(l) => run_within(cmd, "ffprobe", l)?,
+        None => run(cmd, "ffprobe")?,
+    };
     let v: serde_json::Value =
         serde_json::from_slice(&out.stdout).map_err(|e| format!("bad ffprobe output: {e}"))?;
     let stream = v["streams"].get(0).ok_or("no video stream found")?;
@@ -217,16 +274,27 @@ fn source_files(study_dir: &Path) -> Vec<PathBuf> {
         .collect()
 }
 
-fn ffmpeg_ok(tools: &MediaTools, args: &[std::ffi::OsString]) -> bool {
+fn ffmpeg_ok(tools: &MediaTools, args: &[std::ffi::OsString], limit: std::time::Duration) -> bool {
     let mut cmd = command(&tools.ffmpeg);
     cmd.args(["-v", "error", "-y"]).args(args);
-    run(cmd, "ffmpeg").is_ok()
+    run_within(cmd, "ffmpeg", limit).is_ok()
 }
+
+const PREVIEW_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
 
 /// Cuts a short silent preview and a poster from the study's `source.*` into `out_dir`
 /// (`preview.mp4`, `poster.jpg`), then deletes the source and any frames folder, whatever happened.
-/// `Ok(None)` when there is no source or no poster could be made.
+/// `Ok(None)` when there is no source or no poster could be made. Each ffmpeg/ffprobe run is killed after 60 s.
 pub fn make_style_preview(tools: &MediaTools, study_dir: &Path, out_dir: &Path) -> Result<Option<StylePreview>> {
+    make_style_preview_within(tools, study_dir, out_dir, PREVIEW_TIMEOUT)
+}
+
+fn make_style_preview_within(
+    tools: &MediaTools,
+    study_dir: &Path,
+    out_dir: &Path,
+    limit: std::time::Duration,
+) -> Result<Option<StylePreview>> {
     let sources = source_files(study_dir);
     let Some(source) = sources
         .iter()
@@ -235,28 +303,42 @@ pub fn make_style_preview(tools: &MediaTools, study_dir: &Path, out_dir: &Path) 
     else {
         return Ok(None);
     };
-    let made = build_style_preview(tools, &source, out_dir);
+    let made = build_style_preview(tools, &source, out_dir, limit);
     for f in &sources {
         let _ = std::fs::remove_file(f);
     }
     let _ = std::fs::remove_dir_all(study_dir.join("frames"));
-    if made.is_none() {
-        let _ = std::fs::remove_dir_all(out_dir);
-    }
     Ok(made)
 }
 
-fn build_style_preview(tools: &MediaTools, source: &Path, out_dir: &Path) -> Option<StylePreview> {
-    let duration = probe(tools, source).ok()?.duration_sec;
-    std::fs::create_dir_all(out_dir).ok()?;
+/// Builds into a temp folder next to `out_dir` and swaps it in only on success, so a failed run never
+/// touches an existing preview.
+fn build_style_preview(tools: &MediaTools, source: &Path, out_dir: &Path, limit: std::time::Duration) -> Option<StylePreview> {
+    let name = out_dir.file_name()?.to_string_lossy().into_owned();
+    let tmp = out_dir.with_file_name(format!(".{name}.tmp"));
+    let _ = std::fs::remove_dir_all(&tmp);
+    let built = build_into(tools, source, &tmp, limit);
+    let Some(has_clip) = built else {
+        let _ = std::fs::remove_dir_all(&tmp);
+        return None;
+    };
+    let _ = std::fs::remove_dir_all(out_dir);
+    if std::fs::rename(&tmp, out_dir).is_err() {
+        let _ = std::fs::remove_dir_all(&tmp);
+        return None;
+    }
+    Some(StylePreview { preview_path: has_clip.then(|| out_dir.join("preview.mp4")), poster_path: out_dir.join("poster.jpg") })
+}
+
+/// Writes preview.mp4 and poster.jpg into `dir`; `Some(has_clip)` when the poster was made.
+fn build_into(tools: &MediaTools, source: &Path, dir: &Path, limit: std::time::Duration) -> Option<bool> {
+    let duration = probe_within(tools, source, Some(limit)).ok()?.duration_sec;
+    std::fs::create_dir_all(dir).ok()?;
     // Skip a cold open: 3 s in, or 10% of a short video.
     let start = (duration * 0.1).min(3.0);
     let os = |s: &str| std::ffi::OsString::from(s);
-    let preview = out_dir.join("preview.mp4");
-    let _ = std::fs::remove_file(&preview);
-    let mut args: Vec<std::ffi::OsString> = ["-ss"].iter().map(|s| os(s)).collect();
-    args.push(os(&format!("{start:.3}")));
-    args.extend(["-t", "10", "-i"].iter().map(|s| os(s)));
+    let preview = dir.join("preview.mp4");
+    let mut args: Vec<std::ffi::OsString> = vec![os("-ss"), os(&format!("{start:.3}")), os("-t"), os("10"), os("-i")];
     args.push(source.as_os_str().to_owned());
     args.extend(
         [
@@ -268,14 +350,14 @@ fn build_style_preview(tools: &MediaTools, source: &Path, out_dir: &Path) -> Opt
         .map(|s| os(s)),
     );
     args.push(preview.as_os_str().to_owned());
-    let clip_ok = ffmpeg_ok(tools, &args)
+    let clip_ok = ffmpeg_ok(tools, &args, limit)
         && preview.metadata().map(|m| m.len() > 0 && m.len() <= MAX_PREVIEW_BYTES).unwrap_or(false);
     if !clip_ok {
         let _ = std::fs::remove_file(&preview);
     }
 
     // A frame 1 s into the clip.
-    let poster = out_dir.join("poster.jpg");
+    let poster = dir.join("poster.jpg");
     let at = (start + 1.0).min((duration - 0.05).max(0.0));
     let poster_args: Vec<std::ffi::OsString> = vec![
         os("-ss"),
@@ -290,10 +372,33 @@ fn build_style_preview(tools: &MediaTools, source: &Path, out_dir: &Path) -> Opt
         os("4"),
         poster.as_os_str().to_owned(),
     ];
-    if !ffmpeg_ok(tools, &poster_args) || !poster.exists() {
+    if !ffmpeg_ok(tools, &poster_args, limit) || !poster.exists() {
         return None;
     }
-    Some(StylePreview { preview_path: clip_ok.then_some(preview), poster_path: poster })
+    Some(clip_ok)
+}
+
+/// Deletes one study's folder `<working>/.tayang/style-study/<id>` (the download, frames, everything). The id
+/// is validated and the path must stay inside the working folder; a missing folder is fine, a symlink is
+/// removed as a link without following it.
+pub fn remove_study_dir(working: &Path, study_id: &str) -> Result<()> {
+    let dir = crate::commands::study_path(working, study_id)?;
+    match std::fs::symlink_metadata(&dir) {
+        Err(_) => Ok(()),
+        Ok(m) if m.file_type().is_symlink() => std::fs::remove_file(&dir).map_err(|e| e.to_string()),
+        Ok(_) => std::fs::remove_dir_all(&dir).map_err(|e| e.to_string()),
+    }
+}
+
+/// Startup sweep: nothing can be running when the app starts, so every leftover study folder goes.
+pub fn sweep_study_dirs(working: &Path) {
+    let root = working.join(".tayang").join("style-study");
+    let Ok(rd) = std::fs::read_dir(&root) else { return };
+    for e in rd.flatten() {
+        let p = e.path();
+        let is_dir = e.file_type().map(|t| t.is_dir()).unwrap_or(false);
+        let _ = if is_dir { std::fs::remove_dir_all(&p) } else { std::fs::remove_file(&p) };
+    }
 }
 
 /// Arguments for `npx` (pinned, non-interactive), run with `folder` as the working directory.
@@ -625,6 +730,114 @@ mod tests {
         remove_style_media(tmp.path(), "../style-media"); // invalid: ignored
         assert!(b.exists());
         assert_eq!(style_media_dir(tmp.path(), ".."), None);
+    }
+
+    #[cfg(unix)]
+    fn script_tool(dir: &Path, name: &str, body: &str) -> PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        let p = dir.join(name);
+        std::fs::write(&p, format!("#!/bin/sh\n{body}\n")).unwrap();
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+        p
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_hung_ffmpeg_or_ffprobe_is_killed_and_the_source_still_deleted() {
+        let tmp = tempfile::tempdir().unwrap();
+        let study = tmp.path().join("study");
+        std::fs::create_dir_all(&study).unwrap();
+        let hang = script_tool(tmp.path(), "hang.sh", "sleep 30");
+        let tools = MediaTools { ffmpeg: hang.clone(), ffprobe: hang };
+        let source = study.join("source.mp4");
+        std::fs::write(&source, "x").unwrap();
+        let started = std::time::Instant::now();
+        let r = make_style_preview_within(&tools, &study, &tmp.path().join("out"), std::time::Duration::from_millis(700)).unwrap();
+        assert_eq!(r, None);
+        assert!(started.elapsed() < std::time::Duration::from_secs(10), "{:?}", started.elapsed());
+        assert!(!source.exists());
+        assert!(!tmp.path().join("out").exists());
+    }
+
+    #[test]
+    fn a_failed_run_keeps_an_existing_good_preview() {
+        let Some(t) = test_tools() else { return };
+        let tmp = tempfile::tempdir().unwrap();
+        let study = tmp.path().join("study");
+        std::fs::create_dir_all(&study).unwrap();
+        std::fs::write(study.join("source.webm"), "not a video").unwrap();
+        let out = tmp.path().join("style-media").join("copied-1");
+        std::fs::create_dir_all(&out).unwrap();
+        std::fs::write(out.join("poster.jpg"), "old poster").unwrap();
+        assert_eq!(make_style_preview(&t, &study, &out).unwrap(), None);
+        assert_eq!(std::fs::read_to_string(out.join("poster.jpg")).unwrap(), "old poster");
+        // No temp folder is left next to it either.
+        let names: Vec<_> = std::fs::read_dir(out.parent().unwrap()).unwrap().map(|e| e.unwrap().file_name()).collect();
+        assert_eq!(names, ["copied-1"]);
+    }
+
+    #[test]
+    fn a_successful_run_replaces_an_existing_preview() {
+        let Some(t) = test_tools() else { return };
+        let tmp = tempfile::tempdir().unwrap();
+        let study = tmp.path().join("study");
+        make_source(&t, &study, "source.mp4");
+        let out = tmp.path().join("style-media").join("copied-1");
+        std::fs::create_dir_all(&out).unwrap();
+        std::fs::write(out.join("stale.txt"), "x").unwrap();
+        let r = make_style_preview(&t, &study, &out).unwrap().unwrap();
+        assert!(r.preview_path.unwrap().exists() && r.poster_path.exists());
+        assert!(!out.join("stale.txt").exists());
+    }
+
+    #[test]
+    fn study_dirs_are_removed_inside_the_working_folder_only() {
+        let tmp = tempfile::tempdir().unwrap();
+        let working = tmp.path().join("work");
+        let root = working.join(".tayang").join("style-study");
+        let a = root.join("a1");
+        let b = root.join("b2");
+        for d in [&a, &b] {
+            std::fs::create_dir_all(d.join("frames")).unwrap();
+            std::fs::write(d.join("source.mp4"), "x").unwrap();
+        }
+        remove_study_dir(&working, "a1").unwrap();
+        assert!(!a.exists() && b.exists());
+        remove_study_dir(&working, "a1").unwrap(); // already gone
+        for bad in ["", ".", "..", "../x", "a/b", "a\\b"] {
+            assert!(remove_study_dir(&working, bad).is_err(), "{bad}");
+        }
+        assert!(working.exists() && b.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn removing_a_study_dir_that_is_a_symlink_only_removes_the_link() {
+        let tmp = tempfile::tempdir().unwrap();
+        let working = tmp.path().join("work");
+        let root = working.join(".tayang").join("style-study");
+        std::fs::create_dir_all(&root).unwrap();
+        let outside = tmp.path().join("outside");
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join("keep.txt"), "x").unwrap();
+        std::os::unix::fs::symlink(&outside, root.join("evil")).unwrap();
+        let _ = remove_study_dir(&working, "evil");
+        assert!(outside.join("keep.txt").exists());
+    }
+
+    #[test]
+    fn the_startup_sweep_deletes_every_study_folder() {
+        let tmp = tempfile::tempdir().unwrap();
+        let working = tmp.path().join("work");
+        let root = working.join(".tayang").join("style-study");
+        for id in ["a", "b"] {
+            std::fs::create_dir_all(root.join(id)).unwrap();
+            std::fs::write(root.join(id).join("source.mp4"), "x").unwrap();
+        }
+        std::fs::write(root.join("stray.txt"), "x").unwrap();
+        sweep_study_dirs(&working);
+        assert_eq!(std::fs::read_dir(&root).unwrap().count(), 0);
+        sweep_study_dirs(&tmp.path().join("nothing")); // no folder: fine
     }
 
     #[test]

@@ -28,6 +28,7 @@ pub fn run() {
             let working = db.get_settings(&home).working_folder;
             commands::allow_asset_folders(app.handle(), &db, &working);
             commands::allow_style_media(app.handle());
+            media::sweep_study_dirs(std::path::Path::new(&working));
             app.manage(usage::UsageCache::default());
             app.manage(AppState {
                 db,
@@ -66,6 +67,7 @@ pub fn run() {
             commands::delete_style,
             commands::read_style_result,
             commands::study_dir,
+            commands::remove_study_dir,
             commands::make_style_preview,
             commands::list_jobs,
             commands::upsert_job,
