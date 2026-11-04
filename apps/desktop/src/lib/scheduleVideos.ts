@@ -126,7 +126,7 @@ export function isScheduleRecord(p: MessagePart): boolean {
 
 /** Rust's `schedule:<code>[:n]` errors as stored text; anything else is a failed save. */
 export function batchReason(message: string): string {
-  const m = /^schedule:(count|badTime|past|tooFar|unknown|badItem)(?::(\d+))?$/.exec(message);
+  const m = /^schedule:(count|badTime|past|tooFar|unknown|twice|badItem)(?::(\d+))?$/.exec(message);
   if (!m) return stored('schedule.agent.write');
   return stored(`schedule.agent.${m[1]}` as StoredKey, m[2] ? { n: Number(m[2]) } : undefined);
 }

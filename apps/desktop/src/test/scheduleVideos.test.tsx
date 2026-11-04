@@ -182,6 +182,7 @@ describe('batchReason', () => {
   it("says Rust's codes as stored text, and anything else as a save that was undone", () => {
     expect(batchReason('schedule:badTime:3')).toBe('video 3 has no valid date and time');
     expect(batchReason('schedule:count')).toBe('a schedule needs 1 to 20 videos');
+    expect(batchReason('schedule:twice:2')).toBe('video 2 is in the schedule twice');
     expect(batchReason('database is locked')).toBe('saving failed, so every change was undone');
   });
 });

@@ -155,6 +155,17 @@ pub fn create_project(
 
 /// A new draft project: its own folder in `working` with the brief, and its row.
 pub fn new_project(db: &Db, working: &Path, input: NewProject, brief: &str) -> CmdResult<Project> {
+    new_project_with(db, working, input, |dir| projects::write_project_brief(dir, brief))
+}
+
+/// `new_project` with the brief write passed in, so a test can make it fail. Whatever fails after the
+/// folder exists removes it again: `create_project_folder` made it new.
+fn new_project_with(
+    db: &Db,
+    working: &Path,
+    input: NewProject,
+    write_brief: impl FnOnce(&Path) -> std::io::Result<()>,
+) -> CmdResult<Project> {
     let slugs: Vec<String> = db
         .list_projects()
         .map_err(err)?
@@ -163,8 +174,10 @@ pub fn new_project(db: &Db, working: &Path, input: NewProject, brief: &str) -> C
         .collect();
     let (slug, dir) = projects::create_project_folder(working, &input.title, &slugs)
         .map_err(|e| format!("Can't create the project folder: {e}"))?;
-    projects::write_project_brief(&dir, brief)
-        .map_err(|e| format!("Can't write the project brief: {e}"))?;
+    if let Err(e) = write_brief(&dir) {
+        let _ = std::fs::remove_dir_all(&dir);
+        return Err(format!("Can't write the project brief: {e}"));
+    }
     let now = crate::db::now();
     let project = Project {
         id: uuid::Uuid::new_v4().to_string(),
@@ -245,7 +258,7 @@ const BATCH_MAX: usize = 20;
 /// Checks every item first, exactly as `set_schedule` will, then writes: drafts first, then the
 /// schedules. Any failure undoes the batch: its drafts are removed (row and folder) and videos already
 /// moved get their old schedule and reminders back. Errors are codes the UI says in the user's
-/// language: `schedule:count`, `schedule:<badTime|past|tooFar|unknown|badItem>:<n>` (1-based) and
+/// language: `schedule:count`, `schedule:<badTime|past|tooFar|unknown|twice|badItem>:<n>` (1-based) and
 /// `schedule:write`.
 pub fn schedule_batch(
     db: &Db,
@@ -284,6 +297,10 @@ fn schedule_batch_with(
                 if db.get_project(id).map_err(err)?.is_none() {
                     return Err(format!("schedule:unknown:{n}"));
                 }
+                // A video once per batch: two times for one video can't both be undone right.
+                if items[..i].iter().any(|x| x.project_id.as_deref() == Some(id.as_str())) {
+                    return Err(format!("schedule:twice:{n}"));
+                }
             }
             (None, Some(d)) if !d.input.title.trim().is_empty() => {}
             _ => return Err(format!("schedule:badItem:{n}")),
@@ -302,7 +319,8 @@ fn schedule_batch_with(
                 let _ = std::fs::remove_dir_all(dir);
             }
         }
-        for old in moved {
+        // Newest first, so each video ends with the schedule it had before the batch.
+        for old in moved.iter().rev() {
             let _ = db.update_project(
                 &old.id,
                 serde_json::json!({
@@ -1310,6 +1328,7 @@ mod tests {
             (vec![draft("A", "2027-11-06T19:00:00+07:00")], "schedule:tooFar:1"),
             (vec![existing("nope", ok)], "schedule:unknown:1"),
             (vec![draft("  ", ok)], "schedule:badItem:1"),
+            (vec![existing("p", ok), draft("A", ok), existing("p", "2026-11-06T19:00:00+07:00")], "schedule:twice:3"),
             (vec![BatchItem { project_id: None, at: ok.into(), draft: None }], "schedule:badItem:1"),
         ] {
             assert_eq!(schedule_batch(&db, tmp.path(), items, batch_now()).unwrap_err(), code);
@@ -1354,6 +1373,17 @@ mod tests {
         let after = db.get_project("p").unwrap().unwrap();
         assert_eq!(after.scheduled_at, before.scheduled_at);
         assert_eq!(after.reminded_at, before.reminded_at);
+    }
+
+    #[test]
+    fn a_draft_whose_brief_cant_be_written_leaves_no_folder() {
+        let db = seeded();
+        let tmp = tempfile::tempdir().unwrap();
+        let input = NewProject { title: "Jalur Rempah".into(), kind: VideoKind::Explainer, format: VideoFormat::Portrait, language: VideoLanguage::Id, style_id: None };
+        let err = new_project_with(&db, tmp.path(), input, |_| Err(std::io::Error::other("disk full"))).unwrap_err();
+        assert!(err.contains("brief"), "{err}");
+        assert_eq!(std::fs::read_dir(tmp.path()).unwrap().count(), 0);
+        assert_eq!(db.list_projects().unwrap().len(), 1);
     }
 
     #[test]
