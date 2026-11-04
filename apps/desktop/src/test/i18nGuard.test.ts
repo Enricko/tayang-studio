@@ -15,7 +15,7 @@ const SKIP = [join(SRC, 'components', 'ui')];
 /** Props that never carry words a person reads; every other string prop is checked. */
 const TECHNICAL = new Set([
   'className', 'variant', 'size', 'side', 'align', 'type', 'role', 'id', 'htmlFor', 'href', 'src', 'value', 'defaultValue',
-  'name', 'key', 'style', 'target', 'rel', 'mood', 'tag', 'loading', 'autoComplete', 'inputMode', 'spellCheck', 'orientation',
+  'name', 'key', 'style', 'target', 'rel', 'mood', 'tag', 'loading', 'decoding', 'autoComplete', 'inputMode', 'spellCheck', 'orientation',
   'kind', 'color', 'mode', 'viewBox', 'd', 'fill', 'stroke', 'width', 'height', 'xmlns', 'selector', 'preload', 'crossOrigin',
 ]);
 /** The aria-* props that do carry words. */

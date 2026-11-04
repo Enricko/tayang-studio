@@ -5,6 +5,7 @@ import { formatTimecode, type ChatMessage, type MessagePart } from '@tayang/shar
 import { Markdown } from '@/components/Markdown';
 import { Oyen } from '@/components/Oyen';
 import { STICK_EVENT } from '@/components/ScrollToBottom';
+import { ImageStrip, isImagePart, type ImagePart } from '@/components/AgentImages';
 import { ActivityGroup, isHiddenTool, WorkingLine, type ActivityItem, type LiveTurn } from '@/components/Activity';
 import { localized } from '@/lib/stored';
 import { ScheduleConfirm } from '@/components/ScheduleConfirm';
@@ -224,9 +225,16 @@ function Parts({
   /** The running turn, for the live line. */
   turn?: LiveTurn;
 }) {
-  // Tool calls and thoughts that run together become one activity line, where they happened.
+  // Tool calls and thoughts that run together become one activity line, where they happened; images
+  // the agent made become a strip of thumbnails after them.
   const out: React.ReactNode[] = [];
   let run: ActivityItem[] = [];
+  const images = parts.filter(isImagePart);
+  let strip: ImagePart[] = [];
+  const flushStrip = () => {
+    if (strip.length) out.push(<ImageStrip key={`i${out.length}`} parts={strip} all={images} />);
+    strip = [];
+  };
   /** Whether the tail is an activity line already showing a running step: it carries the live time itself. */
   let tailRunning = false;
   const flush = (tail: boolean) => {
@@ -239,15 +247,25 @@ function Parts({
   };
   parts.forEach((p, i) => {
     if (p.type === 'tool' || p.type === 'thought') {
-      if (p.type === 'thought' || !isHiddenTool(p)) run.push(p);
+      if (p.type === 'thought' || !isHiddenTool(p)) {
+        flushStrip();
+        run.push(p);
+      }
       return;
     }
     flush(false);
+    if (p.type === 'file' && p.mime.startsWith('image/')) {
+      strip.push(p);
+      return;
+    }
+    flushStrip();
     if (p.type === 'text') out.push(<AgentText key={i} text={p.text} messageId={messageId} part={i} a2ui={a2ui} />);
     else if (p.type === 'mention') out.push(<Chip key={i}>@{p.title}</Chip>);
     else if (p.type === 'frame') out.push(<FrameChip key={i} part={p} />);
+    else if (p.type === 'file') out.push(<SentFile key={i} part={p} />);
   });
   flush(true);
+  flushStrip();
   if (live && !tailRunning) out.push(<WorkingLine key="working" turn={turn} />);
   return <>{out}</>;
 }
