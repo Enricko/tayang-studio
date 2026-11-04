@@ -83,4 +83,33 @@ describe('Markdown in agent replies', () => {
     render(<MessageList streaming={false} messages={[msg('user', '**x**')]} />);
     expect(screen.getByText('**x**')).toBeInTheDocument();
   });
+
+  it('keeps single line breaks inside a paragraph', () => {
+    const { container } = agent('**Naskah:** a\n**Di layar:** b');
+    expect(container.querySelectorAll('p br')).toHaveLength(1);
+  });
+
+  it('shows no check when the clipboard is missing or rejects', async () => {
+    Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true });
+    const { unmount } = render(<Markdown text={'```\nx\n```'} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Copy code' }));
+    expect(screen.getByRole('button', { name: 'Copy code' }).querySelector('svg.lucide-check')).toBeNull();
+    unmount();
+    const writeText = vi.fn().mockRejectedValue(new Error('denied'));
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    render(<Markdown text={'```\nx\n```'} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Copy code' }));
+    await waitFor(() => expect(writeText).toHaveBeenCalled());
+    expect(screen.getByRole('button', { name: 'Copy code' }).querySelector('svg.lucide-check')).toBeNull();
+  });
+
+  it('renders a fence without a language as a plain code block', () => {
+    const { container } = render(<Markdown text={'```\nplain\n```'} />);
+    expect(container.querySelector('pre code')?.className ?? '').not.toContain('bg-raised');
+  });
+
+  it('keeps the start number of an ordered list', () => {
+    const { container } = render(<Markdown text={'5. five\n6. six'} />);
+    expect(container.querySelector('ol')).toHaveAttribute('start', '5');
+  });
 });

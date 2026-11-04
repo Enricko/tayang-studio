@@ -1,6 +1,7 @@
-import { memo, useEffect, useRef, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react';
+import { createContext, memo, useContext, useEffect, useRef, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkBreaks from 'remark-breaks';
 import { useTranslation } from 'react-i18next';
 import { Check, Copy } from 'lucide-react';
 import { openUrl } from '@tauri-apps/plugin-opener';
@@ -22,12 +23,19 @@ function CodeBlock({ children }: { children?: ReactNode }) {
   const code = (children as { props?: { className?: string; children?: ReactNode } } | undefined)?.props;
   const lang = /language-([\w+-]+)/.exec(code?.className ?? '')?.[1];
   const text = nodeText(code?.children).replace(/\n$/, '');
+  const mounted = useRef(true);
+  useEffect(() => () => void (mounted.current = false), []);
   const copy = () => {
-    void Promise.resolve(navigator.clipboard?.writeText(text)).then(() => {
-      setCopied(true);
-      clearTimeout(timer.current);
-      timer.current = setTimeout(() => setCopied(false), 1500);
-    });
+    if (!navigator.clipboard) return;
+    navigator.clipboard.writeText(text).then(
+      () => {
+        if (!mounted.current) return;
+        setCopied(true);
+        clearTimeout(timer.current);
+        timer.current = setTimeout(() => setCopied(false), 1500);
+      },
+      () => {},
+    );
   };
   return (
     <div className="relative my-2 first:mt-0 last:mb-0">
@@ -47,7 +55,13 @@ function CodeBlock({ children }: { children?: ReactNode }) {
   );
 }
 
+function Code({ className, children }: { className?: string; children?: ReactNode }) {
+  if (useContext(InPre)) return <code className={className}>{children}</code>;
+  return <code className="rounded-sm bg-raised px-1 py-0.5 font-mono text-[12.5px]">{children}</code>;
+}
+
 const block = 'my-2 first:mt-0 last:mb-0';
+const InPre = createContext(false);
 const components: Components = {
   p: (p) => <p className={`${block} text-[14px] leading-[1.6] text-[#D9D9D9]`}>{p.children}</p>,
   strong: (p) => <strong className="font-semibold text-foreground">{p.children}</strong>,
@@ -64,18 +78,17 @@ const components: Components = {
       {children}
     </ul>
   ),
-  ol: (p) => <ol className={`${block} list-decimal pl-5 text-[14px] leading-[1.6] text-[#D9D9D9] marker:text-text-3`}>{p.children}</ol>,
+  ol: (p) => <ol start={p.start} className={`${block} list-decimal pl-5 text-[14px] leading-[1.6] text-[#D9D9D9] marker:text-text-3`}>{p.children}</ol>,
   li: (p) => <li className="my-0.5">{p.children}</li>,
   input: (p: ComponentPropsWithoutRef<'input'>) => <input type="checkbox" checked={!!p.checked} disabled readOnly className="mr-1.5 align-middle" />,
   blockquote: (p) => <blockquote className={`${block} border-l-2 border-border pl-3 text-text-2`}>{p.children}</blockquote>,
   hr: () => <hr className="my-3 border-border" />,
-  pre: (p) => <CodeBlock>{p.children}</CodeBlock>,
-  code: ({ className, children }) =>
-    className?.includes('language-') ? (
-      <code className={className}>{children}</code>
-    ) : (
-      <code className="rounded-sm bg-raised px-1 py-0.5 font-mono text-[12.5px]">{children}</code>
-    ),
+  pre: (p) => (
+    <InPre.Provider value>
+      <CodeBlock>{p.children}</CodeBlock>
+    </InPre.Provider>
+  ),
+  code: ({ className, children }) => <Code className={className}>{children}</Code>,
   table: (p) => (
     <div className={`${block} overflow-x-auto`}>
       <table className="border-collapse text-[14px] text-[#D9D9D9]">{p.children}</table>
@@ -93,7 +106,7 @@ const components: Components = {
         className="text-orange-light underline underline-offset-2 hover:text-primary"
         onClick={(e) => {
           e.preventDefault();
-          void openUrl(href);
+          openUrl(href).catch(() => {});
         }}
       >
         {children}
@@ -111,12 +124,12 @@ function htmlAsText() {
   return walk;
 }
 
-const plugins = [remarkGfm, htmlAsText];
+const plugins = [remarkGfm, remarkBreaks, htmlAsText];
 
 /** Agent prose as Markdown: no raw HTML, no images, links open outside the webview. */
 export const Markdown = memo(function Markdown({ text }: { text: string }) {
   return (
-    <div className="min-w-0">
+    <div className="min-w-0 break-words">
       <ReactMarkdown remarkPlugins={plugins} urlTransform={(u) => u} components={components}>
         {text}
       </ReactMarkdown>
