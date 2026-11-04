@@ -108,7 +108,7 @@ describe('fitLayout', () => {
 
   it('gives the handles a max that leaves the chat its 420 px', () => {
     const f = fitLayout({ ...base, windowWidth: 1000 });
-    expect(f.sidebarMax).toBe(1000 - f.preview - CHAT_MIN);
+    expect(f.sidebarMax).toBe(1000 - PREVIEW.min - CHAT_MIN);
     expect(f.previewMax).toBe(1000 - f.sidebar - CHAT_MIN);
     const wide = fitLayout({ ...base, windowWidth: 3000 });
     expect(wide).toMatchObject({ sidebarMax: SIDEBAR.max, previewMax: PREVIEW.max });

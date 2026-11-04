@@ -56,8 +56,6 @@ function saveLayout(s: SavedLayout) {
 
 interface LayoutState extends SavedLayout {
   windowWidth: number;
-  /** A screen with the preview panel is showing. */
-  previewOpen: boolean;
   setSidebar(width: number): void;
   setCollapsed(collapsed: boolean): void;
   toggleCollapsed(): void;
@@ -65,7 +63,6 @@ interface LayoutState extends SavedLayout {
   setPreview(width: number): void;
   resetPreview(): void;
   setWindowWidth(width: number): void;
-  setPreviewOpen(open: boolean): void;
   /** Reads the saved layout again (startup, tests). */
   hydrate(): void;
 }
@@ -80,7 +77,6 @@ export const useLayout = create<LayoutState>((set, get) => {
   return {
     ...loadLayout(),
     windowWidth: viewport(),
-    previewOpen: false,
     setSidebar: (w) => save({ sidebar: clamp(Math.round(w), SIDEBAR.min, SIDEBAR.max) }),
     setCollapsed: (collapsed) => get().collapsed !== collapsed && save({ collapsed }),
     toggleCollapsed: () => save({ collapsed: !get().collapsed }),
@@ -88,13 +84,13 @@ export const useLayout = create<LayoutState>((set, get) => {
     setPreview: (w) => save({ preview: clamp(Math.round(w), PREVIEW.min, PREVIEW.max) }),
     resetPreview: () => save({ preview: PREVIEW.default }),
     setWindowWidth: (windowWidth) => set({ windowWidth }),
-    setPreviewOpen: (previewOpen) => set({ previewOpen }),
     hydrate: () => set({ ...loadLayout(), windowWidth: viewport() }),
   };
 });
 
 export interface FitInput extends SavedLayout {
   windowWidth: number;
+  /** The screen shows the preview panel (the project chat). */
   previewOpen: boolean;
 }
 
@@ -126,15 +122,16 @@ export function fitLayout({ windowWidth: w, sidebar, collapsed, preview, preview
   return {
     sidebar: s,
     preview: p,
-    sidebarMax: clamp(w - p - CHAT_MIN, SIDEBAR.min, SIDEBAR.max),
+    // A wider sidebar may push the preview down to its min (it gives way first), never the chat.
+    sidebarMax: clamp(w - (previewOpen ? PREVIEW.min : 0) - CHAT_MIN, SIDEBAR.min, SIDEBAR.max),
     previewMax: clamp(Math.min(previewCap, w - s - CHAT_MIN), PREVIEW.min, PREVIEW.max),
   };
 }
 
-/** The fitted widths, following the window and the saved layout. */
-export function useFittedLayout(): Fitted & { collapsed: boolean } {
+/** The fitted widths, following the window and the saved layout, for a screen with or without the preview. */
+export function useFittedLayout(previewOpen: boolean): Fitted & { collapsed: boolean } {
   const s = useLayout();
-  return { ...fitLayout(s), collapsed: s.collapsed };
+  return { ...fitLayout({ ...s, previewOpen }), collapsed: s.collapsed };
 }
 
 /** Keeps the store's window width current. Mount once. */

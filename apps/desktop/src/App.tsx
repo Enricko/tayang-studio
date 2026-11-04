@@ -146,7 +146,8 @@ function resizeSidebar(width: number, max: number) {
 /** The app around a screen: the resizable sidebar and the main column. */
 function Shell({ route }: { route: Route }) {
   const { t } = useTranslation();
-  const fitted = useFittedLayout();
+  // Only the project chat has the preview panel; the sidebar's room depends on it.
+  const fitted = useFittedLayout(route.name === 'chat');
   useWindowWidthSync();
   useSidebarShortcut();
 

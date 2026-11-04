@@ -110,10 +110,8 @@ describe('project chat preview panel', () => {
     expect(panel.style.width).toBe(`${1000 - SIDEBAR.default - CHAT_MIN}px`);
   });
 
-  it('tells the layout it is open while it shows', async () => {
-    const { view } = await renderChat();
-    expect(useLayout.getState().previewOpen).toBe(true);
-    view.unmount();
-    expect(useLayout.getState().previewOpen).toBe(false);
+  it('has its width from the first paint', () => {
+    render(<ChatProject chatId="c1" />);
+    expect(screen.getByRole('region', { name: 'Preview' }).style.width).toBe(`${PREVIEW.default}px`);
   });
 });

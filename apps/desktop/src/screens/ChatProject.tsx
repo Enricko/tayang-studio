@@ -39,13 +39,7 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
   const messages = useChat((s) => s.messages[chatId]) ?? NO_MESSAGES;
   const streaming = useChat((s) => !!s.streaming[chatId]);
   const permission = useChat((s) => headPermission(s, chatId));
-  const fitted = useFittedLayout();
-
-  // The layout makes room for the preview panel while this screen shows.
-  useEffect(() => {
-    useLayout.getState().setPreviewOpen(true);
-    return () => useLayout.getState().setPreviewOpen(false);
-  }, []);
+  const fitted = useFittedLayout(true);
 
   useEffect(() => {
     useChat.getState().listen();

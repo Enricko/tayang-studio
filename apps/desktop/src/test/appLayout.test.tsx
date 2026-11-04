@@ -10,6 +10,9 @@ vi.mock('@/lib/ipc', () => ({
   listProjects: vi.fn().mockResolvedValue([]),
   getAgentUsage: vi.fn().mockResolvedValue([]),
   syncStyles: vi.fn().mockResolvedValue({ styles: [], offline: false }),
+  getChat: vi.fn().mockResolvedValue(null),
+  listMessages: vi.fn().mockResolvedValue([]),
+  renderCommand: vi.fn().mockResolvedValue(null),
 }));
 vi.mock('@/lib/events', () => ({ onAgentUpdate: vi.fn(), onPermission: vi.fn() }));
 vi.mock('@/state/autopilot', () => ({ startAutopilot: vi.fn(() => () => {}) }));
@@ -126,6 +129,15 @@ describe('App sidebar resizing', () => {
     handle.focus();
     await userEvent.keyboard('{Enter}');
     expect(panel.style.width).toBe('290px');
+  });
+
+  it('on a project chat, leaves room for the preview at its min too', async () => {
+    window.innerWidth = 1000;
+    useLayout.getState().hydrate();
+    const { handle } = await renderApp();
+    act(() => useApp.getState().navigate({ name: 'chat', chatId: 'c1' }));
+    // 1000 − 420 chat − 300 preview min
+    expect(handle).toHaveAttribute('aria-valuemax', '280');
   });
 
   it('keeps the chat 420 px wide in a narrow window', async () => {
