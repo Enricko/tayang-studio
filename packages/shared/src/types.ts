@@ -178,3 +178,22 @@ export interface MediaInfo {
   width: number;
   height: number;
 }
+
+export interface UsageWindow {
+  usedPercent: number;
+  resetsAt: string | null;
+}
+
+export type UsageStatus = 'ok' | 'signed-out' | 'unavailable' | 'error';
+
+export interface AgentUsage {
+  agentId: AgentId;
+  status: UsageStatus;
+  /** The 5 hour window. */
+  session: UsageWindow | null;
+  weekly: UsageWindow | null;
+  /** A model-scoped weekly limit, such as Fable. */
+  modelWeekly: { label: string; window: UsageWindow } | null;
+  updatedAt: string;
+  message: string | null;
+}
