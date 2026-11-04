@@ -159,6 +159,12 @@ export const id: Translations = {
     cancelledStudy: 'Kamu membatalkan proses mempelajari video',
     cancelled: 'Dibatalkan',
     studyUnreadable: 'Agen tidak menulis gaya yang bisa dibaca Tayang. Coba video lain.',
+    rendering: 'Sedang merender video',
+    waitingAnswer: 'Agent menunggu jawabanmu',
+    noVideo: 'Belum ada video. Agent berhenti sebelum render',
+    openChat: 'Buka chat',
+    continue: 'Lanjutkan',
+    continuePrompt: 'Lanjutkan dan render videonya, lalu cek frame-nya.',
   },
   settings: {
     title: 'Pengaturan',
@@ -298,6 +304,8 @@ export const id: Translations = {
     status: { draft: 'Draf', building: 'Sedang dibuat', rendered: 'Sudah dirender', scheduled: 'Terjadwal' },
   },
   activity: {
+    workingFor: 'Sedang bekerja · {{time}}',
+    renderingFor: 'Sedang merender video · {{time}}',
     thought_other: 'Berpikir {{count}} kali',
     ran_other: 'Menjalankan {{count}} perintah',
     edited_other: 'mengubah {{count}} file',
@@ -351,6 +359,7 @@ export const id: Translations = {
     rowAria: 'Pemakaian {{label}}',
   },
   videos: {
+    rendering: 'Merender',
     title: 'Video',
     subtitle: 'Semua yang sudah kamu buat, tersimpan di komputer ini',
     searchAria: 'Cari video',
@@ -551,6 +560,8 @@ export const id: Translations = {
     },
   },
   preview: {
+    renderingFor: 'Sedang merender video… {{time}}',
+    renderingHint: 'Pratinjau diperbarui setelah selesai',
     rendering: 'Merender…',
     nothing: 'Belum ada yang dirender',
     renderPreview: 'Render pratinjau',

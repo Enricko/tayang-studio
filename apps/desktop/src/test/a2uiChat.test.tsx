@@ -13,6 +13,7 @@ vi.mock('@/lib/ipc', () => ({
   agentStop: vi.fn().mockResolvedValue(undefined),
   agentRespondPermission: vi.fn(),
   upsertJob: vi.fn().mockResolvedValue(undefined),
+  latestRenderInfo: vi.fn().mockResolvedValue(null),
   listJobs: vi.fn().mockResolvedValue([]),
   assetUrl: (p: string) => p,
 }));
@@ -25,7 +26,7 @@ vi.mock('@/lib/events', () => ({
   onPermission: vi.fn(async () => () => {}),
 }));
 vi.mock('@tauri-apps/plugin-opener', () => ({ openUrl: vi.fn() }));
-import { addMessage, agentPrompt, agentRespondPermission, agentStart, agentStop, getChat, upsertJob } from '@/lib/ipc';
+import { addMessage, agentPrompt, agentRespondPermission, agentStart, agentStop, getChat, latestRenderInfo, upsertJob } from '@/lib/ipc';
 import { MessageList } from '@/components/MessageList';
 import { BUSY_NOTE, failChatJob, useChat } from '@/state/chat';
 import { needsYou } from '@/state/jobs';
@@ -342,8 +343,10 @@ describe('build jobs when a turn does not finish well', () => {
     await emitTo('j1', { kind: 'done', stopReason: 'cancelled' });
     await waitFor(() => expect(lastJob()).toMatchObject({ id: 'build-j1', status: 'done', note: 'Cancelled' }));
     expect(needsYou([lastJob()])).toBe(0);
+    // A later end with a fresh video is plainly done.
+    vi.mocked(latestRenderInfo).mockResolvedValueOnce({ path: '/w/v.mp4', name: 'v.mp4', size: 3, modifiedAt: new Date().toISOString() });
     await emitTo('j1', { kind: 'done', stopReason: 'end_turn' });
-    expect(lastJob()).toMatchObject({ status: 'done', note: null });
+    await waitFor(() => expect(lastJob()).toMatchObject({ status: 'done', note: 'v.mp4' }));
   });
 
   it('failChatJob marks the job failed and a late done no longer touches it', async () => {

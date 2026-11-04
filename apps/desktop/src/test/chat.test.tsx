@@ -22,6 +22,7 @@ vi.mock('@/lib/ipc', () => ({
   listStyles: vi.fn(),
   syncStyles: vi.fn().mockResolvedValue({ styles: [], offline: false }),
   mediaLatestRender: vi.fn().mockResolvedValue(null),
+  latestRenderInfo: vi.fn().mockResolvedValue(null),
   mediaProbe: vi.fn().mockResolvedValue(null),
   mediaThumbnails: vi.fn().mockResolvedValue([]),
   mediaExtractFrame: vi.fn(),
@@ -947,8 +948,11 @@ describe('ChatProject render and jobs', () => {
     expect(statuses().at(-1)).toBe('needs-you');
     await user.click(screen.getByRole('button', { name: 'Allow' }));
     expect(statuses().at(-1)).toBe('working');
+    // Done only with a video made during the turn.
+    vi.mocked(ipc.latestRenderInfo).mockResolvedValueOnce({ path: '/w/p1/renders/v-1.mp4', name: 'v-1.mp4', size: 9, modifiedAt: new Date().toISOString() });
     await emit('c1', { kind: 'done', stopReason: 'end_turn' });
-    expect(statuses().at(-1)).toBe('done');
+    await waitFor(() => expect(statuses().at(-1)).toBe('done'));
+    expect(vi.mocked(ipc.upsertJob).mock.calls.at(-1)![0].note).toBe('v-1.mp4');
 
     await user.type(screen.getByRole('textbox', { name: 'Message' }), 'again');
     await user.click(screen.getByRole('button', { name: 'Send' }));

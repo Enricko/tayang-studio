@@ -157,6 +157,12 @@ export const en = {
     cancelledStudy: 'You cancelled the study',
     cancelled: 'Cancelled',
     studyUnreadable: 'The agent did not write a style Tayang could read. Try another video.',
+    rendering: 'Rendering video',
+    waitingAnswer: 'The agent is waiting for your answer',
+    noVideo: 'No video yet. The agent stopped before rendering',
+    openChat: 'Open chat',
+    continue: 'Continue',
+    continuePrompt: 'Continue and render the video, then check the frames.',
   },
   settings: {
     title: 'Settings',
@@ -297,6 +303,8 @@ export const en = {
     status: { draft: 'Draft', building: 'Building', rendered: 'Rendered', scheduled: 'Scheduled' },
   },
   activity: {
+    workingFor: 'Working · {{time}}',
+    renderingFor: 'Rendering video · {{time}}',
     thought_other: 'Thought {{count}} times',
     ran_one: 'Ran {{count}} command',
     ran_other: 'Ran {{count}} commands',
@@ -356,6 +364,7 @@ export const en = {
     rowAria: '{{label}} usage',
   },
   videos: {
+    rendering: 'Rendering',
     title: 'Videos',
     subtitle: "Everything you've made, saved on this computer",
     searchAria: 'Search videos',
@@ -556,6 +565,8 @@ export const en = {
     },
   },
   preview: {
+    renderingFor: 'Rendering video… {{time}}',
+    renderingHint: "The preview updates when it's done",
     rendering: 'Rendering…',
     nothing: 'Nothing rendered yet',
     renderPreview: 'Render preview',

@@ -10,6 +10,7 @@ import {
   agentStart,
   agentStop,
   getChat,
+  latestRenderInfo,
   listMessages,
   updateChatAgent,
   upsertJob,
@@ -19,15 +20,19 @@ import { extractA2ui } from '@/a2ui/parse';
 import { agentErrorText, AGENT_NAMES } from '@/lib/agents';
 import { uiLanguage } from '@/i18n';
 import { stored } from '@/lib/stored';
+import { isRenderTool } from '@/lib/renderTool';
 import { localClock } from '@/lib/time';
 import { useApp } from '@/state/app';
 import { refreshJobs } from '@/state/jobs';
+import { renderArgvOf, useRender } from '@/state/render';
 
 
 /** A project chat's turns show up on the Agents board as this build job. */
 export interface ChatJob {
   projectId: string;
   title: string;
+  /** The autopilot's job: it decides done and failed itself, so a turn's end only marks it done. */
+  auto?: boolean;
 }
 
 export interface SendOpts {
@@ -47,6 +52,8 @@ export interface SendOpts {
 interface ChatState {
   messages: Record<string, ChatMessage[]>;
   streaming: Record<string, boolean>;
+  /** When each chat's running turn started (ms since the epoch); gone once it ends. */
+  turnStartedAt: Record<string, number>;
   /** Open permission requests per chat, oldest first. The card shows the head. */
   permissions: Record<string, PermissionRequest[]>;
   attachments: Record<string, MessagePart[]>;
@@ -198,6 +205,24 @@ function writeJob(chatId: string, status: JobStatus, note: string | null = null)
     .then(() => refreshJobs())
     .catch(() => {});
 }
+/** Turns started per chat, so a slow check from an earlier turn can't overwrite a newer one. */
+const turnSeq = new Map<string, number>();
+
+/** Whether the agent's last message waits on the user: an open A2UI surface, or a question at the end. */
+export function waitsForAnswer(m: ChatMessage | undefined): boolean {
+  if (!m || m.role !== 'agent') return false;
+  const { text, blocks } = extractA2ui(stripFramesToken(m.parts.map((p) => (p.type === 'text' ? p.text : '')).join('')));
+  const asks = blocks.some((b) => b.some((x) => typeof x === 'object' && x !== null && ('createSurface' in x || 'updateComponents' in x)));
+  return asks || /[?？]\s*$/.test(text.trim());
+}
+
+/** A render this close before the turn started still counts (file times can be coarse). */
+const CLOCK_SLACK_MS = 1000;
+
+/** Whether `info` is a video made since `since` (ms). */
+export const renderedSince = (info: { size: number; modifiedAt: string } | null, since: number) =>
+  !!info && info.size > 0 && Date.parse(info.modifiedAt) >= since - CLOCK_SLACK_MS;
+
 let seq = 0;
 const localMessage = (chatId: string, role: ChatMessage['role'], parts: MessagePart[]): ChatMessage => ({
   id: `local-${++seq}`,
@@ -253,10 +278,14 @@ export const useChat = create<ChatState>((set, get) => {
   /** The turn is over: answer whatever is still queued with null and clear the queue. */
   const finish = (chatId: string) => {
     const open = get().permissions[chatId] ?? [];
+    const { [chatId]: _, ...turns } = get().turnStartedAt;
     set((s) => ({
       streaming: { ...s.streaming, [chatId]: false },
       permissions: { ...s.permissions, [chatId]: [] },
+      turnStartedAt: turns,
     }));
+    // Whatever the turn was rendering is over with it.
+    useRender.getState().endChat(chatId);
     for (const req of open) void agentRespondPermission(req.requestId, null).catch(() => {});
   };
 
@@ -269,6 +298,43 @@ export const useChat = create<ChatState>((set, get) => {
       ...m,
       parts: m.parts.map((p) => (p.type === 'tool' && (p.status === 'pending' || p.status === 'running') ? { ...p, status } : p)),
     }));
+  };
+
+  /** The agent's render command shows on the chat, the Preview, Videos and the job board while it runs. */
+  const trackRender = (chatId: string, toolCallId: string, title: string, status: string) => {
+    const projectId = chatJobs.get(chatId)?.projectId;
+    if (!projectId || !get().streaming[chatId]) return;
+    const render = useRender.getState();
+    const running = status === 'pending' || status === 'running';
+    if (running && isRenderTool(title, renderArgvOf(projectId))) {
+      if (render.runs[projectId]) return;
+      render.start(projectId, { source: 'agent', chatId, toolCallId });
+      writeJob(chatId, 'working', stored('agents.rendering'));
+    } else if (!running && render.runs[projectId]?.toolCallId === toolCallId) {
+      render.end(projectId, toolCallId);
+      writeJob(chatId, 'working');
+    }
+  };
+
+  /**
+   * A project chat's turn is over: its build job is done only when the turn left a video. Otherwise it
+   * needs the user, saying whether the agent asked them something or stopped before rendering.
+   */
+  const settleBuildJob = async (chatId: string, job: ChatJob, startedAt: number, seq: number) => {
+    let info: Awaited<ReturnType<typeof latestRenderInfo>> = null;
+    try {
+      info = await latestRenderInfo(job.projectId);
+    } catch {
+      /* no lookup: no video */
+    }
+    // A newer turn has started since: its own end decides.
+    if ((turnSeq.get(chatId) ?? 0) !== seq || get().streaming[chatId]) return;
+    if (renderedSince(info, startedAt)) {
+      writeJob(chatId, 'done', info!.name);
+      return;
+    }
+    const asked = waitsForAnswer((get().messages[chatId] ?? []).at(-1));
+    writeJob(chatId, 'needs-you', stored(asked ? 'agents.waitingAnswer' : 'agents.noVideo'));
   };
 
   const onUpdate = (chatId: string, u: AgentUpdate) => {
@@ -300,12 +366,17 @@ export const useChat = create<ChatState>((set, get) => {
         }
         return { ...m, parts };
       });
+      if (u.kind === 'tool') trackRender(chatId, u.toolCallId, u.title, u.status);
       return;
     }
     if (u.kind === 'done') {
+      const startedAt = get().turnStartedAt[chatId] ?? Date.now();
+      const job = chatJobs.get(chatId);
       // A Stop is the user's choice, not a failure: done, with a note saying so (never "needs you").
       // The autopilot's own failures go through failChatJob, which has already dropped the job by now.
-      writeJob(chatId, 'done', u.stopReason === 'cancelled' ? stored('agents.cancelled') : null);
+      if (u.stopReason === 'cancelled') writeJob(chatId, 'done', stored('agents.cancelled'));
+      else if (job && !job.auto) void settleBuildJob(chatId, job, startedAt, turnSeq.get(chatId) ?? 0);
+      else writeJob(chatId, 'done');
       settleTools(chatId, u.stopReason === 'cancelled' ? 'failed' : 'done');
       finish(chatId);
       const last = (get().messages[chatId] ?? []).at(-1);
@@ -327,6 +398,7 @@ export const useChat = create<ChatState>((set, get) => {
   return {
     messages: {},
     streaming: {},
+    turnStartedAt: {},
     permissions: {},
     attachments: {},
     started: {},
@@ -395,9 +467,12 @@ export const useChat = create<ChatState>((set, get) => {
       tracked.add(chatId);
       const attached = get().attachments[chatId] ?? [];
       const visible = [...attached, ...parts];
+      turnSeq.set(chatId, (turnSeq.get(chatId) ?? 0) + 1);
       set((s) => ({
         attachments: { ...s.attachments, [chatId]: [] },
         streaming: { ...s.streaming, [chatId]: true },
+        // A send refused because a turn is running keeps that turn's start.
+        turnStartedAt: { ...s.turnStartedAt, [chatId]: s.streaming[chatId] ? (s.turnStartedAt[chatId] ?? Date.now()) : Date.now() },
       }));
       const user = localMessage(chatId, 'user', visible);
       append(chatId, user);
@@ -405,7 +480,7 @@ export const useChat = create<ChatState>((set, get) => {
       try {
         const agent = opts?.agentId ?? chatAgent.get(chatId) ?? useApp.getState().settings?.defaultAgent ?? 'claude';
         chatAgent.set(chatId, agent);
-        if (opts?.job) chatJobs.set(chatId, opts.job);
+        if (opts?.job) chatJobs.set(chatId, opts.background ? { ...opts.job, auto: true } : opts.job);
         writeJob(chatId, 'working');
         let fresh = false;
         let noPlugin = false;
@@ -526,7 +601,9 @@ export const useChat = create<ChatState>((set, get) => {
       chatJobs.clear();
       pendingRecap.clear();
       clientKeys.clear();
-      set({ messages: {}, streaming: {}, permissions: {}, attachments: {}, started: {}, auto: {}, pendingAuto: null, autoBusy: {} });
+      turnSeq.clear();
+      useRender.setState({ runs: {} });
+      set({ messages: {}, streaming: {}, turnStartedAt: {}, permissions: {}, attachments: {}, started: {}, auto: {}, pendingAuto: null, autoBusy: {} });
     },
   };
 });
