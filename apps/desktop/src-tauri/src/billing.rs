@@ -7,12 +7,19 @@ use crate::types::{BillingError, BillingStatus, Checkout};
 /// The plans for sale (shared `PAID_PLAN_IDS`).
 pub const PAID_PLANS: [&str; 3] = ["lite", "creator", "pro"];
 
-/// Only SumoPod's payment pages may be opened from what the API says: https on
-/// `pay.sumopod.com`, `sumopod.com` or a `*.pymnt.global` host.
+/// Where SumoPod's payment pages live: the same list as `PAYMENT_LINK_HOSTS` in
+/// packages/shared/src/billing.ts (a test keeps them equal). `*.x` is any subdomain of x.
+pub const PAYMENT_LINK_HOSTS: [&str; 3] = ["pay.sumopod.com", "sumopod.com", "*.pymnt.global"];
+
+/// Only SumoPod's payment pages may be opened from what the API says: https on PAYMENT_LINK_HOSTS.
 pub fn is_payment_link(u: &str) -> bool {
     let Ok(url) = reqwest::Url::parse(u.trim()) else { return false };
     let host = url.host_str().unwrap_or("");
-    url.scheme() == "https" && (host == "pay.sumopod.com" || host == "sumopod.com" || host.ends_with(".pymnt.global"))
+    url.scheme() == "https"
+        && PAYMENT_LINK_HOSTS.iter().any(|h| match h.strip_prefix('*') {
+            Some(suffix) => host.ends_with(suffix),
+            None => host == *h,
+        })
 }
 
 async fn send(req: reqwest::RequestBuilder) -> Result<(u16, Vec<u8>), BillingError> {
@@ -116,6 +123,15 @@ mod tests {
         ] {
             assert!(!is_payment_link(bad), "{bad}");
         }
+    }
+
+    #[test]
+    fn payment_hosts_match_the_shared_list() {
+        let ts = include_str!("../../../../packages/shared/src/billing.ts");
+        let start = ts.find("export const PAYMENT_LINK_HOSTS = [").expect("the shared list") + "export const PAYMENT_LINK_HOSTS = [".len();
+        let list = &ts[start..start + ts[start..].find(']').unwrap()];
+        let shared: Vec<&str> = list.split(',').map(|h| h.trim().trim_matches('\'')).filter(|h| !h.is_empty()).collect();
+        assert_eq!(shared, PAYMENT_LINK_HOSTS.to_vec(), "keep billing.rs in step with packages/shared");
     }
 
     #[tokio::test]
