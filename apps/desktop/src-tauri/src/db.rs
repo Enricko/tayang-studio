@@ -225,11 +225,6 @@ impl Db {
         Ok(settings)
     }
 
-    fn seed_styles(&self) -> Result<()> {
-        Ok(())
-    }
-
-
     // ---- projects ----
 
     pub fn list_projects(&self) -> Result<Vec<Project>> {
@@ -369,17 +364,156 @@ impl Db {
         Ok(out)
     }
 
-    // ---- styles, jobs: implemented in the next commit ----
-    #[allow(unused_variables)]
-    pub fn list_styles(&self) -> Result<Vec<Style>> { todo!() }
-    #[allow(unused_variables)]
-    pub fn save_style(&self, s: &Style) -> Result<()> { todo!() }
-    #[allow(unused_variables)]
-    pub fn delete_style(&self, id: &str) -> Result<()> { todo!() }
-    #[allow(unused_variables)]
-    pub fn upsert_job(&self, j: &Job) -> Result<()> { todo!() }
-    #[allow(unused_variables)]
-    pub fn list_jobs(&self) -> Result<Vec<Job>> { todo!() }
+    // ---- styles ----
+
+    fn seed_styles(&self) -> Result<()> {
+        let conn = self.conn();
+        for s in builtin_styles() {
+            conn.execute(
+                "INSERT OR IGNORE INTO styles (id, name, source, source_url, notes, prompt, created_at) \
+                 VALUES (?1,?2,'builtin',NULL,?3,?4,?5)",
+                rusqlite::params![s.id, s.name, serde_json::to_string(&s.notes)?, s.prompt, s.created_at],
+            )?;
+        }
+        Ok(())
+    }
+
+    pub fn list_styles(&self) -> Result<Vec<Style>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT id, name, source, source_url AS sourceUrl, notes, prompt, created_at AS createdAt \
+             FROM styles ORDER BY created_at, rowid",
+        )?;
+        let names: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();
+        let rows = stmt.query_map([], |row| {
+            let mut obj = Map::new();
+            for (i, n) in names.iter().enumerate() {
+                obj.insert(n.clone(), json_from_ref(row.get_ref(i)?));
+            }
+            Ok(Value::Object(obj))
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            let mut v = row?;
+            let notes: Value = serde_json::from_str(v["notes"].as_str().unwrap_or("{}"))?;
+            v["notes"] = notes;
+            out.push(serde_json::from_value(v)?);
+        }
+        Ok(out)
+    }
+
+    /// Inserts or replaces a style. Built-in styles are read-only.
+    pub fn save_style(&self, s: &Style) -> Result<()> {
+        let conn = self.conn();
+        if Self::is_builtin(&conn, &s.id)? || s.source == StyleSource::Builtin {
+            return Err(DbError("built-in styles cannot be changed".into()));
+        }
+        let source = serde_json::to_value(s.source)?;
+        conn.execute(
+            "INSERT INTO styles (id, name, source, source_url, notes, prompt, created_at) \
+             VALUES (?1,?2,?3,?4,?5,?6,?7) ON CONFLICT(id) DO UPDATE SET name=excluded.name, \
+             source=excluded.source, source_url=excluded.source_url, notes=excluded.notes, \
+             prompt=excluded.prompt, created_at=excluded.created_at",
+            rusqlite::params![
+                s.id,
+                s.name,
+                source.as_str().unwrap_or_default(),
+                s.source_url,
+                serde_json::to_string(&s.notes)?,
+                s.prompt,
+                s.created_at
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_style(&self, id: &str) -> Result<()> {
+        let conn = self.conn();
+        if Self::is_builtin(&conn, id)? {
+            return Err(DbError("built-in styles cannot be deleted".into()));
+        }
+        conn.execute("DELETE FROM styles WHERE id = ?1", [id])?;
+        Ok(())
+    }
+
+    fn is_builtin(conn: &Connection, id: &str) -> Result<bool> {
+        let source: Option<String> = conn
+            .query_row("SELECT source FROM styles WHERE id = ?1", [id], |r| r.get(0))
+            .optional()?;
+        Ok(source.as_deref() == Some("builtin"))
+    }
+
+    // ---- jobs ----
+
+    pub fn upsert_job(&self, j: &Job) -> Result<()> {
+        let vals = bind_values(j, &JOB_KEYS)?;
+        self.conn().execute(
+            "INSERT INTO jobs (id, kind, title, project_id, chat_id, agent_id, status, progress, note, updated_at) \
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10) ON CONFLICT(id) DO UPDATE SET kind=excluded.kind, \
+             title=excluded.title, project_id=excluded.project_id, chat_id=excluded.chat_id, \
+             agent_id=excluded.agent_id, status=excluded.status, progress=excluded.progress, \
+             note=excluded.note, updated_at=excluded.updated_at",
+            params_from_iter(vals),
+        )?;
+        Ok(())
+    }
+
+    pub fn list_jobs(&self) -> Result<Vec<Job>> {
+        let sql = format!("{JOB_SELECT} ORDER BY updated_at DESC, rowid DESC");
+        query_as(&self.conn(), &sql, &[])
+    }
+}
+
+/// Rust copy of `packages/skills/src/builtinStyles.ts`; keep the two in sync.
+fn builtin_styles() -> Vec<Style> {
+    use StyleAspect::*;
+    let style = |id: &str, name: &str, notes: [(StyleAspect, &str); 5], prompt: &str| Style {
+        id: id.into(),
+        name: name.into(),
+        source: StyleSource::Builtin,
+        source_url: None,
+        notes: notes.into_iter().map(|(a, t)| (a, t.to_string())).collect(),
+        prompt: prompt.into(),
+        created_at: "2026-11-04T00:00:00Z".into(),
+    };
+    vec![
+        style(
+            "builtin-bold-explainer",
+            "Bold explainer",
+            [
+                (Camera, "Static frame, elements slide in from the bottom"),
+                (Pacing, "New scene every 4–8s, words land on the voice"),
+                (Type, "Heavy sans, one highlighted word per line"),
+                (Color, "Navy, white, one yellow highlight"),
+                (Captions, "Word by word, center low"),
+            ],
+            "Navy background, white heavy sans.\nHighlight one key word per line in yellow.\nAnimate elements up 24px with ease-out, 300ms.\nCaptions word by word, centered low.",
+        ),
+        style(
+            "builtin-kinetic-quote",
+            "Kinetic quote",
+            [
+                (Camera, "Slow push in, 100% to 106% over the clip"),
+                (Pacing, "One word every 0.3s, hold 1s at the end"),
+                (Type, "Huge sans, stacked words"),
+                (Color, "Orange ground, ink text"),
+                (Captions, "The words are the captions"),
+            ],
+            "One short line, stacked one word per row.\nEach word pops in at 0.3s intervals.\nSlow push in from 100% to 106%.\nHold the full line for 1s.",
+        ),
+        style(
+            "builtin-news-recap",
+            "News recap",
+            [
+                (Camera, "Static, lower third slides in"),
+                (Pacing, "One story per 8s"),
+                (Type, "Medium sans, numbered stories"),
+                (Color, "Light paper, navy text, red tag"),
+                (Captions, "Full line, bottom"),
+            ],
+            "Light background, navy text.\nNumber each story 1–3 with a small red tag.\nLower third slides in from the left, 250ms.\nOne story per 8 seconds.",
+        ),
+    ]
 }
 
 #[cfg(test)]
