@@ -656,7 +656,7 @@ mod tests {
         std::fs::create_dir_all(&old).unwrap();
         let known = |id: &str| (id == "p").then(|| old.clone());
         let in_old = frame(old.join(".tayang/frames/f.png"));
-        assert!(check_frame_images(&w, &[in_old.clone()], known).is_ok());
+        assert!(check_frame_images(&w, std::slice::from_ref(&in_old), known).is_ok());
         assert!(check_frame_images(&w, &[in_old], none).is_err());
         assert!(check_frame_images(&w, &[frame(old.join("../secret.png"))], known).is_err());
     }
