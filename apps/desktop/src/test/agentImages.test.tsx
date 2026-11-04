@@ -47,9 +47,11 @@ describe('images the agent makes during a turn', () => {
     updates.length = 0;
     useChat.getState().reset();
     useChat.getState().listen();
-    await useChat.getState().send('c1', [{ type: 'text', text: 'draw 4 illustrations' }], { agentId: 'claude' });
+    await useChat.getState().send('c1', [{ type: 'text', text: 'draw 4 illustrations' }], { agentId: 'claude', job: { projectId: 'p1', title: 'V' } });
     await emit({ kind: 'text', text: 'Sekarang saya gambar 4 ilustrasi…' });
   });
+  const agentMessages = () => useChat.getState().messages.c1!.filter((m) => m.role === 'agent');
+  const savedAgentParts = () => vi.mocked(addMessage).mock.calls.filter(([, role]) => role === 'agent').map(([, , parts]) => parts);
   afterEach(() => vi.useRealTimers());
 
   it('are added to the agent message 500 ms after a step finishes, oldest first, then kept up to date', async () => {
@@ -59,7 +61,8 @@ describe('images the agent makes during a turn', () => {
     await act(async () => vi.advanceTimersByTimeAsync(500));
     const since = useChat.getState().turnStartedAt.c1!;
     expect(recentImages).toHaveBeenCalledWith('c1', expect.any(String), 50);
-    expect(Math.abs(Date.parse(vi.mocked(recentImages).mock.calls[0]![1]) - since)).toBeLessThan(50);
+    // A second early, for file systems with coarse times.
+    expect(Math.abs(Date.parse(vi.mocked(recentImages).mock.calls[0]![1]) - (since - 1000))).toBeLessThan(50);
     expect(files().map((f) => f.name)).toEqual(['a.png', 'b.png']);
     expect(files()[0]).toEqual({ type: 'file', path: '/w/p1/art/a.png', name: 'a.png', mime: 'image/png', size: 10, modifiedAt: '2026-11-04T10:00:01.000Z' });
 
@@ -103,6 +106,82 @@ describe('images the agent makes during a turn', () => {
     await toolDone('t1');
     await act(async () => vi.advanceTimersByTimeAsync(500));
     expect(files()).toEqual([]);
+  });
+
+  it('never looks in a chat that is not a video\'s chat', async () => {
+    await useChat.getState().send('c2', [{ type: 'text', text: 'hi' }], { agentId: 'claude' });
+    await emit({ kind: 'text', text: 'Hello' }, 'c2');
+    await emit({ kind: 'tool', toolCallId: 'x', title: 'Run ls', status: 'done', toolKind: 'execute' }, 'c2');
+    await act(async () => vi.advanceTimersByTimeAsync(500));
+    await emit({ kind: 'done', stopReason: 'end_turn' }, 'c2');
+    await waitFor(() => expect(addMessage).toHaveBeenCalledWith('c2', 'agent', expect.anything()));
+    expect(recentImages).not.toHaveBeenCalled();
+  });
+
+  it('a send right after the turn ends never takes that turn\'s images or its save', async () => {
+    let release!: (found: FileInfo[]) => void;
+    vi.mocked(recentImages).mockImplementationOnce(() => new Promise((r) => (release = r)));
+    await emit({ kind: 'done', stopReason: 'end_turn' });
+    const firstSince = Date.parse(vi.mocked(recentImages).mock.calls[0]![1]);
+    const [first] = agentMessages();
+    await act(async () => vi.advanceTimersByTimeAsync(100));
+    await useChat.getState().send('c1', [{ type: 'text', text: 'one more' }], { agentId: 'claude' });
+    // The finished turn's message is saved before the new message, so a reload keeps the order.
+    const roles = vi.mocked(addMessage).mock.calls.map(([, role]) => role);
+    expect(roles.slice(-2)).toEqual(['agent', 'user']);
+    await emit({ kind: 'text', text: 'Okay' });
+    await act(async () => release([img('old.png')]));
+    expect(agentMessages()).toHaveLength(2);
+    expect(files()).toEqual([]);
+    expect(JSON.stringify(savedAgentParts())).not.toContain('old.png');
+    expect(agentMessages()[0]!.id).toBe(first!.id);
+    // The new turn looks from its own start.
+    vi.mocked(recentImages).mockResolvedValue([]);
+    await toolDone('t9');
+    await act(async () => vi.advanceTimersByTimeAsync(500));
+    expect(Date.parse(vi.mocked(recentImages).mock.calls.at(-1)![1])).toBeGreaterThan(firstSince);
+  });
+
+  it('a slow last lookup still lands on its own turn\'s message when nobody sends', async () => {
+    let release!: (found: FileInfo[]) => void;
+    vi.mocked(recentImages).mockImplementationOnce(() => new Promise((r) => (release = r)));
+    await emit({ kind: 'done', stopReason: 'end_turn' });
+    expect(savedAgentParts()).toEqual([]);
+    await act(async () => release([img('late.png')]));
+    await waitFor(() => expect(savedAgentParts()).toHaveLength(1));
+    expect(JSON.stringify(savedAgentParts()[0])).toContain('late.png');
+  });
+
+  it('saves the message within 5 s when the last lookup hangs, and later lookups still run', async () => {
+    vi.mocked(recentImages).mockImplementationOnce(() => new Promise(() => {}));
+    await emit({ kind: 'done', stopReason: 'end_turn' });
+    await act(async () => vi.advanceTimersByTimeAsync(4900));
+    expect(savedAgentParts()).toEqual([]);
+    await act(async () => vi.advanceTimersByTimeAsync(200));
+    expect(savedAgentParts()).toHaveLength(1);
+    vi.mocked(recentImages).mockResolvedValue([img('next.png')]);
+    await useChat.getState().send('c1', [{ type: 'text', text: 'again' }], { agentId: 'claude' });
+    await emit({ kind: 'text', text: 'Sure' });
+    await toolDone('t2');
+    await act(async () => vi.advanceTimersByTimeAsync(500));
+    await waitFor(() => expect(files().map((f) => f.name)).toEqual(['next.png']));
+  });
+
+  it('adds the images to the agent message when the turn fails, after the error line', async () => {
+    vi.mocked(recentImages).mockResolvedValue([img('a.png')]);
+    await emit({ kind: 'error', message: 'boom' });
+    await waitFor(() => expect(files().map((f) => f.name)).toEqual(['a.png']));
+    expect(useChat.getState().messages.c1!.at(-1)!.role).toBe('system');
+  });
+
+  it('ignores a step that finishes after the turn ended', async () => {
+    vi.mocked(recentImages).mockResolvedValue([]);
+    await emit({ kind: 'done', stopReason: 'end_turn' });
+    await waitFor(() => expect(savedAgentParts()).toHaveLength(1));
+    vi.mocked(recentImages).mockClear();
+    await toolDone('late');
+    await act(async () => vi.advanceTimersByTimeAsync(600));
+    expect(recentImages).not.toHaveBeenCalled();
   });
 
   it('never goes to the agent: not in a recap, not in the next prompt', async () => {

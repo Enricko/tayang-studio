@@ -258,12 +258,30 @@ export function withImages(parts: MessagePart[], found: FileInfo[]): MessagePart
   return changed ? out : null;
 }
 
-/** When each chat's latest turn started (RFC 3339), for the images it made; kept after the turn ends. */
+/**
+ * When each chat's latest turn started (RFC 3339), a second early for file systems with coarse times,
+ * for the images it made; kept after the turn ends.
+ */
 const imageSince = new Map<string, string>();
 const imageTimers = new Map<string, ReturnType<typeof setTimeout>>();
 /** The image lookup running per chat; the next one waits for it. */
 const imageRuns = new Map<string, Promise<void>>();
+/** A finished turn's message waiting for its last image lookup; calling it saves the message now. */
+const pendingSaves = new Map<string, () => void>();
 const IMAGE_DEBOUNCE_MS = 500;
+/** One lookup may take this long (a hung network volume); the turn's last one, waits included, too. */
+const IMAGE_LOOKUP_MS = 5000;
+
+/** `p`, or `fallback` once `ms` have passed without an answer. */
+function within<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => resolve(fallback), ms);
+    p.then(
+      (v) => (clearTimeout(timer), resolve(v)),
+      (e) => (clearTimeout(timer), reject(e)),
+    );
+  });
+}
 
 let seq = 0;
 const localMessage = (chatId: string, role: ChatMessage['role'], parts: MessagePart[]): ChatMessage => ({
@@ -291,6 +309,20 @@ export const autoOn = (
 export const useChat = create<ChatState>((set, get) => {
   const append = (chatId: string, m: ChatMessage) =>
     set((s) => ({ messages: { ...s.messages, [chatId]: [...(s.messages[chatId] ?? []), m] } }));
+
+  /** Changes the message with this id, wherever it is in the chat; nothing when it is gone. */
+  const replaceById = (chatId: string, id: string, fn: (m: ChatMessage) => ChatMessage) =>
+    set((s) => ({ messages: { ...s.messages, [chatId]: (s.messages[chatId] ?? []).map((m) => (m.id === id ? fn(m) : m)) } }));
+
+  /** The agent's message in the chat's latest turn: the last one after the last user message. */
+  const turnMessage = (chatId: string): ChatMessage | undefined => {
+    const list = get().messages[chatId] ?? [];
+    for (let i = list.length - 1; i >= 0; i--) {
+      if (list[i]!.role === 'agent') return list[i];
+      if (list[i]!.role === 'user') return undefined;
+    }
+    return undefined;
+  };
 
   const replaceLast = (chatId: string, fn: (m: ChatMessage) => ChatMessage) =>
     set((s) => {
@@ -358,51 +390,72 @@ export const useChat = create<ChatState>((set, get) => {
     }
   };
 
-  /** Adds the images the turn made so far to the agent's message of this turn. */
-  const scanImages = async (chatId: string) => {
-    const since = imageSince.get(chatId);
-    if (!since) return;
+  /** Adds the images made since `since` to the agent message `targetId`, wherever it is by then. */
+  const scanImages = async (chatId: string, since: string, targetId: string) => {
     let found: FileInfo[] = [];
     try {
-      found = await recentImages(chatId, since, 50);
+      found = await within(recentImages(chatId, since, 50), IMAGE_LOOKUP_MS, []);
     } catch {
       return;
     }
     if (!found.length) return;
-    const list = get().messages[chatId] ?? [];
-    const last = list.at(-1);
-    if (!last || last.role !== 'agent' || Date.parse(last.createdAt) < Date.parse(since) - 1000) return;
-    const parts = withImages(last.parts, found);
-    if (parts) replaceLast(chatId, (m) => (m.id === last.id ? { ...m, parts } : m));
+    replaceById(chatId, targetId, (m) => {
+      const parts = withImages(m.parts, found);
+      return parts ? { ...m, parts } : m;
+    });
   };
 
-  /** One lookup at a time per chat: a new one starts once the running one is over. */
-  const runImages = (chatId: string): Promise<void> => {
+  /**
+   * One lookup at a time per chat: a new one starts once the running one is over. The turn and its
+   * message are fixed when the lookup is asked for, so a turn that starts meanwhile never gets them.
+   */
+  const runImages = (chatId: string, since: string, targetId: string): Promise<void> => {
     const before = imageRuns.get(chatId) ?? Promise.resolve();
-    const run = before.then(() => scanImages(chatId));
+    const run = before.then(() => scanImages(chatId, since, targetId));
     imageRuns.set(chatId, run);
     void run.finally(() => imageRuns.get(chatId) === run && imageRuns.delete(chatId));
     return run;
   };
 
-  /** A step finished: look for new images once things settle (500 ms). */
+  /** Only a video's chat has a folder to look in. */
+  const looksForImages = (chatId: string) => !isScratchChat(chatId) && chatJobs.has(chatId);
+
+  /** A step finished: look for new images once things settle (500 ms). Not once the turn is over. */
   const queueImages = (chatId: string) => {
-    if (isScratchChat(chatId)) return;
+    if (!looksForImages(chatId) || !get().streaming[chatId]) return;
     clearTimeout(imageTimers.get(chatId));
     imageTimers.set(
       chatId,
       setTimeout(() => {
         imageTimers.delete(chatId);
-        void runImages(chatId);
+        const since = imageSince.get(chatId);
+        const target = turnMessage(chatId);
+        if (since && target) void runImages(chatId, since, target.id);
       }, IMAGE_DEBOUNCE_MS),
     );
   };
 
-  /** The turn is over: one last look for images, then the agent's message is stored with them. */
-  const endTurnImages = async (chatId: string) => {
+  /**
+   * The turn is over: one last look for images (5 s at most), then `save` stores the agent's message
+   * `targetId` with them. A send in the meantime saves it at once, so the chat keeps its order.
+   */
+  const endTurnImages = (chatId: string, targetId: string | undefined, save: boolean) => {
     clearTimeout(imageTimers.get(chatId));
     imageTimers.delete(chatId);
-    if (!isScratchChat(chatId)) await runImages(chatId);
+    const since = imageSince.get(chatId);
+    let saved = false;
+    const saveNow = () => {
+      if (saved || !save || !targetId) return;
+      saved = true;
+      if (pendingSaves.get(chatId) === saveNow) pendingSaves.delete(chatId);
+      const m = (get().messages[chatId] ?? []).find((x) => x.id === targetId);
+      if (m && isLocal(m)) void persist(chatId, m);
+    };
+    if (save && targetId) pendingSaves.set(chatId, saveNow);
+    const look = looksForImages(chatId) && since && targetId ? runImages(chatId, since, targetId) : Promise.resolve();
+    void within(look, IMAGE_LOOKUP_MS, undefined)
+      .catch(() => {})
+      .finally(saveNow);
   };
 
   /**
@@ -472,16 +525,13 @@ export const useChat = create<ChatState>((set, get) => {
       settleTools(chatId, u.stopReason === 'cancelled' ? 'failed' : 'done');
       finish(chatId);
       // The message is stored once, with every image the turn made.
-      void endTurnImages(chatId).finally(() => {
-        const last = (get().messages[chatId] ?? []).at(-1);
-        if (last && last.role === 'agent' && isLocal(last)) void persist(chatId, last);
-      });
+      endTurnImages(chatId, turnMessage(chatId)?.id, true);
       return;
     }
     // error: the session is gone, so the next send must start a new one
     settleTools(chatId, 'failed');
     finish(chatId);
-    void endTurnImages(chatId);
+    endTurnImages(chatId, turnMessage(chatId)?.id, false);
     set((s) => ({ started: { ...s.started, [chatId]: false } }));
     // Saved in English; the chat and the job board say it in the user's language when they show it.
     const text = agentErrorText(u.message, chatAgent.get(chatId) ?? 'claude', 'en');
@@ -564,7 +614,9 @@ export const useChat = create<ChatState>((set, get) => {
       const attached = opts?.keepAttachments ? [] : (get().attachments[chatId] ?? []);
       const visible = [...attached, ...parts];
       turnSeq.set(chatId, (turnSeq.get(chatId) ?? 0) + 1);
-      if (!get().streaming[chatId]) imageSince.set(chatId, new Date().toISOString());
+      // The last turn's message, still waiting for its images, is stored before this one.
+      pendingSaves.get(chatId)?.();
+      if (!get().streaming[chatId]) imageSince.set(chatId, new Date(Date.now() - CLOCK_SLACK_MS).toISOString());
       set((s) => ({
         attachments: opts?.keepAttachments ? s.attachments : { ...s.attachments, [chatId]: [] },
         streaming: { ...s.streaming, [chatId]: true },
@@ -711,6 +763,7 @@ export const useChat = create<ChatState>((set, get) => {
       imageTimers.forEach((t) => clearTimeout(t));
       imageTimers.clear();
       imageRuns.clear();
+      pendingSaves.clear();
       useRender.setState({ runs: {} });
       set({ messages: {}, streaming: {}, turnStartedAt: {}, permissions: {}, attachments: {}, started: {}, auto: {}, pendingAuto: null, autoBusy: {} });
     },
