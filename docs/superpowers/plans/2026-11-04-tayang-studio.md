@@ -483,3 +483,17 @@ Owner request: "why can't we use all agent? so user could pick in chat".
 - Existing chat: picking another agent stops the current session (`agentStop`), saves the chat's new agentId (`update_chat_agent`), and starts the new agent on the next send. A system line appears in the chat: "Switched to <agent>. It starts fresh: it sees this project's files but not the earlier messages." The first prompt after a switch is prefixed with a short recap built from the last 6 messages (text only, ≤ 1,500 characters).
 - Disabled while a turn is running (switching mid-turn isn't allowed; Stop first).
 - Usage bar/popover follow the chat's agent when a chat is open (default agent otherwise).
+
+---
+
+### Task 24: Mini analytics — installs and platforms
+
+Owner request: "add mini analytics for counting installations and what platform in API".
+
+**Files:** Create `apps/api/migrations/0003_installs.sql`, `apps/api/src/routes/{telemetry.ts,stats.ts}`; Modify `apps/api/src/{index.ts,repo.ts}`, `wrangler.toml` (document secret `ADMIN_TOKEN`), `apps/api/package.json` (`stats` script); `packages/shared/src/api.ts`; Rust `src-tauri/src/telemetry.rs`, `db.rs` (settings: `installId: string` generated once (uuid v4), `shareInstallStats: boolean` default true, `lastPingAt: string | null`), `commands.rs`, `lib.rs`; UI `src/screens/Settings.tsx`; Tests API + Rust + UI.
+- D1 `installs(install_id TEXT PK, platform TEXT NOT NULL /* macos|windows|linux */, os_version TEXT, arch TEXT /* aarch64|x86_64 */, app_version TEXT, first_seen TEXT NOT NULL, last_seen TEXT NOT NULL, pings INTEGER NOT NULL DEFAULT 1)`. No IP, no user names, no paths are stored.
+- `POST /v1/telemetry/ping` body `TelemetryPing { installId: string /* uuid v4 */; platform: OsKind; osVersion: string; arch: string; appVersion: string }` → validate (uuid format, platform enum, strings ≤ 64 chars) → upsert (insert, or update last_seen/os_version/app_version and pings+1) → 204. Invalid → 400 `{ error: "bad request" }`. No auth (public), rate-light: ignore pings for the same installId more than once per hour (return 204 without writing).
+- `GET /v1/stats` with `Authorization: Bearer <ADMIN_TOKEN>` (secret; 401 otherwise) → `InstallStats { total: number; byPlatform: Record<OsKind, number>; byArch: Record<string, number>; byAppVersion: Record<string, number>; active7d: number; active30d: number; newLast7d: number }`. Script `pnpm --filter @tayang/api stats -- --remote|--local` runs the same aggregate queries through `wrangler d1 execute` and prints a small table (for the owner without the token).
+- Desktop: at startup (and at most once per 24 h, tracked by `lastPingAt`), when `shareInstallStats` is on and `settings.apiUrl` is set, send the ping in the background (5 s timeout, failures ignored silently, never blocks the UI). `installId` is random and not derived from the machine.
+- Settings › Account: switch "Share anonymous install stats" with the line "Sends a random install ID, your system (macOS, Windows or Linux), its version and the app version once a day. Nothing about you or your videos." README "Privacy" section with the same sentence and how to turn it off.
+- Tests: API (valid ping inserts; second ping updates last_seen and pings; within-hour ping not written; bad uuid/platform → 400; stats requires token; aggregates correct with fixtures), Rust (ping body shape, 24 h throttle, off when disabled), UI (switch toggles `shareInstallStats`).

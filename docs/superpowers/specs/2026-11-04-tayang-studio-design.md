@@ -65,6 +65,8 @@ docs/
   - Autopilot scheduling handoff
   - anonymous crash and usage reports, only if the user opts in
 
+**Install analytics (owner request).** The desktop app sends one anonymous ping a day: a random install ID, the operating system (macOS, Windows or Linux), its version, the CPU architecture and the app version. The API counts installs, platforms, versions and 7/30-day active installs, readable by the owner through a token-protected `/v1/stats` endpoint or a wrangler script. No IP addresses, names, paths or video data are stored. It's on by default and can be turned off in Settings, which says exactly what is sent. **(on by default with a visible switch is my call)**
+
 ## Brand
 
 Follow `niche-to-video/BRANDING.md`:
