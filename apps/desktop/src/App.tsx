@@ -7,6 +7,7 @@ import { systemLanguage } from '@/lib/language';
 import { getSettings, syncStyles, updateSettings } from '@/lib/ipc';
 import { onTick, startScheduler } from '@/lib/scheduler';
 import { recheckDoneBuildJobs, settleLateRenders } from '@/lib/buildJobs';
+import { backfillProjectStatus } from '@/lib/projectStatus';
 import { startAutopilot } from '@/state/autopilot';
 import { useWindowDrag } from '@/lib/windowDrag';
 import { Agents } from '@/screens/Agents';
@@ -78,6 +79,8 @@ export default function App() {
           void refreshJobs().catch(() => {});
           // Once per install: old build jobs marked done without a video go back to needs-you.
           void recheckDoneBuildJobs(st.buildJobsChecked);
+          // Once per install: projects made before their status moved on its own catch up.
+          void backfillProjectStatus(st.projectStatusChecked);
         }
       })
       .catch(() => setLoadError(true));
