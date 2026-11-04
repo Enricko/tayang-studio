@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { buildSessionPreamble } from '../src/preamble';
+import { buildSessionPreamble, languageHint } from '../src/preamble';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', 'agent-plugin');
 const read = (p: string) => readFileSync(join(root, p), 'utf8');
@@ -85,5 +85,13 @@ describe('agent plugin', () => {
     expect(p).toContain('createSurface');
     expect(p).not.toContain('\nname: a2ui-options');
     expect(p.startsWith('---')).toBe(false);
+  });
+
+  it('adds the Indonesian hint only for the id language', () => {
+    expect(buildSessionPreamble('id')).toContain('The user reads Indonesian. Reply in Indonesian unless they write in another language.');
+    expect(buildSessionPreamble('en')).not.toContain('The user reads Indonesian');
+    expect(buildSessionPreamble()).not.toContain('The user reads');
+    expect(languageHint('id')).toContain('Keep code, commands and file names as they are.');
+    expect(languageHint('en')).toBe('');
   });
 });

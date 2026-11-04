@@ -33,6 +33,8 @@ export interface ToolStatus {
 export type VideoKind = 'explainer' | 'promo' | 'quote' | 'news' | 'tutorial' | 'data' | 'event';
 export type VideoFormat = '9:16' | '1:1' | '16:9';
 export type VideoLanguage = 'id' | 'en';
+/** Language of Tayang's own interface (not of the videos). */
+export type UiLanguage = 'en' | 'id';
 export type ProjectStatus = 'draft' | 'building' | 'rendered' | 'scheduled';
 
 export interface Project {
@@ -184,6 +186,8 @@ export interface Settings {
   lastPingAt: string | null;
   /** Chats start in auto mode: the agent runs commands without asking. Style studies always do. */
   autoMode: boolean;
+  /** Interface language; null until the first run picks one from the system language. */
+  uiLanguage: UiLanguage | null;
 }
 
 /** Defaults; workingFolder is `<home>/Tayang`, resolved at runtime. */
@@ -199,6 +203,7 @@ export const DEFAULT_SETTINGS: Omit<Settings, 'workingFolder'> = {
   shareInstallStats: true,
   lastPingAt: null,
   autoMode: false,
+  uiLanguage: null,
 };
 
 export type AgentUpdate =

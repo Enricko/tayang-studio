@@ -189,6 +189,7 @@ impl Db {
             "shareInstallStats": true,
             "lastPingAt": null,
             "autoMode": false,
+            "uiLanguage": null,
         })
     }
 
@@ -667,6 +668,10 @@ mod tests {
         assert!(s.frame_check && !s.onboarded);
         assert_eq!(s.api_url, "https://api.tayang.app");
         assert_eq!((s.language, s.format, s.fps), (VideoLanguage::Id, VideoFormat::Portrait, 30));
+        assert_eq!(s.ui_language, None);
+        let l = db.update_settings(json!({"uiLanguage": "id"})).unwrap();
+        assert_eq!(l.ui_language, Some(UiLanguage::Id));
+        assert_eq!(db.get_settings(&home).ui_language, Some(UiLanguage::Id));
 
         let u = db.update_settings(json!({"fps": 60, "onboarded": true, "defaultAgent": "gemini"})).unwrap();
         assert_eq!(u.fps, 60);

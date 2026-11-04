@@ -106,6 +106,14 @@ pub enum VideoLanguage {
     En,
 }
 
+/// The language of Tayang's own interface, not of the videos it makes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UiLanguage {
+    Id,
+    En,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ProjectStatus {
@@ -371,6 +379,10 @@ pub struct Settings {
     /// Chats start in auto mode: the agent runs commands without asking.
     #[serde(default)]
     pub auto_mode: bool,
+    /// Language of the interface. `None` until the first run, when the UI picks one from the
+    /// system language and saves it.
+    #[serde(default)]
+    pub ui_language: Option<UiLanguage>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
