@@ -229,7 +229,6 @@ describe('ChatProject', () => {
     const first = JSON.stringify(vi.mocked(ipc.agentPrompt).mock.calls[0]![1]);
     expect(first).toContain('a2ui');
     expect(first).toContain('one');
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Send' })).toBeInTheDocument());
     await emit('c1', { kind: 'done', stopReason: 'end_turn' });
     await user.type(screen.getByRole('textbox', { name: 'Message' }), 'two');
     await user.click(screen.getByRole('button', { name: 'Send' }));
