@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Film, Link2, Loader2, Pause, Play } from 'lucide-react';
+import { Link2, Loader2, Pause, Play } from 'lucide-react';
 import type { Style as StyleT, StyleAspect } from '@tayang/shared';
 import { Button } from '@/components/Button';
+import { NoPreview } from '@/components/NoPreview';
 import { Oyen } from '@/components/Oyen';
 import { PermissionCard } from '@/components/PermissionCard';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
@@ -36,20 +37,6 @@ const ASPECTS: StyleAspect[] = ['camera', 'pacing', 'type', 'color', 'captions',
 type Tab = 'all' | 'builtin' | 'copied' | 'mine';
 const TABS: Tab[] = ['all', 'builtin', 'copied', 'mine'];
 
-const SWATCHES: [string, string][] = [
-  ['#0B1E3F', '#FFFFFF'],
-  ['#F2470C', '#141414'],
-  ['#E8ECF4', '#0B1E3F'],
-  ['#3B1F14', '#FFE7D6'],
-  ['#1F2A1A', '#F5E6A8'],
-  ['#FFF0E0', '#3B1F14'],
-];
-function swatch(id: string) {
-  let h = 0;
-  for (const c of id) h = (h * 31 + c.charCodeAt(0)) >>> 0;
-  return SWATCHES[h % SWATCHES.length]!;
-}
-
 /** The public thumbnail of a YouTube link (watch?v=, youtu.be/, shorts/, embed/), null for anything else. */
 export function youtubeThumbnail(raw: string | null | undefined): string | null {
   if (!raw) return null;
@@ -74,19 +61,12 @@ export function youtubeThumbnail(raw: string | null | undefined): string | null 
 export const posterOf = (s: StyleT): string | null => s.previewUrl || (s.source === 'copied' ? youtubeThumbnail(s.sourceUrl) : null);
 
 /** The calm panel shown when a style has no picture at all. */
-function NoPreview({ id, text, className }: { id: string; text?: boolean; className?: string }) {
+function StyleNoPreview({ id, text, className }: { id: string; text?: boolean; className?: string }) {
   const { t } = useTranslation();
-  const [bg] = swatch(id);
   return (
-    <div
-      data-testid="style-swatch"
-      className={cn('flex aspect-[9/16] w-full flex-col items-center justify-center gap-2 rounded-md border border-[#333]', className)}
-      style={{ background: bg }}
-      aria-hidden={text ? undefined : 'true'}
-    >
-      <Film size={24} strokeWidth={1.5} aria-hidden="true" className="text-text-3" />
-      {text && <span className="text-xs text-text-3">{t('style.noPreview')}</span>}
-    </div>
+    <NoPreview swatchId={id} testId="style-swatch" className={className}>
+      {text ? t('style.noPreview') : null}
+    </NoPreview>
   );
 }
 
@@ -272,7 +252,7 @@ function StylePreview({ style }: { style: StyleT }) {
   }, []);
 
   const poster = posterOf(style);
-  const frames = <NoPreview id={style.id} text className="max-h-[60vh]" />;
+  const frames = <StyleNoPreview id={style.id} text className="max-h-[60vh]" />;
   if (!src || failed === src) {
     return (
       <PreviewImage
@@ -752,7 +732,7 @@ export function Style() {
                     src={posterOf(s)}
                     lazy
                     className="mb-1 aspect-[9/16] w-full rounded-md border border-[#333] object-cover"
-                    fallback={<NoPreview id={s.id} className="mb-1" />}
+                    fallback={<StyleNoPreview id={s.id} className="mb-1" />}
                   />
                   <span className="text-[13px] font-medium">{s.name}</span>
                   <span className="text-xs text-text-3">{sourceLabel(s)}</span>
