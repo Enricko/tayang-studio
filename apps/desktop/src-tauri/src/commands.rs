@@ -346,13 +346,15 @@ pub fn build_prompt(
         match part {
             MessagePart::Text { text } => out.push(PromptPart::Text(text.clone())),
             MessagePart::Mention { project_id, title } => {
-                let (title, folder) = match project(project_id) {
-                    Some(p) => (p.title, p.folder),
-                    None => (title.clone(), String::new()),
-                };
-                out.push(PromptPart::Text(format!(
-                    "Context: video project \"{title}\" in folder {folder} (read its AGENTS.md first)."
-                )));
+                out.push(PromptPart::Text(match project(project_id) {
+                    Some(p) => format!(
+                        "Context: video project \"{}\" in folder {} (read its AGENTS.md first).",
+                        p.title, p.folder
+                    ),
+                    None => format!(
+                        "Context: video project \"{title}\" (no longer on this computer)."
+                    ),
+                }));
             }
             MessagePart::Frame { project_id, frame, time_sec, image_path, marks } => {
                 let title = project(project_id).map(|p| p.title).unwrap_or_default();
@@ -377,13 +379,28 @@ pub fn build_prompt(
     out
 }
 
+/// Frame images must live inside the working folder.
+pub fn check_frame_images(working: &Path, parts: &[MessagePart]) -> CmdResult<()> {
+    for part in parts {
+        if let MessagePart::Frame { image_path, .. } = part {
+            if !projects::ensure_inside(working, Path::new(image_path)) {
+                return Err("That frame image is outside your working folder".into());
+            }
+        }
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn agent_prompt(
     state: State<'_, AppState>,
     chat_id: String,
     parts: Vec<MessagePart>,
 ) -> CmdResult<()> {
-    let fps = state.db.get_settings(&state.home).fps;
+    let settings = state.db.get_settings(&state.home);
+    let fps = settings.fps;
+    let working = PathBuf::from(&settings.working_folder);
+    check_frame_images(&working, &parts)?;
     let prompt = build_prompt(&parts, fps, |id| state.db.get_project(id).ok().flatten());
     state.acp.prompt(&chat_id, prompt).await.map_err(err)
 }
@@ -522,6 +539,34 @@ mod tests {
         assert!(resolve_cwd(&w, "../x", None).is_err());
         assert!(resolve_cwd(&w, "study-../x", None).is_err());
         assert!(resolve_cwd(&w, "c", Some(&outside)).is_err());
+    }
+
+    #[test]
+    fn frame_images_must_be_inside_working() {
+        let tmp = tempfile::tempdir().unwrap();
+        let w = tmp.path().join("work");
+        std::fs::create_dir_all(&w).unwrap();
+        let frame = |p: PathBuf| MessagePart::Frame {
+            project_id: "p".into(),
+            frame: 1,
+            time_sec: 0.0,
+            image_path: p.to_string_lossy().into_owned(),
+            marks: vec![],
+        };
+        assert!(check_frame_images(&w, &[frame(w.join("a/f.png"))]).is_ok());
+        assert!(check_frame_images(&w, &[frame(tmp.path().join("secret.png"))]).is_err());
+        assert!(check_frame_images(&w, &[frame(w.join("../secret.png"))]).is_err());
+    }
+
+    #[test]
+    fn missing_mention_has_no_empty_folder() {
+        let parts = vec![MessagePart::Mention { project_id: "x".into(), title: "Gone".into() }];
+        assert_eq!(
+            build_prompt(&parts, 30, |_| None),
+            vec![PromptPart::Text(
+                "Context: video project \"Gone\" (no longer on this computer).".into()
+            )]
+        );
     }
 
     #[test]
