@@ -120,3 +120,11 @@
     animation: none;
   }
 }
+
+/* Scrolls like normal, shows no scrollbar (the chat's turn rail replaces it). */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
