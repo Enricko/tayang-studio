@@ -24,7 +24,8 @@ export function onTick(handler: TickHandler): () => void {
   return () => void handlers.delete(handler);
 }
 
-async function canNotify(): Promise<boolean> {
+/** Whether notifications may show, asking the first time. */
+export async function canNotify(): Promise<boolean> {
   if (await isPermissionGranted()) return true;
   return (await requestPermission()) === 'granted';
 }
@@ -35,7 +36,7 @@ async function canNotify(): Promise<boolean> {
  * granted, so a user who turned Tayang's notifications off in the OS is not detected; the banner only
  * appears where the plugin does report a denial, and Settings has a test button for the rest.
  */
-async function show(body: string): Promise<void> {
+export async function show(body: string): Promise<void> {
   await invoke('plugin:notification|notify', { options: { title: i18n.t('reminders.title'), body } });
 }
 

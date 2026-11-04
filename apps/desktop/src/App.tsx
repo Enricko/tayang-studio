@@ -6,6 +6,7 @@ import { Sidebar, type SidebarKey } from '@/components/Sidebar';
 import { setUiLanguage } from '@/i18n';
 import { systemLanguage } from '@/lib/language';
 import { getSettings, syncStyles, updateSettings } from '@/lib/ipc';
+import { runBillingReminder } from '@/lib/billingReminder';
 import { onTick, startScheduler } from '@/lib/scheduler';
 import { recheckDoneBuildJobs, settleLateRenders } from '@/lib/buildJobs';
 import { backfillProjectStatus } from '@/lib/projectStatus';
@@ -102,6 +103,8 @@ export default function App() {
     const stopEngine = startAutopilot();
     // Startup and every tick: build jobs whose video arrived late become done.
     const stopLate = onTick(() => settleLateRenders());
+    // "Your plan ends in 3 days", once per period.
+    const stopPlanReminder = onTick((now) => runBillingReminder(now));
     startScheduler()
       .then((un) => (gone ? un() : (off = un)))
       .catch(() => {});
@@ -110,6 +113,7 @@ export default function App() {
       off?.();
       stopEngine();
       stopLate();
+      stopPlanReminder();
     };
   }, [onboarded]);
 
