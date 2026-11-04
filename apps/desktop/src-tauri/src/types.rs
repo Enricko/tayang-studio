@@ -830,11 +830,15 @@ pub struct PendingPayment {
     pub expires_at: String,
 }
 
-/// `billing_status()`: the last paid plan, until when, whether it still runs, and a payment in progress.
+/// `billing_status()`: the plan now, the last paid plan, until when, whether it still runs, and a payment in progress.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BillingStatus {
+    /// The plan now: `free` once a period ran out.
     pub plan: String,
+    /// The plan last paid for, also after it ran out.
+    #[serde(default)]
+    pub last_plan: Option<String>,
     pub current_period_end: Option<String>,
     pub active: bool,
     pub pending: Option<PendingPayment>,

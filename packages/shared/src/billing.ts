@@ -93,9 +93,11 @@ export interface PendingPayment {
   expiresAt: string;
 }
 
-/** GET /v1/billing/status (Bearer). `plan` is the last paid plan, also after it ran out (then `active` is false). */
+/** GET /v1/billing/status (Bearer). `plan` is the plan the account has now: free once a period ran out. */
 export interface BillingStatus {
   plan: PlanId;
+  /** The plan last paid for, also after it ran out (null if never paid). */
+  lastPlan: PaidPlanId | null;
   currentPeriodEnd: string | null;
   active: boolean;
   pending: PendingPayment | null;

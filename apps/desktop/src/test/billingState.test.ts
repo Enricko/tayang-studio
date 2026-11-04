@@ -11,8 +11,8 @@ import * as billing from '@/lib/billing';
 import { POLL_LIMIT_MS, POLL_MS } from '@/lib/billing';
 import { useBilling } from '@/state/billing';
 
-const free: BillingStatus = { plan: 'free', currentPeriodEnd: null, active: false, pending: null };
-const creator: BillingStatus = { plan: 'creator', currentPeriodEnd: '2026-12-04T12:00:00.000Z', active: true, pending: null };
+const free: BillingStatus = { plan: 'free', lastPlan: null, currentPeriodEnd: null, active: false, pending: null };
+const creator: BillingStatus = { plan: 'creator', lastPlan: 'creator', currentPeriodEnd: '2026-12-04T12:00:00.000Z', active: true, pending: null };
 const checkout = { orderId: 'TYG-A', paymentLinkUrl: 'https://pay.example/p/1', expiresAt: '2026-11-04T13:00:00.000Z', amount: 50000 };
 
 beforeEach(() => {
@@ -67,7 +67,7 @@ describe('paying', () => {
     await vi.advanceTimersByTimeAsync(POLL_MS * 4);
     expect(billing.billingStatus).toHaveBeenCalledTimes(calls);
     useBilling.getState().checkAgain();
-    vi.mocked(billing.billingStatus).mockResolvedValue({ ...creator, plan: 'lite' });
+    vi.mocked(billing.billingStatus).mockResolvedValue({ ...creator, plan: 'lite', lastPlan: 'lite' });
     await vi.advanceTimersByTimeAsync(POLL_MS);
     expect(useBilling.getState().flow.phase).toBe('done');
   });
@@ -86,7 +86,7 @@ describe('paying', () => {
     vi.mocked(billing.billingStatus).mockRejectedValueOnce('billing:network');
     await vi.advanceTimersByTimeAsync(POLL_MS);
     expect(useBilling.getState().flow.phase).toBe('waiting');
-    vi.mocked(billing.billingStatus).mockResolvedValue({ ...creator, plan: 'lite' });
+    vi.mocked(billing.billingStatus).mockResolvedValue({ ...creator, plan: 'lite', lastPlan: 'lite' });
     await vi.advanceTimersByTimeAsync(POLL_MS);
     expect(useBilling.getState().flow.phase).toBe('done');
   });

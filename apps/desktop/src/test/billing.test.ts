@@ -4,6 +4,7 @@ import { billingErrorCode, billingReminderDue, formatDay, formatIdr, planCard } 
 
 const status = (over: Partial<BillingStatus> = {}): BillingStatus => ({
   plan: 'creator',
+  lastPlan: 'creator',
   currentPeriodEnd: '2026-12-04T12:00:00.000Z',
   active: true,
   pending: null,
@@ -37,10 +38,10 @@ describe('billingErrorCode', () => {
 
 describe('planCard', () => {
   it('free, active, ended and a plan with no end', () => {
-    expect(planCard(status({ plan: 'free', currentPeriodEnd: null, active: false }))).toBe('free');
+    expect(planCard(status({ plan: 'free', lastPlan: null, currentPeriodEnd: null, active: false }))).toBe('free');
     expect(planCard(null)).toBe('free');
     expect(planCard(status())).toBe('active');
-    expect(planCard(status({ active: false }))).toBe('ended');
+    expect(planCard(status({ plan: 'free', active: false }))).toBe('ended');
     expect(planCard(status({ plan: 'pro', currentPeriodEnd: null, active: true }))).toBe('active');
   });
 });

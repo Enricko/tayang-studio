@@ -33,8 +33,8 @@ export const formatDay = (iso: string, lang: UiLanguage) =>
 export type PlanCardState = 'free' | 'active' | 'ended';
 
 export function planCard(s: BillingStatus | null): PlanCardState {
-  if (!s || s.plan === 'free') return 'free';
-  return s.active ? 'active' : 'ended';
+  if (s?.active && s.plan !== 'free') return 'active';
+  return s?.lastPlan ? 'ended' : 'free';
 }
 
 /** The plan-ends-soon notification shows this long before the end. */

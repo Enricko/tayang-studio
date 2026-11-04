@@ -18,7 +18,7 @@ import { useBilling } from '@/state/billing';
 
 const DAY = 86_400_000;
 const END = '2026-12-04T12:00:00.000Z';
-const creator: BillingStatus = { plan: 'creator', currentPeriodEnd: END, active: true, pending: null };
+const creator: BillingStatus = { plan: 'creator', lastPlan: 'creator', currentPeriodEnd: END, active: true, pending: null };
 const signedIn = { state: 'signed-in', signedIn: true, offline: false, apiUrl: 'x' } as AuthStatus;
 const at = (msBeforeEnd: number) => new Date(Date.parse(END) - msBeforeEnd);
 const notified = () =>
@@ -74,7 +74,7 @@ describe('plan-ends-soon reminder', () => {
     await runBillingReminder(at(DAY));
     expect(billing.billingStatus).not.toHaveBeenCalled();
     useAuth.setState({ status: signedIn });
-    vi.mocked(billing.billingStatus).mockResolvedValue({ plan: 'free', currentPeriodEnd: null, active: false, pending: null });
+    vi.mocked(billing.billingStatus).mockResolvedValue({ plan: 'free', lastPlan: null, currentPeriodEnd: null, active: false, pending: null });
     await runBillingReminder(at(DAY));
     expect(notified()).toEqual([]);
   });

@@ -17,8 +17,8 @@ import * as billing from '@/lib/billing';
 import { POLL_MS } from '@/lib/billing';
 import { useBilling } from '@/state/billing';
 
-const free: BillingStatus = { plan: 'free', currentPeriodEnd: null, active: false, pending: null };
-const creator: BillingStatus = { plan: 'creator', currentPeriodEnd: '2026-12-04T12:00:00.000Z', active: true, pending: null };
+const free: BillingStatus = { plan: 'free', lastPlan: null, currentPeriodEnd: null, active: false, pending: null };
+const creator: BillingStatus = { plan: 'creator', lastPlan: 'creator', currentPeriodEnd: '2026-12-04T12:00:00.000Z', active: true, pending: null };
 const checkout = { orderId: 'TYG-A', paymentLinkUrl: 'https://pay.example/p/1', expiresAt: '2026-11-04T13:00:00.000Z', amount: 50000 };
 
 beforeEach(() => {
@@ -46,9 +46,10 @@ describe('plan card', () => {
   });
 
   it('ended: says Ended and offers Renew', async () => {
-    vi.mocked(billing.billingStatus).mockResolvedValue({ ...creator, active: false });
+    vi.mocked(billing.billingStatus).mockResolvedValue({ ...creator, plan: 'free', active: false });
     render(<PlanCard />);
     expect(await screen.findByText('Ended on Dec 4, 2026')).toBeInTheDocument();
+    expect(screen.getByText('Creator')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Renew' })).toBeInTheDocument();
   });
 

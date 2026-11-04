@@ -172,7 +172,8 @@ export function PlanCard() {
   }, []);
 
   const state = planCard(status);
-  const paidPlan = status && status.plan !== 'free' ? status.plan : null;
+  // The plan to renew: the running one, else the one that ran out.
+  const paidPlan = state === 'active' && status?.plan !== 'free' ? (status?.plan ?? null) : (status?.lastPlan ?? null);
   const end = status?.currentPeriodEnd ?? null;
   const pending = status?.pending ?? null;
   const line =
@@ -193,7 +194,7 @@ export function PlanCard() {
   return (
     <div className="flex flex-wrap items-center gap-4 rounded-xl border border-border bg-card p-4">
       <div className="flex min-w-[220px] flex-1 flex-col gap-1">
-        <span className="text-sm font-medium">{planName(status?.plan ?? 'free', t('billing.free'))}</span>
+        <span className="text-sm font-medium">{planName(paidPlan ?? 'free', t('billing.free'))}</span>
         <span className={cn('text-[13px] leading-normal', state === 'ended' ? 'text-orange-light' : 'text-text-2')}>{line}</span>
         {pending && (
           <span className="text-xs text-text-3">

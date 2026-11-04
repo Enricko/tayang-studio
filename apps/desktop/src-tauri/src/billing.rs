@@ -69,7 +69,7 @@ mod tests {
     use crate::auth::tests::{dead_base, fake};
 
     const CHECKOUT: &str = r#"{"orderId":"TYG-ABCDEFGH-1793793600","paymentLinkUrl":"https://pay.example/p/1","expiresAt":"2026-11-04T13:00:00.000Z","amount":50000}"#;
-    const STATUS: &str = r#"{"plan":"creator","currentPeriodEnd":"2026-12-04T12:00:00.000Z","active":true,"pending":{"orderId":"TYG-X","plan":"pro","paymentLinkUrl":"https://pay.example/p/2","expiresAt":"2026-11-04T13:00:00.000Z"}}"#;
+    const STATUS: &str = r#"{"plan":"creator","lastPlan":"creator","currentPeriodEnd":"2026-12-04T12:00:00.000Z","active":true,"pending":{"orderId":"TYG-X","plan":"pro","paymentLinkUrl":"https://pay.example/p/2","expiresAt":"2026-11-04T13:00:00.000Z"}}"#;
 
     #[tokio::test]
     async fn checkout_posts_the_plan_with_the_token() {
@@ -120,6 +120,7 @@ mod tests {
         .await;
         let s = status(&http_client().unwrap(), &f.base, "tyg_abc").await.unwrap();
         assert_eq!((s.plan.as_str(), s.active, s.current_period_end.as_deref()), ("creator", true, Some("2026-12-04T12:00:00.000Z")));
+        assert_eq!(s.last_plan.as_deref(), Some("creator"));
         assert_eq!(s.pending.map(|p| p.order_id), Some("TYG-X".into()));
         assert_eq!(status(&http_client().unwrap(), &f.base, "tyg_other").await, Err(BillingError::SignedOut));
     }
