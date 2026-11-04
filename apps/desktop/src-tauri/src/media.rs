@@ -385,6 +385,101 @@ pub fn thumbnails(
         .collect()
 }
 
+// ---- video thumbnails (the Videos cards) ----
+
+/// One frame of a project's newest render, cached by the render's time.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VideoThumb {
+    pub path: String,
+    /// The render's modification time (RFC 3339 UTC, ms): a new render is a new thumbnail.
+    pub modified_at: String,
+    /// The render's length, when ffprobe could read it.
+    pub duration_sec: Option<f64>,
+}
+
+/// Each ffmpeg/ffprobe run for a thumbnail is killed after this long.
+pub const THUMB_TIMEOUT: std::time::Duration = PREVIEW_TIMEOUT;
+
+/// Where the frame is taken: 1 s in, or 10% of a video shorter than 10 s; the start when the length is unknown.
+fn thumb_time(duration: Option<f64>) -> f64 {
+    match duration {
+        Some(d) if d < 10.0 => d * 0.1,
+        Some(_) => 1.0,
+        None => 0.0,
+    }
+}
+
+/// `<project_id>-<render ms>` with its extension, when `name` is one of this project's cached files.
+fn thumb_stamp<'a>(name: &'a str, project_id: &str) -> Option<&'a str> {
+    let stem = name.strip_suffix(".jpg").or_else(|| name.strip_suffix(".txt"))?;
+    let (id, ms) = stem.rsplit_once('-')?;
+    (id == project_id && !ms.is_empty() && ms.bytes().all(|b| b.is_ascii_digit())).then_some(ms)
+}
+
+/// A JPEG of the project's newest finished render (`latest_render`), 360 px wide, cached as
+/// `<thumbs>/<project_id>-<render ms>.jpg` (its length beside it in a `.txt`) and reused while the render's
+/// time is the same; older ones of the project are deleted. None without a render, or when ffmpeg can't
+/// make one within `limit`.
+pub fn video_thumbnail(
+    tools: &MediaTools,
+    folder: &Path,
+    thumbs: &Path,
+    project_id: &str,
+    limit: std::time::Duration,
+) -> Option<VideoThumb> {
+    if !valid_style_id(project_id) {
+        return None;
+    }
+    let video = latest_render(folder)?;
+    let modified: chrono::DateTime<chrono::Utc> = video.metadata().ok()?.modified().ok()?.into();
+    let ms = modified.timestamp_millis();
+    let modified_at = modified.to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+    let jpg = thumbs.join(format!("{project_id}-{ms}.jpg"));
+    let txt = thumbs.join(format!("{project_id}-{ms}.txt"));
+    let thumb = |duration_sec| VideoThumb { path: jpg.to_string_lossy().into_owned(), modified_at: modified_at.clone(), duration_sec };
+    if jpg.metadata().is_ok_and(|m| m.is_file() && m.len() > 0) {
+        let duration = std::fs::read_to_string(&txt).ok().and_then(|s| s.trim().parse::<f64>().ok());
+        return Some(thumb(duration));
+    }
+    std::fs::create_dir_all(thumbs).ok()?;
+    let duration = probe_within(tools, &video, Some(limit)).ok().map(|i| i.duration_sec);
+    // Written next to it and renamed, so a half-written frame is never shown.
+    let tmp = thumbs.join(format!(".{project_id}-{ms}.tmp.jpg"));
+    let os = |s: &str| std::ffi::OsString::from(s);
+    let args = vec![
+        os("-ss"),
+        os(&format!("{:.3}", thumb_time(duration))),
+        os("-i"),
+        video.as_os_str().to_owned(),
+        os("-frames:v"),
+        os("1"),
+        os("-vf"),
+        os("scale=360:-2"),
+        os("-q:v"),
+        os("4"),
+        tmp.as_os_str().to_owned(),
+    ];
+    let made = ffmpeg_ok(tools, &args, limit) && tmp.metadata().is_ok_and(|m| m.len() > 0) && std::fs::rename(&tmp, &jpg).is_ok();
+    if !made {
+        let _ = std::fs::remove_file(&tmp);
+        return None;
+    }
+    if let Some(d) = duration {
+        let _ = std::fs::write(&txt, d.to_string());
+    }
+    let keep = ms.to_string();
+    if let Ok(rd) = std::fs::read_dir(thumbs) {
+        for e in rd.flatten() {
+            let name = e.file_name().to_string_lossy().into_owned();
+            if thumb_stamp(&name, project_id).is_some_and(|s| s != keep) {
+                let _ = std::fs::remove_file(e.path());
+            }
+        }
+    }
+    Some(thumb(duration))
+}
+
 // ---- style previews (styles copied from a video) ----
 
 /// What `make_style_preview` produced. `preview_path` is None when the clip came out over 3 MB.
@@ -1356,6 +1451,121 @@ mod tests {
 
     fn render_name(folder: &Path) -> Option<String> {
         latest_render(folder).map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
+    }
+
+    // ---- video thumbnails ----
+
+    const THUMB_LIMIT: std::time::Duration = std::time::Duration::from_secs(20);
+
+    /// A fake ffmpeg that writes its last argument (the output) and logs its arguments; ffprobe fails.
+    #[cfg(unix)]
+    fn fake_thumb_tools(dir: &Path) -> (MediaTools, PathBuf) {
+        let log = dir.join("ffmpeg.log");
+        let body = format!("echo \"$@\" >> '{}'\nfor last; do :; done\nprintf jpg > \"$last\"", log.display());
+        let ffmpeg = script_tool(dir, "ffmpeg.sh", &body);
+        let ffprobe = script_tool(dir, "ffprobe.sh", "exit 1");
+        (MediaTools { ffmpeg, ffprobe }, log)
+    }
+
+    fn missing_tools() -> MediaTools {
+        MediaTools { ffmpeg: PathBuf::from("/nonexistent/ffmpeg"), ffprobe: PathBuf::from("/nonexistent/ffprobe") }
+    }
+
+    fn set_mtime(p: &Path, secs: u64) {
+        let t = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_800_000_000 + secs);
+        std::fs::File::options().write(true).open(p).unwrap().set_modified(t).unwrap();
+    }
+
+    fn thumb_names(dir: &Path) -> Vec<String> {
+        let mut v: Vec<String> = std::fs::read_dir(dir)
+            .map(|rd| rd.flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect())
+            .unwrap_or_default();
+        v.sort();
+        v
+    }
+
+    #[test]
+    fn thumb_time_is_1_s_or_a_tenth_of_a_short_video() {
+        assert_eq!(thumb_time(Some(66.0)), 1.0);
+        assert_eq!(thumb_time(Some(10.0)), 1.0);
+        assert!((thumb_time(Some(5.0)) - 0.5).abs() < 1e-9);
+        assert_eq!(thumb_time(None), 0.0);
+    }
+
+    #[test]
+    fn no_render_or_no_ffmpeg_means_no_thumbnail() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("p");
+        let thumbs = tmp.path().join("thumbs");
+        std::fs::create_dir_all(&project).unwrap();
+        assert_eq!(video_thumbnail(&missing_tools(), &project, &thumbs, "p1", THUMB_LIMIT), None);
+        std::fs::create_dir_all(project.join("renders")).unwrap();
+        std::fs::write(project.join("renders/a.mp4"), b"x").unwrap();
+        assert_eq!(video_thumbnail(&missing_tools(), &project, &thumbs, "p1", THUMB_LIMIT), None);
+        assert!(thumb_names(&thumbs).is_empty(), "nothing half-made is left");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_thumbnail_is_made_once_per_render_and_replaced_when_the_render_changes() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (tools, log) = fake_thumb_tools(tmp.path());
+        let project = tmp.path().join("p");
+        let thumbs = tmp.path().join("thumbs");
+        let video = project.join("runs/jalur-rempah/out/video.mp4");
+        std::fs::create_dir_all(video.parent().unwrap()).unwrap();
+        std::fs::write(&video, b"x").unwrap();
+        set_mtime(&video, 0);
+        std::fs::create_dir_all(&thumbs).unwrap();
+        std::fs::write(thumbs.join("other-1800000000000.jpg"), b"x").unwrap();
+
+        // Miss: one ffmpeg run, 360 px wide, JPEG q 4.
+        let first = video_thumbnail(&tools, &project, &thumbs, "p1", THUMB_LIMIT).unwrap();
+        assert!(first.path.ends_with("p1-1800000000000.jpg"), "{}", first.path);
+        assert_eq!(first.modified_at, "2027-01-15T08:00:00.000Z");
+        assert_eq!(first.duration_sec, None, "this ffprobe can't read it");
+        let args = std::fs::read_to_string(&log).unwrap();
+        assert_eq!(args.lines().count(), 1);
+        assert!(args.contains("-frames:v 1") && args.contains("scale=360:-2") && args.contains("-q:v 4"), "{args}");
+
+        // Hit: the same render reuses it, even with no ffmpeg at all.
+        let again = video_thumbnail(&missing_tools(), &project, &thumbs, "p1", THUMB_LIMIT).unwrap();
+        assert_eq!(again, first);
+        assert_eq!(std::fs::read_to_string(&log).unwrap().lines().count(), 1);
+
+        // A new render: a new thumbnail, the old one for this project gone, other projects' kept.
+        set_mtime(&video, 60);
+        let next = video_thumbnail(&tools, &project, &thumbs, "p1", THUMB_LIMIT).unwrap();
+        assert!(next.path.ends_with("p1-1800000060000.jpg"));
+        assert_eq!(thumb_names(&thumbs), ["other-1800000000000.jpg", "p1-1800000060000.jpg"]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_hung_ffmpeg_gives_no_thumbnail_within_the_limit() {
+        let tmp = tempfile::tempdir().unwrap();
+        let hang = script_tool(tmp.path(), "hang.sh", "exec sleep 30");
+        let tools = MediaTools { ffmpeg: hang.clone(), ffprobe: hang };
+        let project = tmp.path().join("p");
+        std::fs::create_dir_all(project.join("renders")).unwrap();
+        std::fs::write(project.join("renders/a.mp4"), b"x").unwrap();
+        let started = std::time::Instant::now();
+        let thumbs = tmp.path().join("thumbs");
+        assert_eq!(video_thumbnail(&tools, &project, &thumbs, "p1", std::time::Duration::from_millis(500)), None);
+        assert!(started.elapsed() < std::time::Duration::from_secs(10));
+        assert!(thumb_names(&thumbs).is_empty());
+    }
+
+    #[test]
+    fn a_real_render_gets_a_360_px_jpeg_and_its_length() {
+        let Some(t) = test_tools() else { return };
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("p");
+        make_source(&t, &project.join("renders"), "a.mp4");
+        let thumb = video_thumbnail(&t, &project, &tmp.path().join("thumbs"), "p1", THUMB_LIMIT).unwrap();
+        assert!((thumb.duration_sec.unwrap() - 5.0).abs() < 0.2);
+        let info = probe(&t, Path::new(&thumb.path)).unwrap();
+        assert_eq!(info.width, 360);
     }
 
     #[test]

@@ -522,12 +522,14 @@ pub fn delete_style(app: AppHandle, state: State<'_, AppState>, id: String) -> C
     Ok(())
 }
 
-/// Where copied styles keep their preview clip and poster; the webview may read it.
+/// Where copied styles keep their preview clip and poster, and where the video cards' thumbnails are
+/// cached; the webview may read both.
 pub fn allow_style_media(app: &AppHandle) {
     if let Ok(data) = app.path().app_data_dir() {
-        let dir = data.join("style-media");
-        let _ = std::fs::create_dir_all(&dir);
-        let _ = app.asset_protocol_scope().allow_directory(&dir, true);
+        for dir in [data.join("style-media"), data.join("thumbs")] {
+            let _ = std::fs::create_dir_all(&dir);
+            let _ = app.asset_protocol_scope().allow_directory(&dir, true);
+        }
     }
 }
 
@@ -1233,6 +1235,22 @@ pub fn latest_render_info(state: State<'_, AppState>, project_id: String) -> Cmd
 pub async fn newest_video_info(state: State<'_, AppState>, project_id: String) -> CmdResult<Option<crate::types::FileInfo>> {
     let folder = project_folder(&state, &project_id)?;
     tauri::async_runtime::spawn_blocking(move || media::newest_video_info(&folder)).await.map_err(err)
+}
+
+/// One frame of the project's newest render for its Videos card, cached in `<app data>/thumbs`; None without
+/// a render or ffmpeg. Runs off the main thread, each ffmpeg run within the usual time limit.
+#[tauri::command]
+pub async fn video_thumbnail(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    project_id: String,
+) -> CmdResult<Option<media::VideoThumb>> {
+    let folder = project_folder(&state, &project_id)?;
+    let thumbs = app.path().app_data_dir().map_err(err)?.join("thumbs");
+    let tools = state.media.clone();
+    tauri::async_runtime::spawn_blocking(move || media::video_thumbnail(&tools, &folder, &thumbs, &project_id, media::THUMB_TIMEOUT))
+        .await
+        .map_err(err)
 }
 
 #[tauri::command]
