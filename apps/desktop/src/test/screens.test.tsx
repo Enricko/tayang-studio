@@ -1370,6 +1370,12 @@ describe('Calendar scheduling', () => {
 
   const at = (h: number, m = 0) => new Date(2026, 10, 12, h, m).toISOString();
   const today = new Date(2026, 10, 4);
+  // The dialog's default slot and past check read the clock: 4 Nov 2026, 10:00 here.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(2026, 10, 4, 10, 0));
+  });
+  afterEach(() => vi.useRealTimers());
 
   it('shows each entry with its time and a state chip, in Indonesian too', async () => {
     vi.mocked(ipc.listProjects).mockResolvedValue([
@@ -1459,7 +1465,23 @@ describe('Calendar scheduling', () => {
     await userEvent.selectOptions(within(dialog).getByLabelText('Video'), 'u');
     fireEvent.change(within(dialog).getByLabelText('Date'), { target: { value: '2026-11-06' } });
     await userEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
-    await waitFor(() => expect(ipc.setSchedule).toHaveBeenCalledWith('u', new Date(2026, 10, 6, 9, 0).toISOString()));
+    await waitFor(() => expect(ipc.setSchedule).toHaveBeenCalledWith('u', new Date(2026, 10, 6, 19, 0).toISOString()));
+  });
+
+  it("the Calendar entry starts at today 19:00 and won't save a time that has passed", async () => {
+    vi.mocked(ipc.listProjects).mockResolvedValue([project('u', 'Unplanned', 'rendered')]);
+    render(<Calendar today={today} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Schedule a video' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByLabelText('Date')).toHaveValue('2026-11-04');
+    expect(within(dialog).getByLabelText('Time')).toHaveValue('19:00');
+    await userEvent.selectOptions(within(dialog).getByLabelText('Video'), 'u');
+    fireEvent.change(within(dialog).getByLabelText('Time'), { target: { value: '08:00' } });
+    expect(within(dialog).getByText('That time has already passed. Pick a later one')).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Save' })).toBeDisabled();
+    fireEvent.change(within(dialog).getByLabelText('Time'), { target: { value: '10:30' } });
+    expect(within(dialog).queryByText(/already passed/)).not.toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Save' })).toBeEnabled();
   });
 
   it('dragging an entry to another day keeps its time', async () => {
@@ -1534,6 +1556,12 @@ describe('Calendar scheduling', () => {
 });
 
 describe('Videos schedule action', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(2026, 10, 4, 10, 0));
+  });
+  afterEach(() => vi.useRealTimers());
+
   it('the Scheduled tab lists scheduled, unposted videos', async () => {
     vi.mocked(ipc.listProjects).mockResolvedValue([
       project('a', 'Alpha', 'rendered', '2026-11-12T02:00:00Z'),
@@ -1557,7 +1585,38 @@ describe('Videos schedule action', () => {
     expect(within(dialog).queryByRole('button', { name: 'Clear schedule' })).not.toBeInTheDocument();
     fireEvent.change(within(dialog).getByLabelText('Date'), { target: { value: '2026-12-01' } });
     await userEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
-    await waitFor(() => expect(ipc.setSchedule).toHaveBeenCalledWith('a', new Date(2026, 11, 1, 9, 0).toISOString()));
+    await waitFor(() => expect(ipc.setSchedule).toHaveBeenCalledWith('a', new Date(2026, 11, 1, 19, 0).toISOString()));
+  });
+
+  it('starts at tomorrow 19:00 from 18:00 on, and at the video\'s own time when it has one', async () => {
+    vi.setSystemTime(new Date(2026, 10, 4, 18, 0));
+    const p = project('a', 'Alpha', 'rendered');
+    vi.mocked(ipc.listProjects).mockResolvedValue([p, project('b', 'Beta', 'rendered', new Date(2026, 10, 9, 7, 15).toISOString())]);
+    render(<Videos />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Schedule Alpha' }));
+    let dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByLabelText('Date')).toHaveValue('2026-11-05');
+    expect(within(dialog).getByLabelText('Time')).toHaveValue('19:00');
+    expect(within(dialog).queryByText(/already passed/)).not.toBeInTheDocument();
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    await userEvent.click(await screen.findByRole('tab', { name: /Scheduled/ }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Schedule Beta' }));
+    dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByLabelText('Date')).toHaveValue('2026-11-09');
+    expect(within(dialog).getByLabelText('Time')).toHaveValue('07:15');
+  });
+
+  it('blocks saving a past date, in Indonesian too', async () => {
+    setUiLanguage('id');
+    vi.mocked(ipc.listProjects).mockResolvedValue([project('a', 'Alpha', 'rendered')]);
+    render(<Videos />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Jadwalkan Alpha' }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.change(within(dialog).getByLabelText('Tanggal'), { target: { value: '2026-11-03' } });
+    expect(within(dialog).getByText('Waktu itu sudah lewat. Pilih waktu yang lebih nanti')).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Simpan' })).toBeDisabled();
+    expect(ipc.setSchedule).not.toHaveBeenCalled();
   });
 });
 

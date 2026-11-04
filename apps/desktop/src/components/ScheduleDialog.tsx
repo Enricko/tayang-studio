@@ -19,6 +19,18 @@ export function localToIso(date: string, time: string): string | null {
 }
 
 /**
+ * Where the fields start: the video's own schedule when it has one; otherwise 19:00 today, or
+ * 19:00 tomorrow once it's 18:00 or later (too late to make tonight's slot).
+ */
+export function defaultSlot(scheduledAt: string | null | undefined, now: Date = new Date()): Date {
+  const at = scheduledAt ? new Date(scheduledAt) : null;
+  if (at && !Number.isNaN(at.getTime())) return at;
+  const slot = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 19, 0);
+  if (now.getHours() >= 18) slot.setDate(slot.getDate() + 1);
+  return slot;
+}
+
+/**
  * Sets or clears when a video is due to be posted. With `project` it schedules that video; with
  * only `choices` (the Calendar's own entry) it first asks which one.
  */
@@ -51,15 +63,18 @@ export function ScheduleDialog({
       setPickedId('');
       return;
     }
-    const at = target?.scheduledAt ? new Date(target.scheduledAt) : null;
-    const start = at && !Number.isNaN(at.getTime()) ? at : null;
-    setDate(start ? dateValue(start) : dateValue(new Date()));
-    setTime(start ? timeValue(start) : '09:00');
+    const start = defaultSlot(target?.scheduledAt);
+    setDate(dateValue(start));
+    setTime(timeValue(start));
     setError(null);
   }, [open, seedId]);
 
+  const iso = localToIso(date, time);
+  // A moment that has already gone can't be a posting time.
+  const past = iso !== null && Date.parse(iso) <= Date.now();
+
   const save = async (at: string | null) => {
-    if (!target || busy) return;
+    if (!target || busy || (at !== null && Date.parse(at) <= Date.now())) return;
     setBusy(true);
     setError(null);
     try {
@@ -84,8 +99,6 @@ export function ScheduleDialog({
       setBusy(false);
     }
   };
-
-  const iso = localToIso(date, time);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -121,6 +134,7 @@ export function ScheduleDialog({
             <Input type="time" value={time} onChange={(e) => setTime(e.target.value)} />
           </label>
         </div>
+        {past && <p className="m-0 text-xs text-orange-light">{t('schedule.past')}</p>}
         {error && (
           <p role="alert" className="m-0 text-xs text-orange-light">
             {error}
@@ -138,7 +152,7 @@ export function ScheduleDialog({
               {t('schedule.agentPick')}
             </Button>
           )}
-          <Button disabled={busy || !target || !iso} onClick={() => void save(iso)}>
+          <Button disabled={busy || !target || !iso || past} onClick={() => void save(iso)}>
             {t('schedule.save')}
           </Button>
         </DialogFooter>

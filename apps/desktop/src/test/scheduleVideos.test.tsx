@@ -31,7 +31,7 @@ vi.mock('@tauri-apps/plugin-opener', () => ({ openUrl: vi.fn() }));
 
 import { addMessage, agentPrompt, getChat, listChats, listProjects, scheduleVideos } from '@/lib/ipc';
 import { MessageList } from '@/components/MessageList';
-import { ScheduleDialog } from '@/components/ScheduleDialog';
+import { ScheduleDialog, defaultSlot } from '@/components/ScheduleDialog';
 import { extractA2ui } from '@/a2ui/parse';
 import { applyMessages, emptySurfaces } from '@/a2ui/surface';
 import { onAutopilotChanged } from '@/lib/autopilotHooks';
@@ -92,6 +92,15 @@ beforeEach(() => {
   vi.mocked(getChat).mockImplementation(async (id) => (id === 'c1' ? chatRow('c1', 'p1') : chatRow(id, null)));
   vi.mocked(scheduleVideos).mockResolvedValue([]);
   vi.mocked(addMessage).mockResolvedValue(null as unknown as ChatMessage);
+});
+
+describe('defaultSlot', () => {
+  it("is the video's own time, else 19:00 today before 18:00, else 19:00 tomorrow (across a month end)", () => {
+    expect(defaultSlot('2026-11-20T12:00:00Z', new Date(2026, 10, 4, 10))).toEqual(new Date('2026-11-20T12:00:00Z'));
+    expect(defaultSlot(null, new Date(2026, 10, 4, 17, 59))).toEqual(new Date(2026, 10, 4, 19, 0));
+    expect(defaultSlot(null, new Date(2026, 10, 4, 18, 0))).toEqual(new Date(2026, 10, 5, 19, 0));
+    expect(defaultSlot('nonsense', new Date(2026, 10, 30, 23, 30))).toEqual(new Date(2026, 11, 1, 19, 0));
+  });
 });
 
 describe('parseRfc3339', () => {

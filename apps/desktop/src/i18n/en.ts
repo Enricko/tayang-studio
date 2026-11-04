@@ -427,6 +427,7 @@ export const en = {
     action: 'Schedule',
     actionFor: 'Schedule {{title}}',
     cantSave: "Couldn't save the schedule. Try again",
+    past: 'That time has already passed. Pick a later one',
     agentPick: 'Let the agent pick',
     cantAsk: "Couldn't open this video's chat. Try again",
     agentPrompt: "Pick the best time to post this video in the next 7 days and show me a schedule card. It's {{now}} ({{zone}}).",

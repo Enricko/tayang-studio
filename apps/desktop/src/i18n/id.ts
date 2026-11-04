@@ -419,6 +419,7 @@ export const id: Translations = {
     time: 'Jam',
     save: 'Simpan',
     clear: 'Hapus jadwal',
+    past: 'Waktu itu sudah lewat. Pilih waktu yang lebih nanti',
     action: 'Jadwalkan',
     actionFor: 'Jadwalkan {{title}}',
     cantSave: 'Jadwal belum bisa disimpan. Coba lagi',
