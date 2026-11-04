@@ -123,6 +123,9 @@ export const agentRespondPermission = (requestId: string, optionId: string | nul
 // ---- media ----
 export const mediaLatestRender = (projectId: string) =>
   invoke<string | null>('media_latest_render', { projectId });
+/** Images the agent made in a project chat's folder since `since` (RFC 3339), newest first; none without a project. */
+export const recentImages = (chatId: string, since: string, limit: number) =>
+  invoke<FileInfo[]>('recent_images', { chatId, since, limit });
 /** The newest render with its size and time; null when the project has none. */
 export const latestRenderInfo = (projectId: string) => invoke<FileInfo | null>('latest_render_info', { projectId });
 export const mediaProbe = (projectId: string) =>

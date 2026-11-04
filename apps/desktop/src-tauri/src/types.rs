@@ -212,6 +212,9 @@ pub enum MessagePart {
         name: String,
         mime: String,
         size: u64,
+        /// When the file was last written (an image the agent made): the UI reloads a rewritten one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        modified_at: Option<String>,
     },
     Frame {
         project_id: String,
@@ -608,7 +611,13 @@ mod tests {
         let v = json!({"type":"file","path":"/w/attachments/a.pdf","name":"a.pdf",
             "mime":"application/pdf","size":2048});
         let part: MessagePart = serde_json::from_value(v.clone()).unwrap();
-        assert!(matches!(&part, MessagePart::File { size: 2048, .. }));
+        assert!(matches!(&part, MessagePart::File { size: 2048, modified_at: None, .. }));
+        assert_eq!(serde_json::to_value(&part).unwrap(), v);
+        // An image the agent made keeps its time.
+        let v = json!({"type":"file","path":"/w/p/a.png","name":"a.png","mime":"image/png","size":3,
+            "modifiedAt":"2026-11-04T10:00:00.000Z"});
+        let part: MessagePart = serde_json::from_value(v.clone()).unwrap();
+        assert!(matches!(&part, MessagePart::File { modified_at: Some(_), .. }));
         assert_eq!(serde_json::to_value(&part).unwrap(), v);
     }
 

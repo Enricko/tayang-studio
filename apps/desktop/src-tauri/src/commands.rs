@@ -939,6 +939,7 @@ pub fn copy_attachment(cwd: &Path, source: &Path, max: u64) -> CmdResult<Message
                     mime: mime_for(&name).into(),
                     name,
                     size: meta.len(),
+                    modified_at: None,
                 });
             }
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
@@ -1729,6 +1730,7 @@ mod tests {
                 name: "notes.pdf".into(),
                 mime: "application/pdf".into(),
                 size: 5,
+                modified_at: None,
             }
         );
     }
@@ -1789,12 +1791,14 @@ mod tests {
                 name: "shot.PNG".into(),
                 mime: "image/png".into(),
                 size: 10,
+                modified_at: None,
             },
             MessagePart::File {
                 path: "/w/c/attachments/brief.pdf".into(),
                 name: "brief.pdf".into(),
                 mime: "application/pdf".into(),
                 size: 2048,
+                modified_at: None,
             },
         ];
         assert_eq!(
@@ -1816,6 +1820,7 @@ mod tests {
             name: name.into(),
             mime: mime_for(name).into(),
             size,
+            modified_at: None,
         };
         let parts = vec![
             file("loop.gif", 10),
@@ -1839,6 +1844,7 @@ mod tests {
             name: "x".into(),
             mime: "text/plain".into(),
             size: 1,
+            modified_at: None,
         };
         assert!(check_file_parts(&cwd, &[file(cwd.join("attachments").join("x"))]).is_ok());
         assert!(check_file_parts(&cwd, &[file(tmp.path().join("secret"))]).is_err());

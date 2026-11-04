@@ -101,7 +101,15 @@ export type ToolKind =
 export type MessagePart =
   | { type: 'text'; text: string }
   | { type: 'mention'; projectId: string; title: string }
-  | { type: 'file'; path: string; name: string; mime: string; size: number }
+  | {
+      type: 'file';
+      path: string;
+      name: string;
+      mime: string;
+      size: number;
+      /** When the file was last written (an image the agent made): a rewritten one reloads. */
+      modifiedAt?: string;
+    }
   | {
       type: 'frame';
       projectId: string;
