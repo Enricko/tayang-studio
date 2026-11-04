@@ -13,16 +13,59 @@ use std::time::{Duration, Instant};
 
 const EXEC_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// Newest `~/.nvm/versions/node/*/bin` that exists.
+/// `v22.11.0` -> (22, 11, 0). Anything that isn't a version sorts first.
+fn semver_key(name: &str) -> (u64, u64, u64) {
+    let mut it = name.trim_start_matches('v').split('.').map(|p| p.parse::<u64>().unwrap_or(0));
+    (it.next().unwrap_or(0), it.next().unwrap_or(0), it.next().unwrap_or(0))
+}
+
+/// Highest-version `~/.nvm/versions/node/*/bin` that exists.
 fn newest_nvm_bin(home: &Path) -> Option<PathBuf> {
-    std::fs::read_dir(home.join(".nvm/versions/node"))
+    std::fs::read_dir(home.join(".nvm").join("versions").join("node"))
         .ok()?
         .filter_map(|e| e.ok())
+        .filter(|e| e.path().join("bin").is_dir())
+        .max_by_key(|e| semver_key(&e.file_name().to_string_lossy()))
         .map(|e| e.path().join("bin"))
-        .filter(|p| p.is_dir())
-        .filter_map(|p| Some((p.parent()?.metadata().ok()?.modified().ok()?, p)))
-        .max()
-        .map(|(_, p)| p)
+}
+
+/// Where Node, npx, agents and the render tools usually live, beyond PATH. Both the PATH
+/// we give spawned processes and `RealExec::which` are built from this one list, so a
+/// GUI launch (minimal PATH) finds what nvm, volta, fnm or Homebrew installed.
+pub fn tool_dirs(home: Option<&Path>, appdata: Option<&Path>) -> Vec<PathBuf> {
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    if cfg!(unix) {
+        dirs.push(PathBuf::from("/opt/homebrew/bin"));
+        dirs.push(PathBuf::from("/usr/local/bin"));
+        dirs.push(PathBuf::from("/usr/bin"));
+        dirs.push(PathBuf::from("/bin"));
+        if let Some(h) = home {
+            dirs.push(h.join(".local").join("bin"));
+            dirs.push(h.join(".volta").join("bin"));
+            for fnm in [
+                h.join(".fnm"),
+                h.join(".local").join("share").join("fnm"),
+                h.join("Library").join("Application Support").join("fnm"),
+            ] {
+                let bin = fnm.join("aliases").join("default").join("bin");
+                if bin.is_dir() {
+                    dirs.push(bin);
+                }
+            }
+            dirs.extend(newest_nvm_bin(h));
+            dirs.push(h.join(".claude").join("local"));
+            dirs.push(h.join(".opencode").join("bin"));
+        }
+    }
+    if cfg!(windows) {
+        dirs.extend(appdata.map(|a| a.join("npm")));
+    }
+    dirs
+}
+
+fn dedupe(dirs: &mut Vec<PathBuf>) {
+    let mut seen = std::collections::HashSet::new();
+    dirs.retain(|d| !d.as_os_str().is_empty() && seen.insert(d.clone()));
 }
 
 /// Pure core of `augmented_path`: node's directory first, then the usual install spots,
@@ -35,35 +78,35 @@ pub fn build_path(
 ) -> std::ffi::OsString {
     let mut dirs: Vec<PathBuf> = Vec::new();
     dirs.extend(node_dir.map(Path::to_path_buf));
-    if cfg!(unix) {
-        dirs.push(PathBuf::from("/opt/homebrew/bin"));
-        dirs.push(PathBuf::from("/usr/local/bin"));
-        if let Some(h) = home {
-            dirs.push(h.join(".local/bin"));
-            dirs.push(h.join(".volta/bin"));
-            let fnm = h.join(".fnm/aliases/default/bin");
-            if fnm.is_dir() {
-                dirs.push(fnm);
-            }
-            dirs.extend(newest_nvm_bin(h));
-        }
-    }
-    if cfg!(windows) {
-        dirs.extend(appdata.map(|a| a.join("npm")));
-    }
+    dirs.extend(tool_dirs(home, appdata));
     if let Some(p) = existing {
         dirs.extend(std::env::split_paths(p));
     }
-    let mut seen = std::collections::HashSet::new();
-    dirs.retain(|d| !d.as_os_str().is_empty() && seen.insert(d.clone()));
+    dedupe(&mut dirs);
     std::env::join_paths(dirs).unwrap_or_else(|_| existing.map(Into::into).unwrap_or_default())
+}
+
+/// Pure core of `RealExec::which`'s search list: the existing PATH first, then `tool_dirs`.
+pub fn search_dirs(
+    home: Option<&Path>,
+    existing: Option<&std::ffi::OsStr>,
+    appdata: Option<&Path>,
+) -> Vec<PathBuf> {
+    let mut dirs: Vec<PathBuf> = existing.map(|p| std::env::split_paths(p).collect()).unwrap_or_default();
+    dirs.extend(tool_dirs(home, appdata));
+    dedupe(&mut dirs);
+    dirs
+}
+
+fn home_dir() -> Option<PathBuf> {
+    std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).map(PathBuf::from)
 }
 
 /// PATH for processes we spawn. A GUI launch has a minimal PATH, so scripts with
 /// `#!/usr/bin/env node` (npx, gemini, hyperframes) would otherwise fail.
 pub fn augmented_path() -> std::ffi::OsString {
     let node_dir = RealExec.which("node").and_then(|p| p.parent().map(Path::to_path_buf));
-    let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).map(PathBuf::from);
+    let home = home_dir();
     let appdata = std::env::var_os("APPDATA").map(PathBuf::from);
     build_path(
         home.as_deref(),
@@ -78,22 +121,8 @@ pub struct RealExec;
 
 impl RealExec {
     fn search_dirs() -> Vec<PathBuf> {
-        let mut dirs: Vec<PathBuf> = std::env::var_os("PATH")
-            .map(|p| std::env::split_paths(&p).collect())
-            .unwrap_or_default();
-        // GUI apps often start with a minimal PATH; add the usual install spots.
-        if cfg!(unix) {
-            for d in ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"] {
-                dirs.push(PathBuf::from(d));
-            }
-            if let Some(home) = std::env::var_os("HOME") {
-                let home = PathBuf::from(home);
-                dirs.push(home.join(".local/bin"));
-                dirs.push(home.join(".claude/local"));
-                dirs.push(home.join(".opencode/bin"));
-            }
-        }
-        dirs
+        let appdata = std::env::var_os("APPDATA").map(PathBuf::from);
+        search_dirs(home_dir().as_deref(), std::env::var_os("PATH").as_deref(), appdata.as_deref())
     }
 }
 
@@ -147,16 +176,15 @@ impl Exec for RealExec {
         } else {
             vec![String::new()]
         };
-        for dir in Self::search_dirs() {
-            for ext in &exts {
-                let candidate = dir.join(format!("{program}{ext}"));
-                if candidate.is_file() {
-                    return Some(candidate);
-                }
-            }
-        }
-        None
+        find_in(&Self::search_dirs(), program, &exts)
     }
+}
+
+/// First `<dir>/<program><ext>` that is a file, dirs in order, then exts in order.
+pub fn find_in(dirs: &[PathBuf], program: &str, exts: &[String]) -> Option<PathBuf> {
+    dirs.iter().find_map(|dir| {
+        exts.iter().map(|ext| dir.join(format!("{program}{ext}"))).find(|c| c.is_file())
+    })
 }
 
 /// First `\d+(\.\d+)+` match in `raw`.
@@ -407,22 +435,63 @@ mod path_tests {
         let home = tempfile::tempdir().unwrap();
         let h = home.path();
         std::fs::create_dir_all(h.join(".nvm/versions/node/v20.1.0/bin")).unwrap();
-        let existing = std::env::join_paths(["/usr/bin", "/usr/local/bin", "/bin", "/usr/bin"]).unwrap();
+        let existing = std::env::join_paths(["/usr/bin", "/usr/local/bin", "/bin", "/usr/bin", "/x"]).unwrap();
         let out = build_path(Some(h), Some(&existing), Some(Path::new("/n/bin")), None);
         let got: Vec<PathBuf> = std::env::split_paths(&out).collect();
         let want: Vec<PathBuf> = [
             "/n/bin".into(),
             "/opt/homebrew/bin".into(),
             "/usr/local/bin".into(),
+            "/usr/bin".into(),
+            "/bin".into(),
             h.join(".local/bin"),
             h.join(".volta/bin"),
             h.join(".nvm/versions/node/v20.1.0/bin"),
-            "/usr/bin".into(),
-            "/bin".into(),
+            h.join(".claude/local"),
+            h.join(".opencode/bin"),
+            "/x".into(),
         ]
         .into_iter()
         .collect();
         assert_eq!(got, want);
+    }
+
+    /// A fake home with nvm, fnm and volta installs: `which` must see them all, and pick
+    /// nvm's highest version even when an older one was touched last.
+    #[cfg(unix)]
+    #[test]
+    fn search_dirs_cover_node_managers() {
+        let home = tempfile::tempdir().unwrap();
+        let h = home.path();
+        for v in ["v9.0.0", "v22.11.0", "v18.20.4"] {
+            std::fs::create_dir_all(h.join(".nvm/versions/node").join(v).join("bin")).unwrap();
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::fs::write(h.join(".nvm/versions/node/v9.0.0/bin/touch"), "").unwrap();
+        std::fs::create_dir_all(h.join(".fnm/aliases/default/bin")).unwrap();
+        std::fs::create_dir_all(h.join(".volta/bin")).unwrap();
+        std::fs::write(h.join(".volta/bin/npx"), "").unwrap();
+
+        let existing = std::env::join_paths(["/usr/bin"]).unwrap();
+        let dirs = search_dirs(Some(h), Some(&existing), None);
+        assert_eq!(dirs[0], PathBuf::from("/usr/bin"));
+        assert!(dirs.contains(&h.join(".nvm/versions/node/v22.11.0/bin")));
+        assert!(!dirs.contains(&h.join(".nvm/versions/node/v9.0.0/bin")));
+        assert!(dirs.contains(&h.join(".fnm/aliases/default/bin")));
+        assert!(dirs.contains(&h.join(".volta/bin")));
+        // Same list as the PATH given to spawned processes.
+        let path: Vec<PathBuf> = std::env::split_paths(&build_path(Some(h), Some(&existing), None, None)).collect();
+        for d in &dirs {
+            assert!(path.contains(d), "{d:?} missing from PATH");
+        }
+        assert_eq!(find_in(&dirs, "npx", &[String::new()]), Some(h.join(".volta/bin/npx")));
+    }
+
+    #[test]
+    fn semver_orders_numerically() {
+        assert!(semver_key("v22.1.0") > semver_key("v9.12.0"));
+        assert!(semver_key("v22.11.0") > semver_key("v22.2.9"));
+        assert_eq!(semver_key("junk"), (0, 0, 0));
     }
 
     #[test]
