@@ -142,6 +142,23 @@ describe('images the agent makes during a turn', () => {
     expect(Date.parse(vi.mocked(recentImages).mock.calls.at(-1)![1])).toBeGreaterThan(firstSince);
   });
 
+  it('images from a last lookup that ends after the message was saved still show on it', async () => {
+    let n = 0;
+    vi.mocked(addMessage).mockImplementation(async (chatId, role, parts) => ({ id: `saved-${++n}`, chatId, role, parts, createdAt: '' }));
+    try {
+      let release!: (found: FileInfo[]) => void;
+      vi.mocked(recentImages).mockImplementationOnce(() => new Promise((r) => (release = r)));
+      await emit({ kind: 'done', stopReason: 'end_turn' });
+      await useChat.getState().send('c1', [{ type: 'text', text: 'one more' }], { agentId: 'claude' });
+      await waitFor(() => expect(agentMessages()[0]!.id).toMatch(/^saved-/));
+      await act(async () => release([img('late.png')]));
+      const first = agentMessages()[0]!;
+      expect(first.parts.some((p) => p.type === 'file' && p.name === 'late.png')).toBe(true);
+    } finally {
+      vi.mocked(addMessage).mockResolvedValue(null as never);
+    }
+  });
+
   it('a slow last lookup still lands on its own turn\'s message when nobody sends', async () => {
     let release!: (found: FileInfo[]) => void;
     vi.mocked(recentImages).mockImplementationOnce(() => new Promise((r) => (release = r)));

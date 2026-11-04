@@ -327,9 +327,12 @@ export const useChat = create<ChatState>((set, get) => {
   const append = (chatId: string, m: ChatMessage) =>
     set((s) => ({ messages: { ...s.messages, [chatId]: [...(s.messages[chatId] ?? []), m] } }));
 
-  /** Changes the message with this id, wherever it is in the chat; nothing when it is gone. */
+  /**
+   * Changes the message with this id, wherever it is in the chat; nothing when it is gone. A local id
+   * still finds its message once it is stored (the stored copy keeps the local id as its key).
+   */
   const replaceById = (chatId: string, id: string, fn: (m: ChatMessage) => ChatMessage) =>
-    set((s) => ({ messages: { ...s.messages, [chatId]: (s.messages[chatId] ?? []).map((m) => (m.id === id ? fn(m) : m)) } }));
+    set((s) => ({ messages: { ...s.messages, [chatId]: (s.messages[chatId] ?? []).map((m) => (messageKey(m) === id ? fn(m) : m)) } }));
 
   /** The agent's message in the chat's latest turn: the last one after the last user message. */
   const turnMessage = (chatId: string): ChatMessage | undefined => {
