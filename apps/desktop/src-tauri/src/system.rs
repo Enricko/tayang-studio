@@ -37,8 +37,6 @@ pub fn tool_dirs(home: Option<&Path>, appdata: Option<&Path>) -> Vec<PathBuf> {
     if cfg!(unix) {
         dirs.push(PathBuf::from("/opt/homebrew/bin"));
         dirs.push(PathBuf::from("/usr/local/bin"));
-        dirs.push(PathBuf::from("/usr/bin"));
-        dirs.push(PathBuf::from("/bin"));
         if let Some(h) = home {
             dirs.push(h.join(".local").join("bin"));
             dirs.push(h.join(".volta").join("bin"));
@@ -56,6 +54,9 @@ pub fn tool_dirs(home: Option<&Path>, appdata: Option<&Path>) -> Vec<PathBuf> {
             dirs.push(h.join(".claude").join("local"));
             dirs.push(h.join(".opencode").join("bin"));
         }
+        // System dirs last, so user-space installs (a newer node in nvm, ffmpeg in ~/.local/bin) win.
+        dirs.push(PathBuf::from("/usr/bin"));
+        dirs.push(PathBuf::from("/bin"));
     }
     if cfg!(windows) {
         dirs.extend(appdata.map(|a| a.join("npm")));
@@ -523,13 +524,13 @@ mod path_tests {
             "/n/bin".into(),
             "/opt/homebrew/bin".into(),
             "/usr/local/bin".into(),
-            "/usr/bin".into(),
-            "/bin".into(),
             h.join(".local/bin"),
             h.join(".volta/bin"),
             h.join(".nvm/versions/node/v20.1.0/bin"),
             h.join(".claude/local"),
             h.join(".opencode/bin"),
+            "/usr/bin".into(),
+            "/bin".into(),
             "/x".into(),
         ]
         .into_iter()
