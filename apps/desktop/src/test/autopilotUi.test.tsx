@@ -461,6 +461,27 @@ describe('Autopilot fix round', () => {
     await waitFor(() => expect(order).toEqual(['stop', 'delete']));
   });
 
+  it('fetches slots once per reload, not again when the autopilots arrive', async () => {
+    vi.mocked(ipc.listAutopilots).mockResolvedValue([autopilot()]);
+    vi.mocked(ipc.listSlots).mockResolvedValue([slot('p', new Date(2026, 10, 5, 12, 0))]);
+    render(<Calendar today={today} />);
+    await screen.findByText('Planned · Kopi');
+    await act(async () => {});
+    expect(ipc.listSlots).toHaveBeenCalledTimes(1);
+    await act(async () => notifyAutopilotChanged());
+    await act(async () => {});
+    expect(ipc.listSlots).toHaveBeenCalledTimes(2);
+  });
+
+  it('clears the load error once a later load succeeds', async () => {
+    vi.mocked(ipc.listAutopilots).mockRejectedValueOnce(new Error('busy'));
+    render(<Calendar today={today} />);
+    expect(await screen.findByText("Couldn't load your autopilots. Try again")).toBeInTheDocument();
+    vi.mocked(ipc.listAutopilots).mockResolvedValue([autopilot()]);
+    await act(async () => notifyAutopilotChanged());
+    await waitFor(() => expect(screen.queryByText("Couldn't load your autopilots. Try again")).toBeNull());
+  });
+
   it('shows an error when the autopilots cannot be loaded', async () => {
     vi.mocked(ipc.listAutopilots).mockRejectedValue(new Error('no table'));
     render(<Calendar today={today} />);

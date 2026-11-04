@@ -147,7 +147,11 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
 
   useEffect(() => {
     listAutopilots()
-      .then(setAutopilots)
+      .then((l) => {
+        setAutopilots(l);
+        // A later load that works takes back an earlier load error (not an action's error).
+        setPanelError((e) => (e === t('autopilot.cantLoad') ? null : e));
+      })
       .catch(() => setPanelError(t('autopilot.cantLoad')));
   }, [reloadTick]);
 
@@ -164,7 +168,7 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
     return () => {
       alive = false;
     };
-  }, [gridKey, dateKey(today), autopilots, reloadTick]);
+  }, [gridKey, dateKey(today), reloadTick]);
 
   // When the agent's turn ends, turn its JSON into idea cards and cache them for the week.
   useEffect(() => {
