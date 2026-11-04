@@ -151,7 +151,7 @@ export const id: Translations = {
     tryAgain: 'Coba lagi',
     fixIt: 'Perbaiki',
     review: 'Tinjau',
-    dismiss: 'Tutup',
+    dismiss: 'Abaikan',
     progressAria: 'Sedang bekerja',
     closedNote: 'Tayang ditutup saat tugas ini masih berjalan',
     closedDraft: 'Tayang sempat ditutup saat kamu mengerjakan ini. Cek apa yang sudah selesai, lalu lanjutkan.',

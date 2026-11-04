@@ -1265,6 +1265,15 @@ describe('Failed job recovery', () => {
     await waitFor(() => expect(screen.queryByText('Study a video for a new style')).not.toBeInTheDocument());
   });
 
+  it('Dismiss is Abaikan in Indonesian, not Tutup', async () => {
+    setUiLanguage('id');
+    vi.mocked(ipc.listJobs).mockResolvedValueOnce([failed({})]).mockResolvedValue([]);
+    render(<Agents />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Abaikan' }));
+    expect(ipc.deleteJob).toHaveBeenCalledWith('study-s1');
+    expect(screen.queryByRole('button', { name: 'Tutup' })).not.toBeInTheDocument();
+  });
+
   it('Fix it on a chat job opens the chat with the closed-app draft, only for the closed note', async () => {
     const chatJob = failed({ id: 'build-c1', kind: 'build', title: 'Build', chatId: 'c1', sourceUrl: null });
     vi.mocked(ipc.listJobs).mockResolvedValue([chatJob]);
