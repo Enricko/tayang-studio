@@ -84,6 +84,20 @@ function rekey(block: unknown[], from: string, to: string): unknown[] {
   });
 }
 
+/**
+ * A block split by the surface each line is about, in the order each first shows up, so every surface is
+ * keyed on its own (an answered one stays answered even when another card comes first in the block).
+ * Lines that name no surface form their own group.
+ */
+function bySurface(block: unknown[]): unknown[][] {
+  const groups = new Map<string | null, unknown[]>();
+  for (const line of block) {
+    const sid = blockSurfaceId([line]);
+    groups.set(sid, [...(groups.get(sid) ?? []), line]);
+  }
+  return [...groups.values()];
+}
+
 /** What the chat's A2UI surfaces look like after every agent block, in order. */
 interface A2uiState {
   chatId: string;
@@ -107,7 +121,7 @@ function deriveA2ui(messages: ChatMessage[]): A2uiState {
       m.parts.forEach((p, i) => {
         if (p.type !== 'text') return;
         const keys: (string | null)[] = [];
-        for (const block of extractA2ui(p.text).blocks) {
+        for (const block of extractA2ui(p.text).blocks.flatMap(bySurface)) {
           const sid = blockSurfaceId(block);
           if (!sid) {
             st.set = applyMessages(st.set, block);

@@ -188,6 +188,24 @@ describe('A2UI in the chat', () => {
   });
 });
 
+describe('an answered surface in a block that starts with another card', () => {
+  it('stays as it was, while the new card shows', () => {
+    const first = msg('1', 'agent', [{ type: 'text', text: block('s1', 'Pick me') }]);
+    const answered = msg('2', 'user', [
+      { type: 'text', text: 'Picked: Pick me' },
+      { type: 'a2ui-action', summary: 'Picked: Pick me', action: { version: V, action: { name: 'pick', surfaceId: 's1' } } },
+    ]);
+    const lines = block('n1', 'New card').replace(/\n```$/, '');
+    const rewrite = JSON.stringify({ version: V, updateComponents: { surfaceId: 's1', components: [{ id: 't', component: 'Text', text: 'Rewritten' }] } });
+    const remove = JSON.stringify({ version: V, deleteSurface: { surfaceId: 's1' } });
+    const later = msg('3', 'agent', [{ type: 'text', text: `${lines}\n${rewrite}\n${remove}\n\`\`\`` }]);
+    render(<MessageList streaming={false} messages={[first, answered, later]} />);
+    expect(screen.getByRole('button', { name: 'Pick me' })).toBeDisabled();
+    expect(screen.queryByText('Rewritten')).toBeNull();
+    expect(screen.getByRole('button', { name: 'New card' })).toBeEnabled();
+  });
+});
+
 describe('one gate while the agent replies', () => {
   it('disables a live surface while the chat streams, without marking it answered', () => {
     const first = msg('1', 'agent', [{ type: 'text', text: block('s1', 'Pick me') }]);
