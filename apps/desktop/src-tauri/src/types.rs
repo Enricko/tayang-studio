@@ -342,7 +342,8 @@ pub struct Settings {
     pub fps: u32,
     pub onboarded: bool,
     /// Base URL of the optional Tayang API; `TAYANG_API_URL` overrides it at read time
-    /// (`styles_sync::effective_api_url`) without being stored. Empty turns online features off.
+    /// (`styles_sync::effective_api_url`) without being stored. The Settings screen saves an
+    /// empty field as the default URL.
     pub api_url: String,
     /// Random uuid v4 made on first run (empty until then); never derived from the machine.
     pub install_id: String,

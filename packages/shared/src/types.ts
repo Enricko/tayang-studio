@@ -151,7 +151,7 @@ export interface Settings {
   format: VideoFormat;
   fps: number;
   onboarded: boolean;
-  /** Base URL of the optional Tayang API; empty turns every online feature off. */
+  /** Base URL of the optional Tayang API. Settings saves an empty field as the default URL. */
   apiUrl: string;
   /** Random uuid v4 made on first run (empty until then); never derived from the machine. */
   installId: string;
