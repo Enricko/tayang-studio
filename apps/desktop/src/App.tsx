@@ -9,6 +9,7 @@ import { startScheduler } from '@/lib/scheduler';
 import { startAutopilot } from '@/state/autopilot';
 import { useWindowDrag } from '@/lib/windowDrag';
 import { Agents } from '@/screens/Agents';
+import { Autopilot } from '@/screens/Autopilot';
 import { Calendar } from '@/screens/Calendar';
 import { ChatNew } from '@/screens/ChatNew';
 import { ChatProject } from '@/screens/ChatProject';
@@ -28,6 +29,8 @@ const SIDEBAR_KEY: Partial<Record<Route['name'], SidebarKey>> = {
   chat: 'chat',
   videos: 'videos',
   style: 'style',
+  autopilot: 'autopilot',
+  'autopilot-wizard': 'autopilot',
   agents: 'agents',
   calendar: 'calendar',
   settings: 'settings',
@@ -134,6 +137,8 @@ export default function App() {
           <Videos />
         ) : route.name === 'style' ? (
           <Style />
+        ) : route.name === 'autopilot' ? (
+          <Autopilot key={route.id ?? 'list'} id={route.id} />
         ) : route.name === 'agents' ? (
           <Agents />
         ) : route.name === 'calendar' ? (
