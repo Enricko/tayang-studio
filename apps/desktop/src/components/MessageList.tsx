@@ -1,9 +1,13 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { Check, File as FileIcon, Loader2, X } from 'lucide-react';
 import { formatTimecode, type ChatMessage, type MessagePart } from '@tayang/shared';
 import { Oyen } from '@/components/Oyen';
 import { AGENT_NAMES } from '@/lib/agents';
 import { useApp } from '@/state/app';
+import { useChat } from '@/state/chat';
+import { extractA2ui } from '@/a2ui/parse';
+import { A2uiSurface, type A2uiAction } from '@/a2ui/render';
+import { applyMessages, blockSurfaceId, emptySurfaces, type SurfaceSet } from '@/a2ui/surface';
 
 type Tool = Extract<MessagePart, { type: 'tool' }>;
 
@@ -63,18 +67,102 @@ function ActivityCard({ tools, working }: { tools: Tool[]; working: boolean }) {
   );
 }
 
-function Parts({ parts, working }: { parts: MessagePart[]; working: boolean }) {
+/** What the chat's A2UI surfaces look like after every agent block, in order. */
+interface A2uiState {
+  chatId: string;
+  set: SurfaceSet;
+  /** The message that first showed each surface; later blocks update it in place. */
+  owner: Record<string, string>;
+  version: Record<string, number>;
+  /** Answered by the user and not updated by the agent since. */
+  answered: Record<string, boolean>;
+}
+
+function deriveA2ui(messages: ChatMessage[]): A2uiState {
+  const st: A2uiState = { chatId: messages[0]?.chatId ?? '', set: emptySurfaces(), owner: {}, version: {}, answered: {} };
+  for (const m of messages) {
+    if (m.role === 'agent') {
+      for (const p of m.parts) {
+        if (p.type !== 'text') continue;
+        for (const block of extractA2ui(p.text).blocks) {
+          st.set = applyMessages(st.set, block);
+          const sid = blockSurfaceId(block);
+          if (!sid) continue;
+          st.owner[sid] ??= m.id;
+          st.version[sid] = (st.version[sid] ?? 0) + 1;
+          st.answered[sid] = false;
+        }
+      }
+    } else if (m.role === 'user') {
+      for (const p of m.parts) {
+        if (p.type !== 'a2ui-action') continue;
+        const sid = (p.action as { action?: { surfaceId?: unknown } }).action?.surfaceId;
+        if (typeof sid === 'string') st.answered[sid] = true;
+      }
+    }
+  }
+  return st;
+}
+
+function isUpdateOnly(text: string, messageId: string, a2ui: A2uiState): boolean {
+  const { text: prose, blocks, pending } = extractA2ui(text);
+  if (prose || pending || !blocks.length) return false;
+  return blocks.every((b) => {
+    const sid = blockSurfaceId(b);
+    return !sid || a2ui.owner[sid] !== messageId;
+  });
+}
+
+function sendAction(chatId: string, a: A2uiAction) {
+  const { summary, ...rest } = a;
+  const action: MessagePart = { type: 'a2ui-action', summary, action: { version: 'v0.9', action: rest } };
+  // The agent gets the summary and the action JSON from the one a2ui-action part.
+  void useChat.getState().send(chatId, [{ type: 'text', text: summary }, action], { promptParts: [action] });
+}
+
+/** An agent text part: prose, the surfaces it owns, and a placeholder for a block still streaming. */
+function AgentText({ text, messageId, a2ui }: { text: string; messageId: string; a2ui: A2uiState }) {
+  const { text: prose, blocks, pending } = useMemo(() => extractA2ui(text), [text]);
+  const ids: string[] = [];
+  for (const b of blocks) {
+    const sid = blockSurfaceId(b);
+    if (sid && a2ui.owner[sid] === messageId && !ids.includes(sid) && a2ui.set.surfaces[sid]) ids.push(sid);
+  }
+  return (
+    <>
+      {prose && <p className="m-0 whitespace-pre-wrap text-[14px] leading-[1.6] text-[#D9D9D9]">{prose}</p>}
+      {ids.map((sid) => (
+        <A2uiSurface
+          key={`${sid}:${a2ui.version[sid]}`}
+          surface={a2ui.set.surfaces[sid]!}
+          disabled={a2ui.answered[sid]}
+          onAction={(a) => sendAction(a2ui.chatId, a)}
+        />
+      ))}
+      {blocks.length > 0 && a2ui.set.notes.length > 0 && (
+        <p className="m-0 text-[12px] text-text-3">{a2ui.set.notes[0]}</p>
+      )}
+      {pending && <p className="m-0 text-[13px] text-text-3">Loading options…</p>}
+    </>
+  );
+}
+
+function Parts({
+  parts,
+  working,
+  messageId,
+  a2ui,
+}: {
+  parts: MessagePart[];
+  working: boolean;
+  messageId: string;
+  a2ui: A2uiState;
+}) {
   const tools = parts.filter((p): p is Tool => p.type === 'tool');
   return (
     <>
       {parts.map((p, i) => {
-        if (p.type === 'text') {
-          return (
-            <p key={i} className="m-0 whitespace-pre-wrap text-[14px] leading-[1.6] text-[#D9D9D9]">
-              {p.text}
-            </p>
-          );
-        }
+        if (p.type === 'text') return <AgentText key={i} text={p.text} messageId={messageId} a2ui={a2ui} />;
         if (p.type === 'mention') return <Chip key={i}>@{p.title}</Chip>;
         if (p.type === 'frame') return <FrameChip key={i} part={p} />;
         return null;
@@ -99,6 +187,7 @@ export function MessageList({
     end.current?.scrollIntoView?.({ block: 'end' });
   }, [messages, streaming]);
 
+  const a2ui = useMemo(() => deriveA2ui(messages), [messages]);
   const last = messages[messages.length - 1];
   return (
     <div className="flex flex-col gap-6" role="log" aria-label="Conversation">
@@ -135,11 +224,15 @@ export function MessageList({
           );
         }
         const working = streaming && i === messages.length - 1;
+        // An agent message that only updated an earlier surface has nothing of its own to show.
+        if (!working && m.parts.length > 0 && m.parts.every((p) => p.type === 'text' && isUpdateOnly(p.text, m.id, a2ui))) {
+          return null;
+        }
         return (
           <div key={m.id} data-testid="agent-message" className="flex items-start gap-3">
             <Oyen mood={working ? 'sleepy' : 'default'} size={28} />
             <div className="flex min-w-0 flex-1 flex-col gap-3">
-              <Parts parts={m.parts} working={working} />
+              <Parts parts={m.parts} working={working} messageId={m.id} a2ui={a2ui} />
             </div>
           </div>
         );
