@@ -13,10 +13,14 @@ import { mentionContext, mentionedIn, styleContext } from '@/lib/mentions';
 import { ideasFromReply, startTopic, type TopicIdea } from '@/lib/topics';
 import { extractA2ui } from '@/a2ui/parse';
 import { useApp } from '@/state/app';
-import { headPermission, useChat } from '@/state/chat';
+import { appendSystem, headPermission, useChat } from '@/state/chat';
+import { stored } from '@/lib/stored';
+import type { A2uiAction } from '@/a2ui/render';
 import { useUsage } from '@/state/usage';
 
 const NO_MESSAGES: never[] = [];
+/** Chats whose topic pick is still setting up, across remounts: a second pick waits for the first. */
+const picking = new Set<string>();
 
 /** Cards for the ideas in the agent's last reply, once it is finished. A2UI replies draw their own; a ```json one needs these. */
 function topicCards(messages: ChatMessage[], streaming: boolean): TopicIdea[] {
@@ -103,8 +107,10 @@ export function ChatThread({ chatId, draft, styleId: routeStyleId }: { chatId: s
     return !failure;
   };
 
-  const pickIdea = async (idea: TopicIdea) => {
-    if (!settings || busy || streaming) return;
+  /** Starts the picked topic; then records the pick here, so the cards (and an A2UI card's surface) read as answered. */
+  const pickIdea = async (idea: TopicIdea, card?: A2uiAction) => {
+    if (!settings || busy || streaming || picking.has(chatId)) return;
+    picking.add(chatId);
     setBusy(true);
     setSetupLine(t('chat.settingUp'));
     setError(null);
@@ -112,18 +118,26 @@ export function ChatThread({ chatId, draft, styleId: routeStyleId }: { chatId: s
       // The idea's own style wins when it is a synced one; else the template chip's style.
       await startTopic(idea, { settings, agent, styleId: chipTemplate ?? styleId, onStatus: setSetupLine });
       setStyleId(null);
+      const { summary, ...action } = card ?? { summary: '' };
+      await appendSystem(
+        chatId,
+        stored('chat.topicStarted', { title: idea.title }),
+        card ? [{ type: 'a2ui-action', summary, action: { version: 'v0.9', action } }] : [],
+      );
     } catch (e) {
       setBusy(false);
       setSetupLine(null);
       setError(t('chat.couldntStartTopic', { title: idea.title, message: e instanceof Error ? e.message : String(e) }));
+    } finally {
+      picking.delete(chatId);
     }
   };
 
-  const onA2uiAction = (a: { name: string; context: Record<string, unknown> }) => {
+  const onA2uiAction = (a: A2uiAction) => {
     if (a.name !== 'pick_topic') return false;
     const idea = topicIdeaFromAction(a.context);
     if (!idea) return false;
-    void pickIdea(idea);
+    void pickIdea(idea, a);
     return true;
   };
 

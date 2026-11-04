@@ -279,6 +279,7 @@ export const id: Translations = {
     settingUp: 'Menyiapkan proyek…',
     couldntStartChat: 'Chat belum bisa dimulai: {{message}}',
     couldntStartTopic: 'Belum bisa memulai "{{title}}": {{message}}',
+    topicStarted: 'Video "{{title}}" sudah dimulai',
     templateChipTitle: 'Pilih topik untuk mulai dari template ini',
     startingFrom: 'Mulai dari template {{name}}',
     removeTemplate: 'Hapus template {{name}}',

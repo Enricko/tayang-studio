@@ -277,6 +277,66 @@ describe('a new chat never disappears', () => {
     expect(useChat.getState().rows['c-new']).toBeDefined();
   });
 
+  it('a picked topic stays picked after coming back, and a second pick makes no second project', async () => {
+    const user = userEvent.setup();
+    vi.mocked(ipc.createChat).mockResolvedValueOnce(chat('c-new', null, 'Topic ideas')).mockResolvedValue(chat('c9', 'p9'));
+    vi.mocked(ipc.createProject).mockResolvedValue(mkProject('p9', 'Ide satu'));
+    render(<Shell />);
+    await user.click(await screen.findByRole('button', { name: /From a topic/ }));
+    await waitFor(() => expect(useApp.getState().route).toEqual({ name: 'chat', chatId: 'c-new' }));
+    await emit('c-new', { kind: 'text', text: '```json\n[{"title":"Ide satu","kind":"explainer","lengthSec":30}]\n```' });
+    await emit('c-new', { kind: 'done', stopReason: 'end_turn' });
+    await user.click(await screen.findByRole('button', { name: /Ide satu/ }));
+    await waitFor(() => expect(useApp.getState().route).toEqual({ name: 'chat', chatId: 'c9' }));
+    // Back to the topic chat: the pick is recorded there and the cards are gone.
+    act(() => useApp.getState().navigate({ name: 'chat', chatId: 'c-new' }));
+    expect(await within(main()).findByText('Started "Ide satu" as a video')).toBeInTheDocument();
+    expect(within(main()).queryByRole('button', { name: /Ide satu/ })).not.toBeInTheDocument();
+    expect(ipc.createProject).toHaveBeenCalledTimes(1);
+  });
+
+  it('an A2UI topic card counts as answered once picked, and a pick in flight blocks another after a remount', async () => {
+    const user = userEvent.setup();
+    let made: (p: Project) => void = () => {};
+    vi.mocked(ipc.createProject).mockReturnValue(new Promise((r) => (made = r)));
+    vi.mocked(ipc.createChat).mockResolvedValue(chat('c9', 'p9'));
+    vi.mocked(ipc.getChat).mockResolvedValue(chat('c0', null, 'Ide'));
+    const card =
+      '```a2ui\n' +
+      [
+        { version: 'v0.9', createSurface: { surfaceId: 'topics', catalogId: 'basic' } },
+        {
+          version: 'v0.9',
+          updateComponents: {
+            surfaceId: 'topics',
+            components: [
+              { id: 'root', component: 'Column', children: ['b'] },
+              { id: 'b', component: 'Button', child: 'b-t', action: { event: { name: 'pick_topic', context: { title: 'Ide dua', kind: 'data', lengthSec: 45 } } } },
+              { id: 'b-t', component: 'Text', text: 'Make this' },
+            ],
+          },
+        },
+      ]
+        .map((m) => JSON.stringify(m))
+        .join('\n') +
+      '\n```';
+    vi.mocked(ipc.listMessages).mockResolvedValue([
+      { id: 'm1', chatId: 'c0', role: 'agent', parts: [{ type: 'text', text: card }], createdAt: '' },
+    ]);
+    useApp.setState({ route: { name: 'chat', chatId: 'c0' } });
+    const view = render(<ChatRoute />);
+    await user.click(await screen.findByRole('button', { name: 'Make this' }));
+    // The screen remounts while the project is still being made: a second pick does nothing.
+    view.unmount();
+    render(<ChatRoute />);
+    await user.click(await screen.findByRole('button', { name: 'Make this' }));
+    await act(async () => made(mkProject('p9', 'Ide dua')));
+    await waitFor(() => expect(useApp.getState().route).toEqual({ name: 'chat', chatId: 'c9' }));
+    expect(ipc.createProject).toHaveBeenCalledTimes(1);
+    act(() => useApp.getState().navigate({ name: 'chat', chatId: 'c0' }));
+    await waitFor(() => expect(screen.getByTestId('a2ui-surface')).toHaveAttribute('data-answered', 'true'));
+  });
+
   it('an unsent draft on New chat survives going elsewhere and back', async () => {
     const user = userEvent.setup();
     render(<Shell />);

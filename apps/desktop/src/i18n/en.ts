@@ -278,6 +278,7 @@ export const en = {
     settingUp: 'Setting up the project…',
     couldntStartChat: "Couldn't start the chat: {{message}}",
     couldntStartTopic: 'Couldn\'t start "{{title}}": {{message}}',
+    topicStarted: 'Started "{{title}}" as a video',
     templateChipTitle: 'Pick a topic to start from this template',
     startingFrom: 'Starting from the {{name}} template',
     removeTemplate: 'Remove the {{name}} template',
