@@ -155,7 +155,8 @@ Style is a **prompt library**. Each style is a prompt the agent follows for a lo
 **Built-in styles come from the API (owner request).** The Hono API serves the built-in style list (D1 table `styles`) and each style's starter template and preview image (Cloudflare R2). The desktop app syncs that list into its SQLite cache when online and works from the cache offline. A style can carry a **starter template**: a clean copy of a working video project that Tayang unpacks into a new project's folder, so the agent starts from a proven format instead of a blank folder. Launch set **(content from the owner's own projects)**:
 - **Atlas journey** — from `niche-to-video/prototype/geo`: a warm illustrated globe, one continuous camera flight, sprites that travel routes, word-by-word captions (Remotion + d3-geo).
 - **Cartoon 3D world** — from `video/tayang-ch-02`: flat 2D characters in a painted three.js world (Remotion + three.js, the MIT-licensed `cartoon-3d-short` skill, CC0 Kenney assets).
-- The three prompt-only styles (Bold explainer, Kinetic quote, News recap) move to the API too.
+- **Cartoon 3D what-if** — also from `video/tayang-ch-02` (short form, `InvisibleShort`): the "What if you…" Day 1 → Day 30 escalation with an on-screen overlay layer, every step a real fact. Long-form 16:9 waits (owner: focus on short form for now).
+- Bold explainer, Kinetic quote and News recap are removed (owner request). Built-in styles are only the two template styles.
 Templates never include `.env`, `node_modules`, renders, episodes or other private material. A template declares its engine and render command in `tayang.json`, and Render preview uses it. **(storage, packaging and render contract are my calls)**
 
 Styles come from three places: **built in**, **copied from a video** and **yours**.
@@ -191,6 +192,15 @@ The sidebar's bottom shows the default agent's usage, the same way Orca does: a 
 - Where to render
 - Tools: the same checks and installs as onboarding step 3
 - tayang.app sign-in
+
+## Agent skills and A2UI (owner request)
+
+**Skills only inside Tayang.** Tayang's agent skills (how Tayang works, project briefs, styles and templates, the frame check, rendering, and A2UI) are loaded only for sessions Tayang starts. Nothing is installed into the user's global agent config, so the same agent used elsewhere behaves normally.
+- Claude Code: Tayang ships its skills as a Claude Code plugin bundled with the app and passes it per session through the ACP adapter (`_meta.claudeCode.options.plugins = [{ type: "local", path }]`), plus a short `_meta.systemPrompt.append` that says the agent is running inside Tayang Studio.
+- Other agents (no per-session plugin support over ACP): the same skill text is sent as a preamble in the first prompt of each Tayang session.
+- Every agent Tayang starts gets `TAYANG_STUDIO=1` in its environment.
+
+**A2UI for options.** When the agent needs the user to choose or fill something in (topic ideas, style picks, yes/no confirmations, short forms), it answers with an A2UI v0.9 surface (`application/a2ui+json`; messages `createSurface`, `updateComponents`, `updateDataModel`, `deleteSurface`; basic catalog) in a fenced ```a2ui block instead of a numbered list. Tayang renders it inline in the chat with its own components (Card, Column, Row, List, Text, Image, Icon, Divider, Button, ChoicePicker, TextField, CheckBox, Slider, Tabs). When the user acts, Tayang sends the A2UI `action` message back (`{"version":"v0.9","action":{name, surfaceId, sourceComponentId, timestamp, context}}`) with a readable summary. Unsupported components render as a short muted note; agent text stays text, never HTML. **(transport via fenced blocks in ACP text is my call)**
 
 ## Quality loop
 
