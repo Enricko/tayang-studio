@@ -1,5 +1,6 @@
 pub mod acp;
 pub mod db;
+pub mod media;
 pub mod projects;
 pub mod system;
 pub mod types;
