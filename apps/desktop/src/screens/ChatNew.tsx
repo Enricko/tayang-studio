@@ -9,7 +9,7 @@ import { TemplateChip } from '@/components/TemplateChip';
 import { createChat, listProjects, listStyles } from '@/lib/ipc';
 import { mentionContext } from '@/lib/mentions';
 import { useApp } from '@/state/app';
-import { NEW_CHAT_DRAFT, useChat } from '@/state/chat';
+import { EMPTY_DRAFT, NEW_CHAT_DRAFT, useChat, type Draft } from '@/state/chat';
 import { useUsage } from '@/state/usage';
 
 const KINDS: VideoKind[] = ['explainer', 'promo', 'quote', 'news', 'tutorial', 'data', 'event'];
@@ -70,9 +70,12 @@ export function ChatNew() {
   };
 
   /** The chat exists: the screen becomes that chat, so leaving and coming back finds it. */
-  const openChat = (chatId: string, draft?: string) => {
-    useChat.getState().setDraft(NEW_CHAT_DRAFT, '');
-    navigate({ name: 'chat', chatId, ...(draft ? { draft } : {}), ...(styleId ? { styleId } : {}) });
+  const openChat = (chatId: string, draft?: Draft) => {
+    const store = useChat.getState();
+    // An unsent draft goes with the chat, its style chip too.
+    if (draft) store.setDraft(chatId, draft);
+    store.setDraft(NEW_CHAT_DRAFT, EMPTY_DRAFT);
+    navigate({ name: 'chat', chatId, ...(draft?.text ? { draft: draft.text } : {}), ...(styleId ? { styleId } : {}) });
   };
 
   const onSend = async (parts: MessagePart[]): Promise<boolean> => {

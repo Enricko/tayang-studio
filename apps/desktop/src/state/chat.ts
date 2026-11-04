@@ -72,13 +72,13 @@ interface ChatState {
   autoBusy: Record<string, boolean>;
   /** Chat rows seen in this app session, so a screen knows a chat's project before asking Rust. */
   rows: Record<string, Chat>;
-  /** Unsent composer text per chat; `new` is the New chat screen's, which has no chat yet. */
-  drafts: Record<string, string>;
+  /** Unsent composer text and style chip per chat; `new` is the New chat screen's, which has no chat yet. */
+  drafts: Record<string, Draft>;
 
   /** Turns auto mode on or off; a running session switches right away. */
   setAuto(chatId: string | null, on: boolean): Promise<void>;
   rememberChat(chat: Chat): void;
-  setDraft(key: string, text: string): void;
+  setDraft(key: string, draft: Draft): void;
   /** A new chat just got its id: it takes over the draft's Auto choice. */
   adoptPendingAuto(chatId: string): void;
   load(chatId: string): Promise<void>;
@@ -108,6 +108,20 @@ interface ChatState {
   listen(): void;
   reset(): void;
 }
+
+/** A style picked from the @ menu, waiting in the composer. */
+export interface StyleRef {
+  styleId: string;
+  name: string;
+}
+
+/** What the composer holds before it is sent. */
+export interface Draft {
+  text: string;
+  style: StyleRef | null;
+}
+
+export const EMPTY_DRAFT: Draft = { text: '', style: null };
 
 /** The draft key of the New chat screen, which has no chat id yet. */
 export const NEW_CHAT_DRAFT = 'new';
@@ -621,9 +635,10 @@ export const useChat = create<ChatState>((set, get) => {
 
     rememberChat: (chat) => set((s) => ({ rows: { ...s.rows, [chat.id]: chat } })),
 
-    setDraft(key, text) {
-      if ((get().drafts[key] ?? '') === text) return;
-      set((s) => ({ drafts: { ...s.drafts, [key]: text } }));
+    setDraft(key, draft) {
+      const was = get().drafts[key] ?? EMPTY_DRAFT;
+      if (was.text === draft.text && was.style?.styleId === draft.style?.styleId) return;
+      set((s) => ({ drafts: { ...s.drafts, [key]: draft } }));
     },
 
     async setAuto(chatId, on) {

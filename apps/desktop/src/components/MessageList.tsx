@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { CalendarDays, File as FileIcon } from 'lucide-react';
+import { CalendarDays, File as FileIcon, Palette } from 'lucide-react';
 import { formatTimecode, type ChatMessage, type MessagePart } from '@tayang/shared';
 import { Markdown } from '@/components/Markdown';
 import { Oyen } from '@/components/Oyen';
@@ -22,6 +22,19 @@ function Chip({ children }: { children: React.ReactNode }) {
   return (
     <span className="inline-flex h-6 items-center gap-1 rounded-sm border border-deep-orange bg-tint px-2 text-[13px] font-medium text-orange-light">
       {children}
+    </span>
+  );
+}
+
+/** A style the user mentioned: a palette and its name, set apart from the orange video chip. */
+function StyleChip({ name }: { name: string }) {
+  return (
+    <span
+      data-chip="style"
+      className="inline-flex h-6 items-center gap-1 rounded-sm border border-hairline bg-card px-2 text-[13px] font-medium text-foreground"
+    >
+      <Palette size={12} strokeWidth={1.5} aria-hidden="true" className="text-text-2" />
+      <span>@{name}</span>
     </span>
   );
 }
@@ -275,6 +288,7 @@ function Parts({
     flushStrip();
     if (p.type === 'text') out.push(<AgentText key={i} text={p.text} messageId={messageId} part={i} a2ui={a2ui} />);
     else if (p.type === 'mention') out.push(<Chip key={i}>@{p.title}</Chip>);
+    else if (p.type === 'style-mention') out.push(<StyleChip key={i} name={p.name} />);
     else if (p.type === 'frame') out.push(<FrameChip key={i} part={p} />);
     else if (p.type === 'file') out.push(<SentFile key={i} part={p} />);
   });
@@ -406,6 +420,8 @@ export function MessageList({
                     </span>
                   ) : p.type === 'mention' ? (
                     <Chip key={j}>@{p.title}</Chip>
+                  ) : p.type === 'style-mention' ? (
+                    <StyleChip key={j} name={p.name} />
                   ) : p.type === 'frame' ? (
                     <FrameChip key={j} part={p} />
                   ) : p.type === 'file' ? (

@@ -8,7 +8,7 @@ export function turnText(m: ChatMessage): string {
   const clean = (t: string) => t.replace(/\s+/g, ' ').trim();
   const said = clean(
     m.parts
-      .map((p) => (p.type === 'text' ? p.text : p.type === 'mention' ? `@${p.title}` : p.type === 'file' ? p.name : ''))
+      .map((p) => (p.type === 'text' ? p.text : p.type === 'mention' ? `@${p.title}` : p.type === 'style-mention' ? `@${p.name}` : p.type === 'file' ? p.name : ''))
       .filter(Boolean)
       .join(' '),
   );
