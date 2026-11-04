@@ -232,6 +232,36 @@ describe('a new chat never disappears', () => {
     expect(vi.mocked(ipc.createProject).mock.calls[0]![0]).toMatchObject({ title: 'Ide satu', styleId: 'tmpl' });
   });
 
+  it('a double click on From a topic asks once', async () => {
+    const user = userEvent.setup();
+    let made: (c: Chat) => void = () => {};
+    vi.mocked(ipc.createChat).mockReturnValue(new Promise((r) => (made = r)));
+    render(<Shell />);
+    const topic = await screen.findByRole('button', { name: /From a topic/ });
+    await user.click(topic);
+    await user.click(topic);
+    await act(async () => made(chat('c-new', null, 'Topic ideas')));
+    await waitFor(() => expect(useApp.getState().route).toEqual({ name: 'chat', chatId: 'c-new' }));
+    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
+    expect(ipc.createChat).toHaveBeenCalledTimes(1);
+    expect(ipc.agentPrompt).toHaveBeenCalledTimes(1);
+    expect(useChat.getState().messages['c-new']!.filter((m) => m.role === 'user')).toHaveLength(1);
+  });
+
+  it('a chat that is made after the user left does not pull them back', async () => {
+    const user = userEvent.setup();
+    let made: (c: Chat) => void = () => {};
+    vi.mocked(ipc.createChat).mockReturnValue(new Promise((r) => (made = r)));
+    render(<Shell />);
+    await user.click(await screen.findByRole('button', { name: /From a topic/ }));
+    act(() => useApp.getState().navigate({ name: 'videos' }));
+    await act(async () => made(chat('c-new', null, 'Topic ideas')));
+    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
+    expect(useApp.getState().route).toEqual({ name: 'videos' });
+    // It is still there to find.
+    expect(useChat.getState().rows['c-new']).toBeDefined();
+  });
+
   it('an unsent draft on New chat survives going elsewhere and back', async () => {
     const user = userEvent.setup();
     render(<Shell />);

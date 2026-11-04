@@ -30,6 +30,10 @@ export function ChatNew() {
   const [signal, setSignal] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const creating = useRef<Promise<string> | null>(null);
+  /** A send or topic ask is starting the chat: a second click waits for it instead of asking again. */
+  const starting = useRef(false);
+  /** Still on screen: a chat made after the user left must not pull them back (Recent has it). */
+  const here = useRef(true);
   const [picked, setPicked] = useState<AgentId | null>(null);
   const agent = picked ?? settings?.defaultAgent ?? 'claude';
   const styles = useStyles();
@@ -40,7 +44,13 @@ export function ChatNew() {
     templateOf(ref === undefined ? useChat.getState().drafts[NEW_CHAT_DRAFT]?.style : ref, styles) ?? styleId;
 
   // An unsent Auto choice belongs to this screen only.
-  useEffect(() => () => useChat.setState({ pendingAuto: null }), []);
+  useEffect(() => {
+    here.current = true;
+    return () => {
+      here.current = false;
+      useChat.setState({ pendingAuto: null });
+    };
+  }, []);
 
   useEffect(() => {
     useUsage.getState().setChatAgent(agent);
@@ -77,6 +87,7 @@ export function ChatNew() {
 
   /** The chat exists: the screen becomes that chat, so leaving and coming back finds it. */
   const openChat = (chatId: string, template: string | null, draft?: Draft) => {
+    if (!here.current || useApp.getState().route.name !== 'chat-new') return;
     const store = useChat.getState();
     // An unsent draft goes with the chat, its style chip too.
     if (draft) store.setDraft(chatId, draft);
@@ -85,6 +96,8 @@ export function ChatNew() {
   };
 
   const onSend = async (parts: MessagePart[]): Promise<boolean> => {
+    if (starting.current) return false;
+    starting.current = true;
     setError(null);
     try {
       const text = parts.find((p) => p.type === 'text');
@@ -100,11 +113,14 @@ export function ChatNew() {
     } catch (e) {
       setError(t('chat.couldntStartChat', { message: e instanceof Error ? e.message : String(e) }));
       return false;
+    } finally {
+      starting.current = false;
     }
   };
 
   const askTopics = async () => {
-    if (!settings) return;
+    if (!settings || starting.current) return;
+    starting.current = true;
     setError(null);
     try {
       const id = await ensureChat(t('chat.topicIdeas'));
@@ -116,6 +132,8 @@ export function ChatNew() {
       openChat(id, templateFor());
     } catch (e) {
       setError(t('chat.couldntStartChat', { message: e instanceof Error ? e.message : String(e) }));
+    } finally {
+      starting.current = false;
     }
   };
 
