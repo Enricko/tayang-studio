@@ -101,10 +101,10 @@ describe('scheduler wiring', () => {
     const off = onTick(seen);
     const unlisten = await startScheduler();
     await vi.waitFor(() => expect(seen).toHaveBeenCalledTimes(1));
-    listeners[TICK_EVENT]();
+    listeners[TICK_EVENT]!();
     await vi.waitFor(() => expect(seen).toHaveBeenCalledTimes(2));
     off();
-    listeners[TICK_EVENT]();
+    listeners[TICK_EVENT]!();
     await vi.waitFor(() => expect(listProjects).toHaveBeenCalledTimes(3));
     expect(seen).toHaveBeenCalledTimes(2);
     unlisten();
