@@ -29,7 +29,19 @@ function parseBlock(body: string): unknown[] | null {
   return out.length ? out : null;
 }
 
+const cache = new Map<string, Extracted>();
+
+/** Memoized per text: the chat re-derives the same message text on every streamed chunk. */
 export function extractA2ui(input: string): Extracted {
+  const hit = cache.get(input);
+  if (hit) return hit;
+  const out = extract(input);
+  if (cache.size >= 200) cache.delete(cache.keys().next().value as string);
+  cache.set(input, out);
+  return out;
+}
+
+function extract(input: string): Extracted {
   const blocks: unknown[][] = [];
   const re = /```a2ui[ \t]*\r?\n([\s\S]*?)```/g;
   let text = input.replace(re, (whole, body: string) => {

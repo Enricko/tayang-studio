@@ -29,9 +29,11 @@ export function setAt(root: Json, path: string | undefined, value: Json): Json {
     if (i === keys.length) return value;
     const k = keys[i]!;
     const last = i === keys.length - 1;
-    if (Array.isArray(node) && /^\d+$/.test(k)) {
-      const copy = [...node];
+    const numeric = /^\d+$/.test(k);
+    if (numeric && (Array.isArray(node) || node === undefined || node === null)) {
+      const copy = Array.isArray(node) ? [...node] : [];
       const idx = Number(k);
+      if (idx > copy.length) return node; // no sparse writes
       if (last && value === undefined) copy.splice(idx, 1);
       else copy[idx] = go(copy[idx], i + 1);
       return copy;
