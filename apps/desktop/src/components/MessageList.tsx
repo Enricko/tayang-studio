@@ -1,10 +1,11 @@
 import { createContext, useContext, useEffect, useMemo, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { File as FileIcon } from 'lucide-react';
 import { formatTimecode, type ChatMessage, type MessagePart } from '@tayang/shared';
 import { Oyen } from '@/components/Oyen';
 import { STICK_EVENT } from '@/components/ScrollToBottom';
 import { ActivityGroup, isHiddenTool, WorkingLine, type ActivityItem } from '@/components/Activity';
-import { useApp } from '@/state/app';
+import { localized } from '@/lib/stored';
 import { messageKey, useChat, type SendOpts } from '@/state/chat';
 import { splitTopicJson } from '@tayang/skills';
 import { extractA2ui } from '@/a2ui/parse';
@@ -20,10 +21,11 @@ function Chip({ children }: { children: React.ReactNode }) {
 }
 
 export function FrameChip({ part }: { part: Extract<MessagePart, { type: 'frame' }> }) {
+  const { t } = useTranslation();
   return (
     <span className="inline-flex items-center gap-2 rounded-sm border border-hairline bg-transparent px-2 py-1 text-xs text-text-2">
-      <span className="font-medium text-foreground">Frame {formatTimecode(part.timeSec, 30)}</span>
-      {part.marks.length > 0 && <span className="text-text-3">{part.marks.length} marked</span>}
+      <span className="font-medium text-foreground">{t('chat.frame', { time: formatTimecode(part.timeSec, 30) })}</span>
+      {part.marks.length > 0 && <span className="text-text-3">{t('chat.marked', { count: part.marks.length })}</span>}
     </span>
   );
 }
@@ -96,9 +98,6 @@ function isUpdateOnly(text: string, messageId: string, a2ui: A2uiState): boolean
   });
 }
 
-/** A closed ```a2ui block that isn't valid JSON: say so, never show the raw JSON. */
-const BROKEN_BLOCK = "Couldn't show these options";
-
 function sendAction(chatId: string, a: A2uiAction, sendOptions?: SendOptions) {
   const { summary, ...rest } = a;
   const action: MessagePart = { type: 'a2ui-action', summary, action: { version: 'v0.9', action: rest } };
@@ -110,6 +109,7 @@ function sendAction(chatId: string, a: A2uiAction, sendOptions?: SendOptions) {
 /** An agent text part: prose, the surfaces it owns, and a placeholder for a block still streaming. */
 function AgentText({ text, messageId, a2ui }: { text: string; messageId: string; a2ui: A2uiState }) {
   const { text: rawProse, blocks, pending: a2uiPending, invalid } = useMemo(() => extractA2ui(text), [text]);
+  const { t } = useTranslation();
   const { handle, locked, sendOptions } = useContext(ActionsContext);
   // Older agents answer topics with a ```json block. Where a screen shows topic cards (it provides the
   // handler), hide that block, also while it is still streaming; other chats keep it as written.
@@ -145,8 +145,8 @@ function AgentText({ text, messageId, a2ui }: { text: string; messageId: string;
       {blocks.length > 0 && a2ui.set.notes.length > 0 && (
         <p className="m-0 text-[12px] text-text-3">{a2ui.set.notes[0]}</p>
       )}
-      {invalid > 0 && <p className="m-0 text-[12px] text-text-3">{BROKEN_BLOCK}</p>}
-      {pending && <p className="m-0 text-[13px] text-text-3">Loading options…</p>}
+      {invalid > 0 && <p className="m-0 text-[12px] text-text-3">{t('chat.brokenBlock')}</p>}
+      {pending && <p className="m-0 text-[13px] text-text-3">{t('chat.loadingOptions')}</p>}
     </>
   );
 }
@@ -211,6 +211,7 @@ export function MessageList({
   /** Extra blocks under the conversation (permission card, idea cards). */
   children?: React.ReactNode;
 }) {
+  const { t } = useTranslation();
   const end = useRef<HTMLDivElement>(null);
   // Follow the conversation only while the reader is at the bottom (or just sent something), so jumping
   // to an earlier turn while the agent streams stays put.
@@ -249,7 +250,7 @@ export function MessageList({
   const last = messages[messages.length - 1];
   return (
     <ActionsContext.Provider value={actions}>
-    <div className="flex flex-col gap-6" role="log" aria-label="Conversation">
+    <div className="flex flex-col gap-6" role="log" aria-label={t('chat.conversation')}>
       {messages.map((m, i) => {
         if (m.role === 'user') {
           return (
@@ -277,7 +278,7 @@ export function MessageList({
             <div key={messageKey(m)} className="flex items-center gap-3">
               <Oyen mood="surprised" size={28} />
               <p className="m-0 text-[14px] text-text-2">
-                {m.parts.map((p) => (p.type === 'text' ? p.text : '')).join('')}
+                {localized(m.parts.map((p) => (p.type === 'text' ? p.text : '')).join(''))}
               </p>
             </div>
           );

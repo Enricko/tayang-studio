@@ -14,6 +14,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { openUrl } from '@tauri-apps/plugin-opener';
+import { i18n } from '@/i18n';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -41,8 +42,6 @@ export interface A2uiAction {
 const MAX_DEPTH = 24;
 /** Most nodes one surface render may produce; keeps cycles and repeated children cheap. */
 const NODE_BUDGET = 500;
-const TRUNCATED = "Some options couldn't be shown";
-const UNSUPPORTED = "This option can't be shown here";
 
 const ICONS: Record<string, LucideIcon> = {
   check: Check,
@@ -319,7 +318,7 @@ function renderNode(id: string, base: string, ctx: Ctx, anc: string[]): ReactNod
               max={max}
               value={[value]}
               disabled={ctx.disabled}
-              aria-label={c.label ? text(c.label) : 'Value'}
+              aria-label={c.label ? text(c.label) : i18n.t('a2ui.value')}
               onValueChange={([v]) => path && v !== undefined && ctx.setData(path, v)}
             />
             <span className="w-10 text-right font-mono text-[12px] text-text-2">{value}</span>
@@ -348,14 +347,14 @@ function renderNode(id: string, base: string, ctx: Ctx, anc: string[]): ReactNod
       );
     }
     default:
-      return <p className="m-0 text-[13px] text-text-3">{UNSUPPORTED}</p>;
+      return <p className="m-0 text-[13px] text-text-3">{i18n.t('a2ui.unsupported')}</p>;
   }
 }
 
 /** The readable line for an action: its `title` (a picked topic), the chosen option labels, else the button's label. */
 function summarize(ctx: Ctx, button: A2uiComponent, base: string, context: Record<string, unknown>): string {
   const title = typeof context.title === 'string' ? context.title.trim() : '';
-  if (title) return `Picked: ${title}`;
+  if (title) return i18n.t('a2ui.picked', { what: title });
   const labels: string[] = [];
   // Only pickers the button's own context reads count as its choice.
   const ev = (button.action as { event?: { context?: unknown } } | undefined)?.event;
@@ -368,10 +367,10 @@ function summarize(ctx: Ctx, button: A2uiComponent, base: string, context: Recor
     const options = optionList(c.options);
     for (const v of sel) labels.push(options.find((o) => o.value === stringOf(v))?.label ?? stringOf(v));
   }
-  if (labels.length) return `Picked: ${labels.join(', ')}`;
+  if (labels.length) return i18n.t('a2ui.picked', { what: labels.join(', ') });
   const child = typeof button.child === 'string' ? ctx.surface.components[button.child] : undefined;
   const label = child ? stringOf(resolve(ctx, child.text, base)) : '';
-  return label ? `Picked: ${label}` : 'Sent a reply';
+  return label ? i18n.t('a2ui.picked', { what: label }) : i18n.t('a2ui.sentReply');
 }
 
 export function A2uiSurface({
@@ -425,16 +424,16 @@ export function A2uiSurface({
   return (
     <div data-testid="a2ui-surface" data-answered={disabled || undefined} className="flex max-w-[520px] flex-col gap-3">
       {renderNode('root', '', ctx, [])}
-      {ctx.budget.over && <p className="m-0 text-[12px] text-text-3">{TRUNCATED}</p>}
+      {ctx.budget.over && <p className="m-0 text-[12px] text-text-3">{i18n.t('a2ui.truncated')}</p>}
       <Dialog open={confirmUrl !== null} onOpenChange={(o) => !o && setConfirmUrl(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Open this link</DialogTitle>
+            <DialogTitle>{i18n.t('a2ui.openLinkTitle')}</DialogTitle>
             <DialogDescription className="break-all font-mono">{confirmUrl}</DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="secondary" onClick={() => setConfirmUrl(null)}>
-              Cancel
+              {i18n.t('common.cancel')}
             </Button>
             <Button
               onClick={() => {
@@ -443,7 +442,7 @@ export function A2uiSurface({
                 if (url) void openUrl(url).catch(() => {});
               }}
             >
-              Open link
+              {i18n.t('a2ui.openLink')}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -1,3 +1,4 @@
+import { i18n } from '@/i18n';
 import { getAt, setAt } from './pointer';
 
 export interface A2uiComponent {
@@ -25,12 +26,11 @@ const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object
 
 const blank = (surfaceId: string, catalogId = ''): Surface => ({ surfaceId, catalogId, components: {}, data: {} });
 
-const VERSION_NOTE = "Some options use a version this app can't show";
-
 /** Applies v0.9 messages in order and returns the new set (the input is not mutated). */
 export function applyMessages(set: SurfaceSet, messages: unknown[]): SurfaceSet {
   const surfaces = { ...set.surfaces };
   const notes = [...set.notes];
+  const VERSION_NOTE = i18n.t('a2ui.versionNote');
   for (const m of messages) {
     if (!isObj(m)) continue;
     if (m.version !== 'v0.9') {
