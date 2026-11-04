@@ -154,9 +154,12 @@ export function Settings() {
               Tayang talks to agents through ACP. Pick the one that builds your videos by default.
             </span>
           </div>
+          <span id="default-agent-label" className="text-[13px] font-medium">
+            Default agent for new chats
+          </span>
           <Card>
             <RadioGroup
-              aria-label="Default agent for new chats"
+              aria-labelledby="default-agent-label"
               value={settings.defaultAgent}
               onValueChange={(v) => void save({ defaultAgent: v as SettingsT['defaultAgent'] })}
               className="gap-0"

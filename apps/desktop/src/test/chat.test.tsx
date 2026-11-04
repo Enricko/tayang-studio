@@ -700,6 +700,10 @@ describe('Agent picker', () => {
     expect(flat).toContain('You: Make it punchy');
     expect(flat).toContain('Agent: Done, shortened.');
     expect(flat).toContain('Next');
+    // A non-Claude agent's new session gets the skills first, then the recap, then the message.
+    expect(flat).toContain('a2ui');
+    expect(flat.indexOf('a2ui')).toBeLessThan(flat.indexOf('You: Make it punchy'));
+    expect(flat.indexOf('Agent: Done, shortened.')).toBeLessThan(flat.lastIndexOf('Next'));
     await emit('c1', { kind: 'done', stopReason: 'end_turn' } as never);
     await user.type(screen.getByRole('textbox', { name: 'Message' }), 'Again');
     await user.click(screen.getByRole('button', { name: 'Send' }));
