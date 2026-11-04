@@ -157,6 +157,11 @@ describe('Videos', () => {
 });
 
 describe('Style', () => {
+  it('says truly what stays on this computer after a study: a short preview clip and a poster', () => {
+    render(<Style />);
+    expect(screen.getByText(/keeping only a short silent preview clip and a poster frame here/)).toBeInTheDocument();
+  });
+
   it('rejects a link that is not a supported video site', async () => {
     render(<Style />);
     await userEvent.type(screen.getByLabelText('Video link'), 'https://example.com/x');

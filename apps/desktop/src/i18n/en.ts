@@ -620,7 +620,7 @@ export const en = {
     linkPlaceholder: 'Paste a video link',
     studyVideo: 'Study video',
     badLink: 'Paste a TikTok, Reels or YouTube link',
-    privacy: 'Frames are studied on your computer and deleted after. Tayang copies the look, not the footage',
+    privacy: 'Tayang studies the video on your computer and deletes it after, keeping only a short silent preview clip and a poster frame here. It copies the look, not the footage',
     libraryAria: 'Library',
     filterAria: 'Filter styles',
     tabs: { all: 'All', builtin: 'Built in', copied: 'Copied from videos', mine: 'Yours' },

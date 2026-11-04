@@ -39,7 +39,7 @@ tayang-desktop/
 ## How it works
 
 - The agent runs over ACP. Tayang has no AI of its own: every generation goes through the agent you already use.
-- Installs go through the agent too. Tayang shows you every command your agent asks to run, and nothing it asks about runs until you allow it, unless you turn on Auto mode for chats or you are copying a style from a video (a style study always runs in auto mode). Installs always ask. An agent whose own settings already allow a command won't ask, so check your agent's permission settings (see `docs/development.md`).
+- Installs go through the agent too. Tayang shows you every command your agent asks to run, and nothing it asks about runs until you allow it, unless you turn on Auto mode for chats, you are copying a style from a video (a style study always runs in auto mode), or an autopilot is making a video (autopilots always run in auto mode). Installs always ask. An agent whose own settings already allow a command won't ask, so check your agent's permission settings (see `docs/development.md`).
 - You pick a working folder. Projects live there and keep their folder if you change it later. Agent sessions work in the working folder or in a project's own folder.
 - App data is stored in a local SQLite database, so the desktop app keeps its data on this computer and doesn't need the API (your agent still needs its own internet connection).
 - The API is optional and only adds the online features.
@@ -51,6 +51,8 @@ Tayang sends a random install ID, your system (macOS, Windows or Linux), its ver
 To turn it off, open Settings › Account and switch off "Share anonymous install stats".
 
 To show your Claude usage, Tayang reads the login Claude Code already stores on this computer and sends it only to Anthropic to fetch your usage numbers.
+
+The Style screen loads YouTube thumbnails from i.ytimg.com for styles copied from YouTube, and built-in style previews from api.tayang.app. A style copied from a video keeps a short silent preview clip and a poster frame on this computer; the video itself is deleted after the study.
 
 For the owner: set the secret with `wrangler secret put ADMIN_TOKEN`, then `GET /v1/stats` with `Authorization: Bearer <ADMIN_TOKEN>` returns the counts. `pnpm --filter @tayang/api stats -- --remote` prints the same table straight from D1 (use `--local` for the dev database). Set `TAYANG_API_URL` when starting the desktop app to point it at another API; it is used instead of the saved API URL and never stored.
 

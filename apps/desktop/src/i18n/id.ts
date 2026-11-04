@@ -615,7 +615,7 @@ export const id: Translations = {
     linkPlaceholder: 'Tempel link video',
     studyVideo: 'Pelajari video',
     badLink: 'Tempel link TikTok, Reels, atau YouTube',
-    privacy: 'Frame dipelajari di komputermu lalu dihapus. Tayang meniru tampilannya, bukan videonya',
+    privacy: 'Tayang mempelajari videonya di komputermu lalu menghapusnya, hanya menyimpan klip pratinjau pendek tanpa suara dan satu gambar sampul di sini. Yang ditiru tampilannya, bukan videonya',
     libraryAria: 'Koleksi',
     filterAria: 'Saring gaya',
     tabs: { all: 'Semua', builtin: 'Bawaan', copied: 'Dari video', mine: 'Milikmu' },
