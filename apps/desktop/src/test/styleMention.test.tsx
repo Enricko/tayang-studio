@@ -65,6 +65,20 @@ describe('styleContext', () => {
     expect(text).not.toMatch(/https?:/);
   });
 
+  it('drops links that a prompt or a note quotes', () => {
+    const quoting: Style = {
+      ...mine,
+      prompt: 'Like https://www.tiktok.com/@a/video/1 but calmer.',
+      notes: { camera: 'Handheld, see http://example.com/x', pacing: 'https://only.a/link' },
+    };
+    const out = styleContext([{ type: 'style-mention', styleId: 'mine-1', name: 'Mine' }], [quoting]);
+    const text = out[0]!.type === 'text' ? out[0]!.text : '';
+    expect(text).not.toMatch(/https?:|example\.com/);
+    expect(text).toContain('Like but calmer.');
+    expect(text).toContain('Camera: Handheld, see');
+    expect(text).not.toContain('Pacing:');
+  });
+
   it('leaves out the template line for a style without one, and skips styles it does not know', () => {
     const plain: Style = { ...mine, notes: {} };
     const out = styleContext(

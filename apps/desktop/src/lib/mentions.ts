@@ -40,9 +40,12 @@ const ASPECT_NAMES: [StyleAspect, string][] = [
   ['transitions', 'Transitions'],
 ];
 
+/** `text` without the links it quotes (a study may quote its source video), spaces tidied. */
+const noLinks = (text: string | undefined) => (text ?? '').replace(/https?:\/\/\S+/g, '').replace(/[ \t]{2,}/g, ' ').trim();
+
 /**
  * What the agent gets in front of a message for each style it mentions: the style's prompt, its non-empty
- * notes and whether it has a starter template. Never its preview or source links.
+ * notes and whether it has a starter template. Never a link: not its preview or source, nor one its text quotes.
  */
 export function styleContext(parts: MessagePart[], styles: Style[]): MessagePart[] {
   const out: MessagePart[] = [];
@@ -51,13 +54,13 @@ export function styleContext(parts: MessagePart[], styles: Style[]): MessagePart
     const style = styles.find((s) => s.id === part.styleId);
     if (!style) continue;
     const notes = ASPECT_NAMES.flatMap(([k, label]) => {
-      const note = style.notes[k]?.trim();
+      const note = noLinks(style.notes[k]);
       return note ? [`${label}: ${note}`] : [];
     });
     const lines = [
       // i18n-ignore: this goes to the agent, not the user
       `Use the style "${style.name}" for this video:`,
-      style.prompt.trim(),
+      noLinks(style.prompt),
       ...notes,
       // i18n-ignore: this goes to the agent, not the user
       style.template ? 'This style has a starter template; Tayang sets it up when a new video starts from it.' : '',
