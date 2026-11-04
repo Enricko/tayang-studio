@@ -76,6 +76,9 @@ vi.mock('@/lib/ipc', () => ({
   installStyleTemplate: vi.fn(),
   writeBrief: vi.fn().mockResolvedValue(undefined),
   mediaLatestRender: vi.fn(async (projectId: string) => (db.renders.has(projectId) ? `/w/${projectId}/renders/a.mp4` : null)),
+  latestRenderInfo: vi.fn(async (projectId: string) =>
+    db.renders.has(projectId) ? { path: `/w/${projectId}/renders/a.mp4`, name: 'a.mp4', size: 10, modifiedAt: '2026-11-04T01:00:00.000Z' } : null,
+  ),
   mediaProbe: vi.fn().mockResolvedValue({ durationSec: 31.5, fps: 30, frames: 945, width: 1080, height: 1920 }),
   getChat: vi.fn().mockResolvedValue(null),
   listMessages: vi.fn().mockResolvedValue([]),
@@ -119,6 +122,7 @@ import * as ipc from '@/lib/ipc';
 import { setUiLanguage } from '@/i18n';
 import { canStopNow, onAutopilotChanged, stopNow } from '@/lib/autopilotHooks';
 import { localized } from '@/lib/stored';
+import { renderTiming } from '@/lib/renderCheck';
 import { useApp } from '@/state/app';
 import {
   PAUSE_ALL_EVENT,
@@ -191,6 +195,7 @@ const settle = (fn: () => void) => vi.waitFor(fn, { timeout: 2000, interval: 5 }
 
 beforeEach(() => {
   vi.clearAllMocks();
+  renderTiming.stableMs = 0;
   resetAutopilotEngine();
   useChat.getState().reset();
   updateHandlers.length = 0;
@@ -429,6 +434,17 @@ describe('making a video', () => {
     expect(ipc.createProject).not.toHaveBeenCalled();
     setUiLanguage('id');
     expect(localized(slotAt(at(4, 9)).error!)).toBe('Gaya autopilot ini sudah tidak ada');
+  });
+
+  it('a render still being written is no video: it asks to render now, and a finished one is fine', async () => {
+    // The first render was left running in the background: ffprobe can't read it yet.
+    vi.mocked(ipc.mediaProbe).mockRejectedValueOnce(new Error('no video stream found'));
+    await runOnce();
+    const p = db.projects[0]!;
+    const sent = prompts.filter((x) => x.chatId === `chat-${p.id}`);
+    expect(sent).toHaveLength(2);
+    expect(sent[1]!.prompt).toMatch(/^Render it now/);
+    expect(slotAt(at(4, 9)).status).toBe('done');
   });
 
   it('asks to render once more when the turn ends without a file, then fails and keeps the project', async () => {

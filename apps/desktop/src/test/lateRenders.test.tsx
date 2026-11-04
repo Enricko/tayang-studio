@@ -10,6 +10,7 @@ vi.mock('@/lib/ipc', () => ({
   detectAgents: vi.fn().mockResolvedValue([]),
   listProjects: vi.fn().mockResolvedValue([]),
   latestRenderInfo: vi.fn().mockResolvedValue(null),
+  mediaProbe: vi.fn().mockResolvedValue({ durationSec: 12, fps: 30, frames: 360, width: 1080, height: 1920 }),
   getChat: vi.fn().mockResolvedValue(null),
   listMessages: vi.fn().mockResolvedValue([]),
   addMessage: vi.fn().mockResolvedValue(null),
@@ -22,7 +23,9 @@ vi.mock('@/lib/ipc', () => ({
 }));
 vi.mock('@/lib/events', () => ({ onAgentUpdate: vi.fn(async () => () => {}), onPermission: vi.fn(async () => () => {}) }));
 
-import { agentPrompt, latestRenderInfo, listJobs, upsertJob } from '@/lib/ipc';
+import { agentPrompt, latestRenderInfo, listJobs, mediaProbe, upsertJob } from '@/lib/ipc';
+import { renderTiming } from '@/lib/renderCheck';
+import { useJobs } from '@/state/jobs';
 import { resetLateRenders, settleLateRenders } from '@/lib/buildJobs';
 import { Agents } from '@/screens/Agents';
 import { setUiLanguage } from '@/i18n';
@@ -38,7 +41,9 @@ const file = (at: number): FileInfo => ({ path: '/w/p1/renders/v-2.mp4', name: '
 
 beforeEach(() => {
   vi.clearAllMocks();
+  renderTiming.stableMs = 0;
   resetLateRenders();
+  useJobs.setState({ jobs: [] });
   useChat.getState().reset();
   useApp.setState({ route: { name: 'agents' } });
 });
@@ -66,8 +71,51 @@ describe('late renders', () => {
     expect(latestRenderInfo).toHaveBeenCalledTimes(1);
     vi.mocked(latestRenderInfo).mockResolvedValue(file(T + 100_000));
     await settleLateRenders(T + 121_000, jobs);
-    expect(latestRenderInfo).toHaveBeenCalledTimes(2);
+    // A new video is looked at twice: it must stay the same to count as finished.
+    expect(latestRenderInfo).toHaveBeenCalledTimes(3);
     expect(upsertJob).toHaveBeenCalledWith(expect.objectContaining({ id: 'build-c1', status: 'done' }));
+  });
+
+  it('waits for a late render to be finished: still being written, it stays needs-you until a later look', async () => {
+    vi.mocked(latestRenderInfo).mockResolvedValue(file(T + 120_000));
+    vi.mocked(mediaProbe).mockRejectedValueOnce(new Error('no video stream found'));
+    await settleLateRenders(T + 180_000, [job()]);
+    expect(upsertJob).not.toHaveBeenCalled();
+    await settleLateRenders(T + 240_000, [job()]);
+    expect(upsertJob).toHaveBeenCalledWith(expect.objectContaining({ id: 'build-c1', status: 'done', note: 'v-2.mp4' }));
+  });
+
+  it('accepts a video up to 2 s older than the job, for a file clock a little behind', async () => {
+    vi.mocked(latestRenderInfo).mockResolvedValue(file(T - 1500));
+    await settleLateRenders(T + 60_000, [job()]);
+    expect(upsertJob).toHaveBeenCalledWith(expect.objectContaining({ status: 'done' }));
+    vi.mocked(upsertJob).mockClear();
+    resetLateRenders();
+    vi.mocked(latestRenderInfo).mockResolvedValue(file(T - 2500));
+    await settleLateRenders(T + 60_000, [job()]);
+    expect(upsertJob).not.toHaveBeenCalled();
+  });
+
+  it('never writes over a turn that started while it looked', async () => {
+    vi.mocked(latestRenderInfo).mockImplementation(async () => {
+      useChat.setState({ streaming: { c1: true } });
+      return file(T + 120_000);
+    });
+    await settleLateRenders(T + 180_000, [job()]);
+    expect(upsertJob).not.toHaveBeenCalled();
+  });
+
+  it('a tick reads the job list only when a build job may be waiting on its video', async () => {
+    vi.mocked(listJobs).mockResolvedValue([]);
+    await settleLateRenders(T);
+    expect(listJobs).toHaveBeenCalledTimes(1);
+    useJobs.setState({ jobs: [job({ status: 'done' })] });
+    await settleLateRenders(T + 30_000);
+    expect(listJobs).toHaveBeenCalledTimes(1);
+    useJobs.setState({ jobs: [job()] });
+    vi.mocked(listJobs).mockResolvedValue([job()]);
+    await settleLateRenders(T + 60_000);
+    expect(listJobs).toHaveBeenCalledTimes(2);
   });
 
   it('never touches a job whose chat is running a turn (waiting on a permission)', async () => {

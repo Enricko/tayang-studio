@@ -23,7 +23,6 @@ import {
   listProjects,
   listSlots,
   listStyles,
-  mediaLatestRender,
   mediaProbe,
   setAutopilotStatus,
   setSchedule,
@@ -32,6 +31,7 @@ import {
   upsertJob,
   upsertSlot,
 } from '@/lib/ipc';
+import { finishedRender } from '@/lib/renderCheck';
 import { onTick } from '@/lib/scheduler';
 import { stored } from '@/lib/stored';
 import { createTopicProject } from '@/lib/topics';
@@ -258,7 +258,8 @@ async function makeVideo(run: Run): Promise<string> {
       promptParts: agentParts(build),
     }),
   );
-  const rendered = () => mediaLatestRender(project.id).catch(() => null);
+  // A finished video only: a render the agent left running in the background is not one yet.
+  const rendered = () => finishedRender(project.id);
   if (!(await rendered())) {
     replyOf(
       await turn(run, chat.id, [{ type: 'text', text: i18n.t('autopilot.slot.renderNowMessage') }], {

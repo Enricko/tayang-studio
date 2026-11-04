@@ -10,7 +10,6 @@ import {
   agentStart,
   agentStop,
   getChat,
-  latestRenderInfo,
   listMessages,
   recentImages,
   updateChatAgent,
@@ -21,6 +20,7 @@ import { extractA2ui } from '@/a2ui/parse';
 import { agentErrorText, AGENT_NAMES } from '@/lib/agents';
 import { uiLanguage } from '@/i18n';
 import { stored } from '@/lib/stored';
+import { finishedRender } from '@/lib/renderCheck';
 import { isRenderTool } from '@/lib/renderTool';
 import { localClock } from '@/lib/time';
 import { useApp } from '@/state/app';
@@ -226,12 +226,8 @@ export function waitsForAnswer(m: ChatMessage | undefined): boolean {
   return asks || /[?？]\s*$/.test(text.trim());
 }
 
-/** A render this close before the turn started still counts (file times can be coarse). */
-const CLOCK_SLACK_MS = 1000;
-
-/** Whether `info` is a video made since `since` (ms). */
-export const renderedSince = (info: { size: number; modifiedAt: string } | null, since: number) =>
-  !!info && info.size > 0 && Date.parse(info.modifiedAt) >= since - CLOCK_SLACK_MS;
+/** Images from this close before the turn started still count (file times can be coarse). */
+const IMAGE_SLACK_MS = 1000;
 
 /** Images an agent may make; the mime type of a found image comes from its extension. */
 const IMAGE_MIME: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif' };
@@ -463,16 +459,12 @@ export const useChat = create<ChatState>((set, get) => {
    * needs the user, saying whether the agent asked them something or stopped before rendering.
    */
   const settleBuildJob = async (chatId: string, job: ChatJob, startedAt: number, seq: number) => {
-    let info: Awaited<ReturnType<typeof latestRenderInfo>> = null;
-    try {
-      info = await latestRenderInfo(job.projectId);
-    } catch {
-      /* no lookup: no video */
-    }
+    // A render still being written (left running in the background) is no video yet; the late check settles it.
+    const info = await finishedRender(job.projectId, startedAt);
     // A newer turn has started since: its own end decides.
     if ((turnSeq.get(chatId) ?? 0) !== seq || get().streaming[chatId]) return;
-    if (renderedSince(info, startedAt)) {
-      writeJob(chatId, 'done', info!.name);
+    if (info) {
+      writeJob(chatId, 'done', info.name);
       return;
     }
     const asked = waitsForAnswer((get().messages[chatId] ?? []).at(-1));
@@ -616,7 +608,7 @@ export const useChat = create<ChatState>((set, get) => {
       turnSeq.set(chatId, (turnSeq.get(chatId) ?? 0) + 1);
       // The last turn's message, still waiting for its images, is stored before this one.
       pendingSaves.get(chatId)?.();
-      if (!get().streaming[chatId]) imageSince.set(chatId, new Date(Date.now() - CLOCK_SLACK_MS).toISOString());
+      if (!get().streaming[chatId]) imageSince.set(chatId, new Date(Date.now() - IMAGE_SLACK_MS).toISOString());
       set((s) => ({
         attachments: opts?.keepAttachments ? s.attachments : { ...s.attachments, [chatId]: [] },
         streaming: { ...s.streaming, [chatId]: true },

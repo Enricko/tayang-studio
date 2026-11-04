@@ -14,6 +14,7 @@ vi.mock('@/lib/ipc', () => ({
   agentRespondPermission: vi.fn(),
   upsertJob: vi.fn().mockResolvedValue(undefined),
   latestRenderInfo: vi.fn().mockResolvedValue(null),
+  mediaProbe: vi.fn().mockResolvedValue({ durationSec: 12, fps: 30, frames: 360, width: 1080, height: 1920 }),
   listJobs: vi.fn().mockResolvedValue([]),
   assetUrl: (p: string) => p,
 }));
@@ -31,6 +32,7 @@ import { MessageList } from '@/components/MessageList';
 import { BUSY_NOTE, failChatJob, useChat } from '@/state/chat';
 import { needsYou } from '@/state/jobs';
 import { setUiLanguage } from '@/i18n';
+import { renderTiming } from '@/lib/renderCheck';
 
 /** What the agent got, without the session facts line a new session starts with. */
 const noFacts = <T,>(parts: T[]): T[] =>
@@ -67,6 +69,7 @@ const msg = (id: string, role: ChatMessage['role'], parts: ChatMessage['parts'])
 });
 
 beforeEach(() => {
+  renderTiming.stableMs = 0;
   useChat.getState().reset();
   updates.length = 0;
   vi.mocked(agentPrompt).mockClear();
@@ -348,7 +351,8 @@ describe('build jobs when a turn does not finish well', () => {
     await waitFor(() => expect(lastJob()).toMatchObject({ id: 'build-j1', status: 'done', note: 'Cancelled' }));
     expect(needsYou([lastJob()])).toBe(0);
     // A later end with a fresh video is plainly done.
-    vi.mocked(latestRenderInfo).mockResolvedValueOnce({ path: '/w/v.mp4', name: 'v.mp4', size: 3, modifiedAt: new Date().toISOString() });
+    const made = { path: '/w/v.mp4', name: 'v.mp4', size: 3, modifiedAt: new Date().toISOString() };
+    vi.mocked(latestRenderInfo).mockResolvedValueOnce(made).mockResolvedValueOnce(made);
     await emitTo('j1', { kind: 'done', stopReason: 'end_turn' });
     await waitFor(() => expect(lastJob()).toMatchObject({ status: 'done', note: 'v.mp4' }));
   });

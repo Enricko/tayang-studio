@@ -62,6 +62,7 @@ import { useApp } from '@/state/app';
 import { buildRecap, useChat } from '@/state/chat';
 import { useUsage } from '@/state/usage';
 import { UsageBar } from '@/components/UsageBar';
+import { renderTiming } from '@/lib/renderCheck';
 
 /** What the agent got, without the session facts line a new session starts with. */
 const noFacts = <T,>(parts: T[]): T[] =>
@@ -117,6 +118,7 @@ const emit = (chatId: string, update: AgentUpdate) =>
   });
 
 beforeEach(() => {
+  renderTiming.stableMs = 0;
   vi.clearAllMocks();
   handlers.update.length = 0;
   handlers.perm.length = 0;
@@ -948,8 +950,10 @@ describe('ChatProject render and jobs', () => {
     expect(statuses().at(-1)).toBe('needs-you');
     await user.click(screen.getByRole('button', { name: 'Allow' }));
     expect(statuses().at(-1)).toBe('working');
-    // Done only with a video made during the turn.
-    vi.mocked(ipc.latestRenderInfo).mockResolvedValueOnce({ path: '/w/p1/renders/v-1.mp4', name: 'v-1.mp4', size: 9, modifiedAt: new Date().toISOString() });
+    // Done only with a finished video made during the turn.
+    const made = { path: '/w/p1/renders/v-1.mp4', name: 'v-1.mp4', size: 9, modifiedAt: new Date().toISOString() };
+    vi.mocked(ipc.latestRenderInfo).mockResolvedValueOnce(made).mockResolvedValueOnce(made);
+    vi.mocked(ipc.mediaProbe).mockResolvedValueOnce({ durationSec: 12.5, fps: 30, frames: 375, width: 1080, height: 1920 });
     await emit('c1', { kind: 'done', stopReason: 'end_turn' });
     await waitFor(() => expect(statuses().at(-1)).toBe('done'));
     expect(vi.mocked(ipc.upsertJob).mock.calls.at(-1)![0].note).toBe('v-1.mp4');

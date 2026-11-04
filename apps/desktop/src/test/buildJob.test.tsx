@@ -14,6 +14,7 @@ vi.mock('@/lib/ipc', () => ({
   upsertJob: vi.fn().mockResolvedValue(undefined),
   listJobs: vi.fn().mockResolvedValue([]),
   latestRenderInfo: vi.fn().mockResolvedValue(null),
+  mediaProbe: vi.fn().mockResolvedValue({ durationSec: 12, fps: 30, frames: 360, width: 1080, height: 1920 }),
   assetUrl: (p: string) => p,
 }));
 const updates: ((e: { chatId: string; update: AgentUpdate }) => void)[] = [];
@@ -25,7 +26,8 @@ vi.mock('@/lib/events', () => ({
   onPermission: vi.fn(async () => () => {}),
 }));
 
-import { latestRenderInfo, upsertJob } from '@/lib/ipc';
+import { latestRenderInfo, mediaProbe, upsertJob } from '@/lib/ipc';
+import { renderTiming } from '@/lib/renderCheck';
 import { isRenderTool } from '@/lib/renderTool';
 import { setUiLanguage } from '@/i18n';
 import { localized } from '@/lib/stored';
@@ -39,6 +41,7 @@ const job = { projectId: 'p1', title: 'Jalur Rempah' };
 
 beforeEach(() => {
   vi.clearAllMocks();
+  renderTiming.stableMs = 0;
   updates.length = 0;
   useChat.getState().reset();
   useChat.getState().listen();
@@ -84,10 +87,47 @@ describe('waitsForAnswer', () => {
 describe('a project chat build job at the end of a turn', () => {
   it('is done only with a video rendered during the turn, named in the note', async () => {
     await useChat.getState().send('c1', [{ type: 'text', text: 'go' }], { agentId: 'claude', job });
-    vi.mocked(latestRenderInfo).mockResolvedValueOnce(render(new Date(Date.now() + 500)));
+    vi.mocked(latestRenderInfo).mockResolvedValue(render(new Date(Date.now() + 500)));
     await emit('c1', { kind: 'done', stopReason: 'end_turn' });
     await waitFor(() => expect(lastJob()).toMatchObject({ status: 'done', note: 'v.mp4' }));
     expect(latestRenderInfo).toHaveBeenCalledWith('p1');
+    expect(mediaProbe).toHaveBeenCalledWith('p1');
+  });
+
+  it('done only once the video is finished: it reads as a video and stays the same for 3 s', async () => {
+    renderTiming.stableMs = 3000;
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      await useChat.getState().send('c1', [{ type: 'text', text: 'go' }], { agentId: 'claude', job });
+      vi.mocked(latestRenderInfo).mockResolvedValue(render(new Date(Date.now() + 500)));
+      await emit('c1', { kind: 'done', stopReason: 'end_turn' });
+      await act(async () => vi.advanceTimersByTimeAsync(2900));
+      expect(lastJob()).toMatchObject({ status: 'working' });
+      await act(async () => vi.advanceTimersByTimeAsync(200));
+      await waitFor(() => expect(lastJob()).toMatchObject({ status: 'done', note: 'v.mp4' }));
+      expect(latestRenderInfo).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([
+    ['ffprobe finds no video in it yet', () => vi.mocked(mediaProbe).mockRejectedValueOnce(new Error('no video stream found'))],
+    ['ffprobe reads no length', () => vi.mocked(mediaProbe).mockResolvedValueOnce({ durationSec: 0, fps: 30, frames: 0, width: 1080, height: 1920 })],
+    [
+      'it is still growing',
+      () => {
+        const at = new Date(Date.now() + 500);
+        vi.mocked(latestRenderInfo).mockResolvedValueOnce(render(at, 10)).mockResolvedValueOnce(render(at, 4000));
+      },
+    ],
+  ])('needs you while a render left running in the background is still being written (%s)', async (_, arrange) => {
+    await useChat.getState().send('c1', [{ type: 'text', text: 'go' }], { agentId: 'claude', job });
+    vi.mocked(latestRenderInfo).mockResolvedValue(render(new Date(Date.now() + 500)));
+    arrange();
+    await emit('c1', { kind: 'text', text: 'Render jalan di latar belakang.' });
+    await emit('c1', { kind: 'done', stopReason: 'end_turn' });
+    await waitFor(() => expect(lastJob()).toMatchObject({ status: 'needs-you', note: 'No video yet. The agent stopped before rendering' }));
   });
 
   it('needs you, "stopped before rendering", without a new video', async () => {
