@@ -366,6 +366,34 @@ impl Db {
         Ok(settings)
     }
 
+    // ---- sign-in account cache ----
+
+    /// The account last seen for a keychain account (`api:<base>`), for showing it offline.
+    /// Lives in the settings table under its own key; never holds the token.
+    pub fn auth_account(&self, key: &str) -> Option<Account> {
+        let raw: Option<String> = self
+            .conn()
+            .query_row("SELECT value FROM settings WHERE key = ?1", [format!("authAccount:{key}")], |r| r.get(0))
+            .optional()
+            .ok()
+            .flatten();
+        raw.and_then(|v| serde_json::from_str(&v).ok())
+    }
+
+    /// Saves (or with `None`, forgets) the cached account for `key`.
+    pub fn set_auth_account(&self, key: &str, account: Option<&Account>) -> Result<()> {
+        let k = format!("authAccount:{key}");
+        match account {
+            Some(a) => self.conn().execute(
+                "INSERT INTO settings (key, value) VALUES (?1, ?2) \
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                rusqlite::params![k, serde_json::to_string(a)?],
+            )?,
+            None => self.conn().execute("DELETE FROM settings WHERE key = ?1", [k])?,
+        };
+        Ok(())
+    }
+
     // ---- projects ----
 
     pub fn list_projects(&self) -> Result<Vec<Project>> {
@@ -973,6 +1001,29 @@ mod tests {
     use serde_json::json;
     use std::collections::BTreeMap;
     use std::path::PathBuf;
+
+    #[test]
+    fn auth_account_cache_is_per_api_and_stays_out_of_settings() {
+        let db = db();
+        let home = PathBuf::from("/home/u");
+        let a = Account {
+            id: "acc_1".into(),
+            email: Some("a@b.c".into()),
+            name: Some("Ana".into()),
+            plan: "pro".into(),
+            features: vec!["voiceover".into()],
+        };
+        assert_eq!(db.auth_account("api:https://studio.tayang.app/api"), None);
+        db.set_auth_account("api:https://studio.tayang.app/api", Some(&a)).unwrap();
+        assert_eq!(db.auth_account("api:https://studio.tayang.app/api"), Some(a.clone()));
+        assert_eq!(db.auth_account("api:http://localhost:8787/api"), None);
+        let before = db.get_settings(&home);
+        db.update_settings(json!({ "fps": 60 })).unwrap();
+        assert_eq!(db.get_settings(&home).api_url, before.api_url, "settings still parse");
+        assert!(!serde_json::to_string(&db.get_settings(&home)).unwrap().contains("a@b.c"));
+        db.set_auth_account("api:https://studio.tayang.app/api", None).unwrap();
+        assert_eq!(db.auth_account("api:https://studio.tayang.app/api"), None);
+    }
 
     fn db() -> Db {
         Db::open_in_memory().unwrap()
