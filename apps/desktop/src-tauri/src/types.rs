@@ -181,6 +181,20 @@ pub struct Chat {
     pub created_at: String,
 }
 
+/// A chat in the sidebar's Recent list: its project's title, and when anything last happened in it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecentChat {
+    pub id: String,
+    pub project_id: Option<String>,
+    pub agent_id: AgentId,
+    pub title: String,
+    pub created_at: String,
+    pub project_title: Option<String>,
+    /// The newest message's time, or the chat's own when it has none (RFC 3339).
+    pub active_at: String,
+}
+
 /// Relative position, 0-1.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Mark {
@@ -206,6 +220,12 @@ pub enum MessagePart {
     Mention {
         project_id: String,
         title: String,
+    },
+    /// A style the user @mentioned. The app puts its prompt and notes in front of the message.
+    #[serde(rename = "style-mention")]
+    StyleMention {
+        style_id: String,
+        name: String,
     },
     File {
         path: String,
@@ -613,6 +633,14 @@ mod tests {
         let v = json!({"type":"a2ui-action","summary":"Picked: A","action":{"version":"v0.9"}});
         let part: MessagePart = serde_json::from_value(v.clone()).unwrap();
         assert!(matches!(&part, MessagePart::A2uiAction { summary, .. } if summary == "Picked: A"));
+        assert_eq!(serde_json::to_value(&part).unwrap(), v);
+    }
+
+    #[test]
+    fn message_part_style_mention_round_trips() {
+        let v = json!({"type":"style-mention","styleId":"builtin-atlas","name":"Atlas journey"});
+        let part: MessagePart = serde_json::from_value(v.clone()).unwrap();
+        assert!(matches!(&part, MessagePart::StyleMention { style_id, .. } if style_id == "builtin-atlas"));
         assert_eq!(serde_json::to_value(&part).unwrap(), v);
     }
 

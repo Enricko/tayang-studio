@@ -1,48 +1,42 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
-import type { Project } from '@tayang/shared';
+import type { RecentChat } from '@tayang/shared';
 
 vi.mock('@/lib/ipc', () => ({
-  listProjects: vi.fn(),
+  listRecentChats: vi.fn(),
 }));
 
-import { listProjects } from '@/lib/ipc';
+import { listRecentChats } from '@/lib/ipc';
 import { Sidebar } from '@/components/Sidebar';
 import { useApp } from '@/state/app';
 
-const mk = (id: string, title: string): Project => ({
+const mk = (id: string, title: string, projectTitle: string | null): RecentChat => ({
   id,
+  projectId: projectTitle ? `p-${id}` : null,
+  agentId: 'claude',
   title,
-  slug: id,
-  folder: `/tmp/${id}`,
-  kind: 'explainer',
-  format: '9:16',
-  language: 'id',
-  status: 'draft',
-  styleId: null,
-  scheduledAt: null, reviewState: 'none', postedAt: null, remindedAt: null, reviewRemindedAt: null,
-  durationSec: null,
   createdAt: '2026-11-01T00:00:00Z',
-  updatedAt: '2026-11-01T00:00:00Z',
+  projectTitle,
+  activeAt: '2026-11-01T00:00:00Z',
 });
 
 describe('Sidebar', () => {
   beforeEach(() => {
-    vi.mocked(listProjects).mockResolvedValue([
-      mk('a', 'Kenapa rupiah melemah?'),
-      mk('b', '3 cara hemat pajak UMKM'),
-      mk('c', 'Promo Kopi Senja'),
+    vi.mocked(listRecentChats).mockResolvedValue([
+      mk('a', 'chat a', 'Kenapa rupiah melemah?'),
+      mk('b', 'Ide konten minggu ini', null),
+      mk('c', 'chat c', 'Promo Kopi Senja'),
     ]);
   });
 
-  it('marks the active item, shows New chat and recent projects', async () => {
+  it('marks the active item, shows New chat and recent chats', async () => {
     render(<Sidebar active="videos" />);
     expect(screen.getByRole('link', { name: /^Videos/ })).toHaveAttribute('aria-current', 'page');
     expect(screen.getByRole('link', { name: /^Chat/ })).not.toHaveAttribute('aria-current', 'page');
     expect(screen.getByText('New chat')).toBeInTheDocument();
     expect(await screen.findByText('Kenapa rupiah melemah?')).toBeInTheDocument();
-    expect(screen.getByText('3 cara hemat pajak UMKM')).toBeInTheDocument();
+    expect(screen.getByText('Ide konten minggu ini')).toBeInTheDocument();
     expect(screen.getByText('Promo Kopi Senja')).toBeInTheDocument();
     expect(screen.getByText('Recent')).toBeInTheDocument();
   });

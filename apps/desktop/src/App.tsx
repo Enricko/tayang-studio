@@ -16,8 +16,7 @@ import { Agents } from '@/screens/Agents';
 import { Autopilot } from '@/screens/Autopilot';
 import { AutopilotWizard } from '@/screens/AutopilotWizard';
 import { Calendar } from '@/screens/Calendar';
-import { ChatNew } from '@/screens/ChatNew';
-import { ChatProject } from '@/screens/ChatProject';
+import { ChatRoute, useSoloChat } from '@/screens/ChatRoute';
 import { Plans } from '@/screens/Plans';
 import { Settings } from '@/screens/Settings';
 import { Style } from '@/screens/Style';
@@ -162,7 +161,8 @@ function resizeSidebar(width: number, max: number, live?: boolean) {
 function Shell({ route }: { route: Route }) {
   const { t } = useTranslation();
   // Only the project chat has the preview panel; the sidebar's room depends on it.
-  const fitted = useFittedLayout(route.name === 'chat');
+  const solo = useSoloChat(route.name === 'chat' ? route.chatId : null);
+  const fitted = useFittedLayout(route.name === 'chat' && !solo);
   useWindowWidthSync();
   useSidebarShortcut();
 
@@ -184,10 +184,8 @@ function Shell({ route }: { route: Route }) {
         />
       </div>
       <main className="relative min-w-0 flex-1">
-        {route.name === 'chat-new' ? (
-          <ChatNew key="chat-new" />
-        ) : route.name === 'chat' ? (
-          <ChatProject key={route.chatId} chatId={route.chatId} draft={route.draft} />
+        {route.name === 'chat-new' || route.name === 'chat' ? (
+          <ChatRoute />
         ) : route.name === 'videos' ? (
           <Videos />
         ) : route.name === 'style' ? (

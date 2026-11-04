@@ -1,16 +1,32 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Calendar, LayoutPanelLeft, MessageCircle, Palette, Plane, Plus, Smartphone, SlidersHorizontal } from 'lucide-react';
-import type { Project } from '@tayang/shared';
+import type { RecentChat } from '@tayang/shared';
 import logo from '@/assets/brand/tayang-horizontal-reversed-color.svg';
 import mark from '@/assets/brand/oyen-symbol-color.svg';
 import ditherCard from '@/assets/brand/dither-card.png';
 import { UsageBar, UsageRing } from '@/components/UsageBar';
 import { Button } from '@/components/Button';
+import { AllChats } from '@/components/AllChats';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { createChat, listChats, listProjects } from '@/lib/ipc';
+import { listRecentChats } from '@/lib/ipc';
+import { recentChats } from '@/lib/recentChats';
 import { useApp, type Route } from '@/state/app';
+import { useChat } from '@/state/chat';
+import { useJobs } from '@/state/jobs';
 import { cn } from '@/lib/utils';
+
+/** Recent shows this many; See all lists every chat. */
+const RECENT = 10;
+/** One more than Recent shows: Rust counts a project once, so an eleventh row means See all has more. */
+const RECENT_FETCH = RECENT + 1;
+
+type ChatStatus = 'working' | 'needs-you' | 'idle';
+const DOT: Record<ChatStatus, string> = {
+  working: 'animate-pulse bg-foreground motion-reduce:animate-none',
+  'needs-you': 'bg-primary',
+  idle: 'bg-[#4A4A4A]',
+};
 
 export type SidebarKey = 'chat' | 'videos' | 'style' | 'autopilot' | 'agents' | 'calendar' | 'settings';
 
@@ -90,27 +106,42 @@ export function Sidebar({ active, collapsed = false }: { active: SidebarKey; col
   const navigate = useApp((s) => s.navigate);
   const needsYou = useApp((s) => s.needsYouCount);
   const version = useApp((s) => s.projectsVersion);
-  const [recent, setRecent] = useState<Project[]>([]);
+  const openChatId = useApp((s) => (s.route.name === 'chat' ? s.route.chatId : null));
+  const streaming = useChat((s) => s.streaming);
+  const permissions = useChat((s) => s.permissions);
+  const jobs = useJobs((s) => s.jobs);
+  const [recent, setRecent] = useState<RecentChat[]>([]);
+  const [seeAll, setSeeAll] = useState(false);
+  // A chat that starts or ends a turn moves up Recent.
+  const running = Object.keys(streaming).filter((id) => streaming[id]).sort().join(' ');
 
   useEffect(() => {
     let alive = true;
-    listProjects()
-      .then((p) => alive && setRecent(p.slice(0, 3)))
+    listRecentChats(RECENT_FETCH)
+      .then((list) => alive && setRecent(recentChats(list)))
       .catch(() => alive && setRecent([]));
     return () => {
       alive = false;
     };
-  }, [version]);
+  }, [version, openChatId, running]);
 
-  // A project's chat: the latest one, or a fresh one when it has none yet.
-  const openProject = async (p: Project) => {
-    try {
-      const chats = await listChats(p.id);
-      const chat = chats[0] ?? (await createChat(p.id, useApp.getState().settings?.defaultAgent ?? 'claude', p.title));
-      navigate({ name: 'chat', chatId: chat.id });
-    } catch {
-      /* stay where we are */
-    }
+  const status = (chatId: string): ChatStatus => {
+    const waiting =
+      !!permissions[chatId]?.length || jobs.some((j) => j.chatId === chatId && (j.status === 'needs-you' || j.status === 'failed'));
+    return waiting ? 'needs-you' : streaming[chatId] ? 'working' : 'idle';
+  };
+
+  const openChat = (chat: RecentChat) => {
+    // A row this session already has may be newer than the list (an agent switch since it was read).
+    if (!useChat.getState().rows[chat.id]) useChat.getState().rememberChat(chat);
+    setSeeAll(false);
+    navigate({ name: 'chat', chatId: chat.id });
+  };
+
+  // Chat goes back to the chat New chat started while it is still running; New chat always starts fresh.
+  const goChat = () => {
+    const live = useApp.getState().newChatId;
+    navigate(live && useChat.getState().streaming[live] ? { name: 'chat', chatId: live } : { name: 'chat-new' });
   };
 
   const rail = collapsed;
@@ -155,32 +186,48 @@ export function Sidebar({ active, collapsed = false }: { active: SidebarKey; col
               active={active === n.key}
               label={t(`sidebar.${n.key}` as 'sidebar.chat')}
               icon={n.icon}
-              onClick={() => navigate(n.route)}
+              onClick={() => (n.key === 'chat' ? goChat() : navigate(n.route))}
               count={n.key === 'agents' && needsYou > 0 ? needsYou : undefined}
             />
           ))}
         </div>
 
         {!rail && (
-          <div className="mt-6 flex flex-col gap-1">
+          <div data-recent className="mt-6 flex min-h-0 flex-col gap-1 overflow-y-auto">
             <span className="px-3 pb-1 text-xs text-text-3">{t('sidebar.recent')}</span>
-            {recent.map((p, i) => (
-              <a
-                key={p.id}
-                href="#"
-                onClick={(e) => {
-                  e.preventDefault();
-                  void openProject(p);
-                }}
-                className="flex h-8 items-center gap-2 rounded-md px-3 text-[13px] text-[#D9D9D9] no-underline hover:bg-raised/50"
+            {recent.slice(0, RECENT).map((c) => {
+              const st = status(c.id);
+              return (
+                <a
+                  key={c.id}
+                  href="#"
+                  aria-current={openChatId === c.id ? 'page' : undefined}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    openChat(c);
+                  }}
+                  className={cn(
+                    'flex h-8 shrink-0 items-center gap-2 rounded-md px-3 text-[13px] text-[#D9D9D9] no-underline hover:bg-raised/50',
+                    openChatId === c.id && 'bg-raised/50',
+                  )}
+                >
+                  <span aria-hidden="true" data-status={st} className={cn('size-1.5 shrink-0 rounded-full', DOT[st])} />
+                  <span className="truncate">{c.projectTitle ?? c.title}</span>
+                  {st !== 'idle' && ' '}
+                  {st !== 'idle' && <span className="sr-only">{t(st === 'working' ? 'sidebar.working' : 'sidebar.needsYou')}</span>}
+                </a>
+              );
+            })}
+            {recent.length > RECENT && (
+              <button
+                type="button"
+                onClick={() => setSeeAll(true)}
+                className="flex h-8 shrink-0 cursor-pointer items-center rounded-md px-3 text-left text-[13px] text-text-3 hover:bg-raised/50 hover:text-foreground"
               >
-                <span
-                  aria-hidden="true"
-                  className={cn('size-1.5 shrink-0 rounded-full', i === 0 ? 'bg-primary' : 'bg-[#4A4A4A]')}
-                />
-                <span className="truncate">{p.title}</span>
-              </a>
-            ))}
+                {t('sidebar.seeAll')}
+              </button>
+            )}
+            <AllChats open={seeAll} onOpenChange={setSeeAll} onPick={openChat} />
           </div>
         )}
 

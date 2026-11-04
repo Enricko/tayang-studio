@@ -2,11 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
-import { ArrowUp, AtSign, Check, ChevronDown, File as FileIcon, Paperclip, Square, X, Zap } from 'lucide-react';
-import type { AgentId, AgentInfo, MessagePart, Project } from '@tayang/shared';
+import { ArrowUp, AtSign, Check, ChevronDown, File as FileIcon, Palette, Paperclip, Square, X, Zap } from 'lucide-react';
+import type { AgentId, AgentInfo, MessagePart, Project, Style } from '@tayang/shared';
 import { AgentLogo } from '@/components/AgentLogo';
 import { FrameChip } from '@/components/MessageList';
-import { filterProjects, MentionMenu } from '@/components/MentionMenu';
+import { filterProjects, filterStyles, MentionMenu, styleKey, videoKey } from '@/components/MentionMenu';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -21,7 +21,7 @@ import { AGENT_NAMES } from '@/lib/agents';
 import { assetUrl, attachFile, detectAgents } from '@/lib/ipc';
 import { cn } from '@/lib/utils';
 import { useApp } from '@/state/app';
-import { autoOn, useChat } from '@/state/chat';
+import { autoOn, useChat, type StyleRef } from '@/state/chat';
 
 export const QUICK_CHIPS = ['faster', 'bigger', 'colors', 'music', 'short'] as const;
 
@@ -167,6 +167,10 @@ export function Composer({
   onAgentChange,
   ensureChat,
   initialText,
+  draftKey,
+  styles,
+  styleHint,
+  autoFocus,
 }: {
   chatId: string | null;
   /** Resolve to false when sending failed: the draft is then kept. */
@@ -192,6 +196,14 @@ export function Composer({
   ensureChat?(): Promise<string>;
   /** Starts the box with this text (not sent). */
   initialText?: string;
+  /** Keeps the unsent text and style chip in the chat store under this key, so they are there when the screen comes back. */
+  draftKey?: string;
+  /** Styles the @ menu can list. Omit to leave them out. */
+  styles?: Style[];
+  /** A line under the style chip, saying what the style does here. */
+  styleHint?: string;
+  /** Takes the focus, and takes it back each time the box is enabled again (after a turn). */
+  autoFocus?: boolean;
 }) {
   const { t } = useTranslation();
   const defaultAgent = useApp((s) => s.settings?.defaultAgent ?? 'claude');
@@ -200,7 +212,11 @@ export function Composer({
   const auto = useChat((s) => autoOn(s, chatId, settingsAuto));
   const autoBusy = useChat((s) => !!chatId && !!s.autoBusy[chatId]);
   const attachments = useChat((s) => (chatId ? s.attachments[chatId] : undefined)) ?? NONE;
-  const [text, setText] = useState(initialText ?? '');
+  const [text, setText] = useState(() => initialText ?? (draftKey ? useChat.getState().drafts[draftKey]?.text : undefined) ?? '');
+  const [styleRef, setStyleRef] = useState<StyleRef | null>(() => (draftKey ? useChat.getState().drafts[draftKey]?.style : null) ?? null);
+  useEffect(() => {
+    if (draftKey) useChat.getState().setDraft(draftKey, { text, style: styleRef });
+  }, [draftKey, text, styleRef]);
   const [dismissed, setDismissed] = useState<string | null>(null);
   const [active, setActive] = useState('');
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -270,6 +286,9 @@ export function Composer({
       off?.();
     };
   }, []);
+  useEffect(() => {
+    if (autoFocus && !disabled) ref.current?.focus();
+  }, [autoFocus, disabled]);
   const disabledRef = useRef(disabled);
   disabledRef.current = disabled;
 
@@ -281,10 +300,15 @@ export function Composer({
     }
   }, [mentionSignal]);
 
-  const token = projects ? TOKEN.exec(text) : null;
-  const matches = token && projects ? filterProjects(projects, token[2] ?? '') : [];
+  const mentions = !!projects || !!styles;
+  const token = mentions ? TOKEN.exec(text) : null;
+  const query = token?.[2] ?? '';
+  const videoMatches = token && projects ? filterProjects(projects, query) : undefined;
+  const styleMatches = token && styles ? filterStyles(styles, query) : undefined;
+  // One list across both groups, in the order the menu shows them.
+  const items = [...(videoMatches ?? []).map(videoKey), ...(styleMatches ?? []).map(styleKey)];
   const open = !!token && dismissed !== text;
-  const current = matches.find((p) => p.id === active) ?? matches[0];
+  const current = items.includes(active) ? active : items[0];
 
   const pick = (p: Project) => {
     onMention?.({ projectId: p.id, title: p.title });
@@ -292,38 +316,58 @@ export function Composer({
     ref.current?.focus();
   };
 
-  const canSend = !disabled && (text.trim().length > 0 || !!mention || attachments.length > 0);
+  const pickStyle = (s: Style) => {
+    setStyleRef({ styleId: s.id, name: s.name });
+    setText((t) => t.replace(TOKEN, '$1'));
+    ref.current?.focus();
+  };
+
+  const pickKey = (key: string) => {
+    const p = videoMatches?.find((x) => videoKey(x) === key);
+    if (p) return pick(p);
+    const s = styleMatches?.find((x) => styleKey(x) === key);
+    if (s) pickStyle(s);
+  };
+
+  const canSend = !disabled && (text.trim().length > 0 || !!mention || !!styleRef || attachments.length > 0);
   const sending = useRef(false);
   const send = async () => {
     if (!canSend || sending.current) return;
     const parts: MessagePart[] = [];
     if (text.trim()) parts.push({ type: 'text', text: text.trim() });
     if (mention) parts.push({ type: 'mention', ...mention });
+    if (styleRef) parts.push({ type: 'style-mention', ...styleRef });
     sending.current = true;
     const draft = text;
+    const draftStyle = styleRef;
     setText('');
+    setStyleRef(null);
+    const giveBack = () => {
+      setText((t) => t || draft);
+      setStyleRef((s) => s ?? draftStyle);
+    };
     try {
       // The prompt may run for the whole turn, so clear now and give the draft back on failure.
-      if ((await onSend(parts)) === false) setText((t) => t || draft);
+      if ((await onSend(parts)) === false) giveBack();
     } catch {
-      setText((t) => t || draft);
+      giveBack();
     } finally {
       sending.current = false;
     }
   };
 
   const onKeyDown = (e: React.KeyboardEvent) => {
-    if (open && matches.length > 0) {
-      const i = Math.max(0, matches.findIndex((p) => p.id === current?.id));
+    if (open && items.length > 0) {
+      const i = Math.max(0, items.indexOf(current ?? ''));
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault();
-        const n = matches.length;
-        setActive(matches[(i + (e.key === 'ArrowDown' ? 1 : n - 1)) % n]!.id);
+        const n = items.length;
+        setActive(items[(i + (e.key === 'ArrowDown' ? 1 : n - 1)) % n]!);
         return;
       }
       if (e.key === 'Enter') {
         e.preventDefault();
-        if (current) pick(current);
+        if (current) pickKey(current);
         return;
       }
     }
@@ -368,7 +412,7 @@ export function Composer({
                 {attachError}
               </p>
             )}
-            {(mention || attachments.length > 0) && (
+            {(mention || styleRef || attachments.length > 0) && (
               <div className="flex flex-wrap gap-2">
                 {mention && (
                   <span className="inline-flex h-6 items-center gap-1 rounded-sm border border-deep-orange bg-tint pl-2 pr-1 text-[13px] font-medium text-orange-light">
@@ -378,6 +422,20 @@ export function Composer({
                       aria-label={t('composer.removeVideo')}
                       onClick={() => onMention?.(null)}
                       className="inline-flex size-4 cursor-pointer items-center justify-center border-none bg-transparent p-0 text-orange-light"
+                    >
+                      <X size={12} strokeWidth={1.5} aria-hidden="true" />
+                    </button>
+                  </span>
+                )}
+                {styleRef && (
+                  <span className="inline-flex h-6 items-center gap-1 rounded-sm border border-hairline bg-raised pl-2 pr-1 text-[13px] font-medium text-foreground">
+                    <Palette size={12} strokeWidth={1.5} aria-hidden="true" className="text-text-2" />
+                    <span>@{styleRef.name}</span>
+                    <button
+                      type="button"
+                      aria-label={t('composer.removeStyle', { name: styleRef.name })}
+                      onClick={() => setStyleRef(null)}
+                      className="inline-flex size-4 cursor-pointer items-center justify-center border-none bg-transparent p-0 text-text-2"
                     >
                       <X size={12} strokeWidth={1.5} aria-hidden="true" />
                     </button>
@@ -402,6 +460,7 @@ export function Composer({
                 )}
               </div>
             )}
+            {styleRef && styleHint && <p className="m-0 -mt-1 text-xs text-text-3">{styleHint}</p>}
             <label htmlFor="composer-message" className="sr-only">
               {t('composer.message')}
             </label>
@@ -459,7 +518,7 @@ export function Composer({
                   </button>
                 </Tip>
               )}
-              {projects && (
+              {mentions && (
                 <Tip label={t('composer.mention')}>
                   <button
                     type="button"
@@ -509,10 +568,13 @@ export function Composer({
           onCloseAutoFocus={(e) => e.preventDefault()}
         >
           <MentionMenu
-            projects={matches}
-            value={current?.id ?? ''}
+            projects={videoMatches}
+            styles={styleMatches}
+            query={query}
+            value={current ?? ''}
             onValueChange={setActive}
             onPick={pick}
+            onPickStyle={pickStyle}
           />
         </PopoverContent>
       </Popover>

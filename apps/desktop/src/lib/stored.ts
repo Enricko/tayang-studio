@@ -28,6 +28,7 @@ export const STORED_KEYS = [
   'chat.templateFilesMissing',
   'chat.settingTemplate',
   'chat.templateFailed',
+  'chat.topicStarted',
   'autopilot.slot.stopped',
   'autopilot.slot.noTopic',
   'autopilot.slot.noRender',

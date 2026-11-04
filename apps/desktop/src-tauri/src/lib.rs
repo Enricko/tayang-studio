@@ -104,6 +104,7 @@ pub fn run() {
             commands::upsert_slot,
             commands::update_slot,
             commands::list_chats,
+            commands::list_recent_chats,
             commands::get_chat,
             commands::create_chat,
             commands::update_chat_agent,

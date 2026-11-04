@@ -47,7 +47,7 @@ import { applyMessages, emptySurfaces } from '@/a2ui/surface';
 import { createTopicProject, ideasFromReply, startTopic } from '@/lib/topics';
 import { MessageList } from '@/components/MessageList';
 import { Calendar } from '@/screens/Calendar';
-import { ChatNew } from '@/screens/ChatNew';
+import { ChatRoute } from '@/screens/ChatRoute';
 import { useApp } from '@/state/app';
 import { useChat } from '@/state/chat';
 
@@ -117,7 +117,7 @@ const reply = (styleId: string) =>
 const emit = (update: AgentUpdate) => updateHandlers.forEach((h) => h({ chatId: 'chat-1', update }));
 
 async function askTopics(text: string) {
-  render(<ChatNew />);
+  render(<ChatRoute />);
   await userEvent.click(screen.getByRole('button', { name: /From a topic/ }));
   await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
   await act(async () => {
@@ -307,7 +307,7 @@ describe('ideasFromReply limits and the json block in MessageList', () => {
 
 describe('topic ideas in a new chat', () => {
   it('asks with the motion-only rules and the synced styles', async () => {
-    render(<ChatNew />);
+    render(<ChatRoute />);
     await userEvent.click(screen.getByRole('button', { name: /From a topic/ }));
     await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
     const sent = JSON.stringify(vi.mocked(ipc.agentPrompt).mock.calls[0]![1]);

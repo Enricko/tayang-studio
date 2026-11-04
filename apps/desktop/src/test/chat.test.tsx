@@ -56,7 +56,7 @@ vi.mock('@/lib/events', () => ({
 
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import * as ipc from '@/lib/ipc';
-import { ChatNew } from '@/screens/ChatNew';
+import { ChatRoute } from '@/screens/ChatRoute';
 import { ChatProject } from '@/screens/ChatProject';
 import { setUiLanguage } from '@/i18n';
 import { useApp } from '@/state/app';
@@ -153,7 +153,7 @@ beforeEach(() => {
 
 describe('ChatNew', () => {
   it('centres with my-auto, not justify-center, so an overflowing conversation keeps its top reachable', () => {
-    const { container } = render(<ChatNew />);
+    const { container } = render(<ChatRoute />);
     const scroller = container.querySelector('.no-scrollbar')!;
     expect(scroller.className).not.toContain('justify-center');
     expect(scroller.firstElementChild!.className).toContain('my-auto');
@@ -161,7 +161,7 @@ describe('ChatNew', () => {
 
   it('shows project titles after typing @ and inserts a chip on Enter', async () => {
     const user = userEvent.setup();
-    render(<ChatNew />);
+    render(<ChatRoute />);
     expect(await screen.findByText('No video attached')).toBeInTheDocument();
     await user.type(screen.getByRole('textbox', { name: 'Message' }), 'Bikin versi 15 detik dari @');
     const list = await screen.findByRole('listbox');
@@ -174,7 +174,7 @@ describe('ChatNew', () => {
 
   it('sends without a mention part and without any project info', async () => {
     const user = userEvent.setup();
-    render(<ChatNew />);
+    render(<ChatRoute />);
     await user.type(await screen.findByRole('textbox', { name: 'Message' }), 'halo');
     await user.click(screen.getByRole('button', { name: 'Send' }));
     await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
@@ -187,7 +187,7 @@ describe('ChatNew', () => {
 
   it('sends the project folder and brief when a video is mentioned', async () => {
     const user = userEvent.setup();
-    render(<ChatNew />);
+    render(<ChatRoute />);
     await user.type(await screen.findByRole('textbox', { name: 'Message' }), 'remix @');
     await user.keyboard('{Enter}');
     await user.click(screen.getByRole('button', { name: 'Send' }));
@@ -205,7 +205,7 @@ describe('ChatNew topic ideas', () => {
     const user = userEvent.setup();
     vi.mocked(ipc.createProject).mockResolvedValue(mk('p9', 'Ide satu'));
     vi.mocked(ipc.createChat).mockResolvedValueOnce(chat('c-new', null)).mockResolvedValueOnce(chat('c9', 'p9'));
-    render(<ChatNew />);
+    render(<ChatRoute />);
     await user.click(await screen.findByRole('button', { name: /From a topic/ }));
     await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
     await emit('c-new', {
@@ -243,7 +243,7 @@ describe('ChatNew template style', () => {
     vi.mocked(ipc.createProject).mockResolvedValue({ ...mk('p9', 'Ide satu'), styleId: template.id });
     vi.mocked(ipc.createChat).mockResolvedValueOnce(chat('c-new', null)).mockResolvedValueOnce(chat('c9', 'p9'));
     useApp.setState({ route: { name: 'chat-new', styleId: template.id } });
-    render(<ChatNew />);
+    render(<ChatRoute />);
     await user.click(await screen.findByRole('button', { name: /From a topic/ }));
     await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
     await emit('c-new', {
@@ -294,7 +294,7 @@ describe('ChatNew template style', () => {
     const user = userEvent.setup();
     vi.mocked(ipc.listStyles).mockResolvedValue([]);
     vi.mocked(ipc.createProject).mockRejectedValue(new Error('disk full'));
-    render(<ChatNew />);
+    render(<ChatRoute />);
     await user.click(await screen.findByRole('button', { name: /From a topic/ }));
     await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
     await emit('c-new', { kind: 'text', text: '```json\n[{"title":"Ide satu","kind":"explainer","lengthSec":30}]\n```' });
@@ -349,7 +349,7 @@ describe('ChatNew template chip and fallbacks', () => {
     const user = userEvent.setup();
     vi.mocked(ipc.listStyles).mockResolvedValue([template]);
     useApp.setState({ route: { name: 'chat-new', styleId: template.id } });
-    render(<ChatNew />);
+    render(<ChatRoute />);
     const chip = await screen.findByText('Starting from the Atlas journey template');
     expect(chip.closest('[title]')).toHaveAttribute('title', 'Pick a topic to start from this template');
     await user.click(screen.getByRole('button', { name: 'Remove the Atlas journey template' }));
@@ -365,7 +365,7 @@ describe('ChatNew template chip and fallbacks', () => {
     vi.mocked(ipc.listStyles).mockResolvedValue([template]);
     vi.mocked(ipc.installStyleTemplate).mockResolvedValue({ installed: false });
     useApp.setState({ route: { name: 'chat-new', styleId: template.id } });
-    render(<ChatNew />);
+    render(<ChatRoute />);
     await topic(user);
     await waitFor(() => expect(ipc.writeBrief).toHaveBeenCalledWith('p9', expect.not.stringContaining('This project starts from')));
     expect(ipc.addMessage).toHaveBeenCalledWith('c9', 'system', [
@@ -377,7 +377,7 @@ describe('ChatNew template chip and fallbacks', () => {
     const user = userEvent.setup();
     vi.mocked(ipc.listStyles).mockRejectedValue(new Error('db locked'));
     useApp.setState({ route: { name: 'chat-new', styleId: template.id } });
-    render(<ChatNew />);
+    render(<ChatRoute />);
     await topic(user);
     await waitFor(() =>
       expect(ipc.addMessage).toHaveBeenCalledWith('c9', 'system', [
@@ -489,7 +489,7 @@ describe('ChatProject', () => {
 
   it('a new-chat Auto choice does not leak into other chats, and moves to the chat it creates', async () => {
     const user = userEvent.setup();
-    const { unmount } = render(<ChatNew />);
+    const { unmount } = render(<ChatRoute />);
     await user.click(await screen.findByRole('button', { name: 'Auto' }));
     expect(screen.getByRole('button', { name: 'Auto' })).toHaveAttribute('aria-pressed', 'true');
     await user.type(screen.getByRole('textbox', { name: 'Message' }), 'halo');
@@ -504,7 +504,7 @@ describe('ChatProject', () => {
 
   it('an unsent New chat toggle is dropped when the screen closes', async () => {
     const user = userEvent.setup();
-    const { unmount } = render(<ChatNew />);
+    const { unmount } = render(<ChatRoute />);
     await user.click(await screen.findByRole('button', { name: 'Auto' }));
     expect(useChat.getState().pendingAuto).toBe(true);
     unmount();
@@ -574,7 +574,7 @@ describe('ChatProject', () => {
 
   it('the composer toolbar is icon-only, 32px buttons with labels and tooltips', async () => {
     const user = userEvent.setup();
-    render(<ChatNew />);
+    render(<ChatRoute />);
     const agent = await screen.findByRole('button', { name: 'Agent: Claude Code' });
     const auto = screen.getByRole('button', { name: 'Auto' });
     const mention = screen.getByRole('button', { name: '@ Mention a video' });
@@ -597,14 +597,14 @@ describe('ChatProject', () => {
   ] as const)('hovering %s shows the tooltip %s', async (name, tip, autoMode) => {
     const user = userEvent.setup();
     useApp.setState({ settings: { ...settings, autoMode } });
-    render(<ChatNew />);
+    render(<ChatRoute />);
     await user.hover(await screen.findByRole('button', { name }));
     expect(await screen.findByRole('tooltip')).toHaveTextContent(tip);
   });
 
   it('the toolbar labels speak Indonesian', async () => {
     setUiLanguage('id');
-    render(<ChatNew />);
+    render(<ChatRoute />);
     expect(await screen.findByRole('button', { name: 'Agen: Claude Code' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Otomatis' })).toBeInTheDocument();
   });
@@ -1069,7 +1069,7 @@ describe('chat failure handling', () => {
   it('shows an inline error and keeps the draft and mention when the first send fails', async () => {
     const user = userEvent.setup();
     vi.mocked(ipc.createChat).mockRejectedValue(new Error('disk full'));
-    render(<ChatNew />);
+    render(<ChatRoute />);
     const box = await screen.findByRole('textbox', { name: 'Message' });
     await user.type(box, 'remix @');
     await user.keyboard('{Enter}');
@@ -1083,7 +1083,7 @@ describe('chat failure handling', () => {
 
   it('does not send on Enter when the @ menu has no matches', async () => {
     const user = userEvent.setup();
-    render(<ChatNew />);
+    render(<ChatRoute />);
     await user.type(await screen.findByRole('textbox', { name: 'Message' }), '@zzzz');
     await user.keyboard('{Enter}');
     expect(ipc.createChat).not.toHaveBeenCalled();
@@ -1151,7 +1151,7 @@ describe('Composer attachments', () => {
     const user = userEvent.setup();
     vi.mocked(openDialog).mockResolvedValue(['/Users/me/brief.pdf']);
     vi.mocked(ipc.attachFile).mockResolvedValue(doc);
-    render(<ChatNew />);
+    render(<ChatRoute />);
     await user.click(await screen.findByRole('button', { name: 'Attach files' }));
     expect(await screen.findByText('brief.pdf')).toBeInTheDocument();
     expect(ipc.attachFile).toHaveBeenCalledWith('c-new', '/Users/me/brief.pdf');
@@ -1192,7 +1192,7 @@ describe('Agent picker', () => {
 
   it('a chat without a project: the switch line does not mention project files', async () => {
     const user = userEvent.setup();
-    render(<ChatNew />);
+    render(<ChatRoute />);
     await user.type(await screen.findByRole('textbox', { name: 'Message' }), 'hello');
     await user.click(screen.getByRole('button', { name: 'Send' }));
     await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
@@ -1221,7 +1221,7 @@ describe('Agent picker', () => {
 
   it('new chat: the pick decides the agent the chat is created and started with', async () => {
     const user = userEvent.setup();
-    render(<ChatNew />);
+    render(<ChatRoute />);
     await user.click(await screen.findByRole('button', { name: /Claude Code/ }));
     await user.click(await screen.findByRole('menuitem', { name: /Gemini CLI/ }));
     await user.type(screen.getByRole('textbox', { name: 'Message' }), 'hello');

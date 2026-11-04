@@ -5,6 +5,7 @@ import type { Settings } from '@tayang/shared';
 
 vi.mock('@/lib/ipc', () => ({
   listProjects: vi.fn().mockResolvedValue([]),
+  listRecentChats: vi.fn().mockResolvedValue([]),
   updateSettings: vi.fn(),
   detectAgents: vi.fn().mockResolvedValue([]),
   getSystemInfo: vi.fn().mockResolvedValue({ os: 'macos', osVersion: '15', packageManager: 'brew' }),

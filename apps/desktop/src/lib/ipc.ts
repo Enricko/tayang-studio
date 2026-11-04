@@ -15,6 +15,7 @@ import type {
   NewProject,
   Project,
   ProjectStatus,
+  RecentChat,
   Settings,
   SlotPatch,
   Style,
@@ -76,7 +77,9 @@ export const updateSlot = (id: string, patch: SlotPatch) => invoke<AutopilotSlot
 // ---- chats ----
 export const listChats = (projectId?: string) =>
   invoke<Chat[]>('list_chats', { projectId: projectId ?? null });
-export const getChat = (chatId: string) => invoke<Chat | null>('get_chat', { chatId });
+/** Chats with and without a project, newest activity first; all of them without a limit. */
+export const listRecentChats = (limit?: number) => invoke<RecentChat[]>('list_recent_chats', { limit: limit ?? null });
+export const getChat =(chatId: string) => invoke<Chat | null>('get_chat', { chatId });
 export const createChat = (projectId: string | null, agentId: AgentId, title: string) =>
   invoke<Chat>('create_chat', { projectId, agentId, title });
 export const updateChatAgent = (chatId: string, agentId: AgentId) =>
