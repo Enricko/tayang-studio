@@ -50,7 +50,8 @@ CREATE TABLE IF NOT EXISTS messages (
 CREATE INDEX IF NOT EXISTS messages_chat ON messages(chat_id);
 CREATE TABLE IF NOT EXISTS styles (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, source TEXT NOT NULL, source_url TEXT,
-  notes TEXT NOT NULL, prompt TEXT NOT NULL, created_at TEXT NOT NULL
+  notes TEXT NOT NULL, prompt TEXT NOT NULL, created_at TEXT NOT NULL,
+  engine TEXT, preview_url TEXT, template TEXT, version INTEGER
 );
 CREATE TABLE IF NOT EXISTS jobs (
   id TEXT PRIMARY KEY, kind TEXT NOT NULL, title TEXT NOT NULL, project_id TEXT, chat_id TEXT,
@@ -74,6 +75,12 @@ const JOB_KEYS: [&str; 10] = [
     "id", "kind", "title", "projectId", "chatId", "agentId", "status", "progress", "note",
     "updatedAt",
 ];
+
+pub const DEFAULT_API_URL: &str = "https://api.tayang.app";
+
+/// Ids of the hard-coded built-ins older versions seeded; they now come from the API.
+const LEGACY_BUILTIN_IDS: [&str; 3] =
+    ["builtin-bold-explainer", "builtin-kinetic-quote", "builtin-news-recap"];
 
 pub fn now() -> String {
     chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
@@ -157,9 +164,8 @@ impl Db {
 
     fn init(conn: Connection) -> Result<Db> {
         conn.execute_batch(SCHEMA)?;
-        let db = Db { conn: Mutex::new(conn), home: Mutex::new(Default::default()) };
-        db.seed_styles()?;
-        Ok(db)
+        Self::migrate_styles(&conn)?;
+        Ok(Db { conn: Mutex::new(conn), home: Mutex::new(Default::default()) })
     }
 
     fn conn(&self) -> std::sync::MutexGuard<'_, Connection> {
@@ -177,6 +183,7 @@ impl Db {
             "format": "9:16",
             "fps": 30,
             "onboarded": false,
+            "apiUrl": DEFAULT_API_URL,
         })
     }
 
@@ -376,23 +383,76 @@ impl Db {
 
     // ---- styles ----
 
-    fn seed_styles(&self) -> Result<()> {
-        let conn = self.conn();
-        for s in builtin_styles() {
-            conn.execute(
-                "INSERT OR IGNORE INTO styles (id, name, source, source_url, notes, prompt, created_at) \
-                 VALUES (?1,?2,'builtin',NULL,?3,?4,?5)",
-                rusqlite::params![s.id, s.name, serde_json::to_string(&s.notes)?, s.prompt, s.created_at],
-            )?;
+    /// Adds the API-backed columns to databases created before them and drops the old
+    /// hard-coded built-ins (the API owns built-ins now).
+    fn migrate_styles(conn: &Connection) -> Result<()> {
+        let mut have: Vec<String> = Vec::new();
+        {
+            let mut stmt = conn.prepare("PRAGMA table_info(styles)")?;
+            let rows = stmt.query_map([], |r| r.get::<_, String>(1))?;
+            for r in rows {
+                have.push(r?);
+            }
+        }
+        for (col, ty) in
+            [("engine", "TEXT"), ("preview_url", "TEXT"), ("template", "TEXT"), ("version", "INTEGER")]
+        {
+            if !have.iter().any(|c| c == col) {
+                conn.execute_batch(&format!("ALTER TABLE styles ADD COLUMN {col} {ty}"))?;
+            }
+        }
+        for id in LEGACY_BUILTIN_IDS {
+            conn.execute("DELETE FROM styles WHERE id = ?1 AND source = 'builtin'", [id])?;
         }
         Ok(())
+    }
+
+    /// Replaces every built-in style with `styles` (API order is kept, styles the API no
+    /// longer lists are deleted). Copied and own styles are untouched.
+    pub fn replace_builtin_styles(&self, styles: &[Style]) -> Result<()> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        tx.execute("DELETE FROM styles WHERE source = 'builtin'", [])?;
+        for s in styles {
+            let engine = match s.engine {
+                Some(e) => serde_json::to_value(e)?.as_str().map(str::to_string),
+                None => None,
+            };
+            let template = match &s.template {
+                Some(t) => Some(serde_json::to_string(t)?),
+                None => None,
+            };
+            tx.execute(
+                "INSERT OR REPLACE INTO styles (id, name, source, source_url, notes, prompt, created_at, \
+                 engine, preview_url, template, version) VALUES (?1,?2,'builtin',NULL,?3,?4,?5,?6,?7,?8,?9)",
+                rusqlite::params![
+                    s.id,
+                    s.name,
+                    serde_json::to_string(&s.notes)?,
+                    s.prompt,
+                    s.created_at,
+                    engine,
+                    s.preview_url,
+                    template,
+                    s.version
+                ],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn get_style(&self, id: &str) -> Result<Option<Style>> {
+        Ok(self.list_styles()?.into_iter().find(|s| s.id == id))
     }
 
     pub fn list_styles(&self) -> Result<Vec<Style>> {
         let conn = self.conn();
         let mut stmt = conn.prepare(
-            "SELECT id, name, source, source_url AS sourceUrl, notes, prompt, created_at AS createdAt \
-             FROM styles ORDER BY created_at, rowid",
+            "SELECT id, name, source, source_url AS sourceUrl, notes, prompt, created_at AS createdAt, \
+             engine, preview_url AS previewUrl, template, version FROM styles \
+             ORDER BY CASE source WHEN 'builtin' THEN 0 ELSE 1 END, \
+             CASE source WHEN 'builtin' THEN rowid END, created_at, rowid",
         )?;
         let names: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();
         let rows = stmt.query_map([], |row| {
@@ -407,6 +467,9 @@ impl Db {
             let mut v = row?;
             let notes: Value = serde_json::from_str(v["notes"].as_str().unwrap_or("{}"))?;
             v["notes"] = notes;
+            if let Some(t) = v["template"].as_str().map(str::to_string) {
+                v["template"] = serde_json::from_str(&t)?;
+            }
             out.push(serde_json::from_value(v)?);
         }
         Ok(out)
@@ -483,62 +546,11 @@ impl Db {
     }
 }
 
-/// Rust copy of `packages/skills/src/builtinStyles.ts`; keep the two in sync.
-fn builtin_styles() -> Vec<Style> {
-    use StyleAspect::*;
-    let style = |id: &str, name: &str, notes: [(StyleAspect, &str); 5], prompt: &str| Style {
-        id: id.into(),
-        name: name.into(),
-        source: StyleSource::Builtin,
-        source_url: None,
-        notes: notes.into_iter().map(|(a, t)| (a, t.to_string())).collect(),
-        prompt: prompt.into(),
-        created_at: "2026-11-04T00:00:00Z".into(),
-    };
-    vec![
-        style(
-            "builtin-bold-explainer",
-            "Bold explainer",
-            [
-                (Camera, "Static frame, elements slide in from the bottom"),
-                (Pacing, "New scene every 4–8s, words land on the voice"),
-                (Type, "Heavy sans, one highlighted word per line"),
-                (Color, "Navy, white, one yellow highlight"),
-                (Captions, "Word by word, center low"),
-            ],
-            "Navy background, white heavy sans.\nHighlight one key word per line in yellow.\nAnimate elements up 24px with ease-out, 300ms.\nCaptions word by word, centered low.",
-        ),
-        style(
-            "builtin-kinetic-quote",
-            "Kinetic quote",
-            [
-                (Camera, "Slow push in, 100% to 106% over the clip"),
-                (Pacing, "One word every 0.3s, hold 1s at the end"),
-                (Type, "Huge sans, stacked words"),
-                (Color, "Orange ground, ink text"),
-                (Captions, "The words are the captions"),
-            ],
-            "One short line, stacked one word per row.\nEach word pops in at 0.3s intervals.\nSlow push in from 100% to 106%.\nHold the full line for 1s.",
-        ),
-        style(
-            "builtin-news-recap",
-            "News recap",
-            [
-                (Camera, "Static, lower third slides in"),
-                (Pacing, "One story per 8s"),
-                (Type, "Medium sans, numbered stories"),
-                (Color, "Light paper, navy text, red tag"),
-                (Captions, "Full line, bottom"),
-            ],
-            "Light background, navy text.\nNumber each story 1–3 with a small red tag.\nLower third slides in from the left, 250ms.\nOne story per 8 seconds.",
-        ),
-    ]
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::collections::BTreeMap;
     use std::path::PathBuf;
 
     fn db() -> Db {
@@ -571,6 +583,7 @@ mod tests {
         assert_eq!(s.working_folder, home.join("Tayang").to_string_lossy());
         assert_eq!(s.default_agent, AgentId::Claude);
         assert!(s.frame_check && !s.onboarded);
+        assert_eq!(s.api_url, "https://api.tayang.app");
         assert_eq!((s.language, s.format, s.fps), (VideoLanguage::Id, VideoFormat::Portrait, 30));
 
         let u = db.update_settings(json!({"fps": 60, "onboarded": true, "defaultAgent": "gemini"})).unwrap();
@@ -648,42 +661,77 @@ mod tests {
         assert_eq!(got[0].parts[1], frame);
     }
 
-    #[test]
-    fn builtin_styles_seeded_once_and_protected() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("tayang.db");
-        drop(Db::open(&path).unwrap());
-        let db = Db::open(&path).unwrap();
-        let styles = db.list_styles().unwrap();
-        assert_eq!(styles.len(), 3);
-        let ids: Vec<_> = styles.iter().map(|s| s.id.as_str()).collect();
-        assert_eq!(ids, ["builtin-bold-explainer", "builtin-kinetic-quote", "builtin-news-recap"]);
-        assert_eq!(styles[0].name, "Bold explainer");
-        assert_eq!(
-            styles[0].prompt,
-            "Navy background, white heavy sans.\nHighlight one key word per line in yellow.\nAnimate elements up 24px with ease-out, 300ms.\nCaptions word by word, centered low."
-        );
-        assert_eq!(
-            styles[0].notes[&StyleAspect::Pacing],
-            "New scene every 4–8s, words land on the voice"
-        );
-        assert_eq!(styles[1].created_at, "2026-11-04T00:00:00Z");
-        assert!(db.delete_style("builtin-news-recap").is_err());
-        assert_eq!(db.list_styles().unwrap().len(), 3);
-
-        let mine = Style {
-            id: "s1".into(),
-            name: "Mine".into(),
-            source: StyleSource::Mine,
+    fn builtin(id: &str, template: bool) -> Style {
+        Style {
+            id: id.into(),
+            name: id.into(),
+            source: StyleSource::Builtin,
             source_url: None,
-            notes: [(StyleAspect::Camera, "static".to_string())].into(),
+            notes: BTreeMap::new(),
             prompt: "p".into(),
-            created_at: "2026-11-05T00:00:00Z".into(),
+            created_at: "2026-11-04T00:00:00Z".into(),
+            engine: Some(StyleEngine::Remotion),
+            preview_url: Some(format!("https://api/v1/styles/{id}/preview")),
+            template: template
+                .then(|| StyleTemplate { sha256: "ab".repeat(32), size: 10, version: 2 }),
+            version: Some(2),
+        }
+    }
+
+    #[test]
+    fn no_builtins_without_sync_and_user_styles_work() {
+        let db = db();
+        assert!(db.list_styles().unwrap().is_empty());
+        let mine = Style {
+            source: StyleSource::Mine,
+            engine: None,
+            preview_url: None,
+            template: None,
+            version: None,
+            ..builtin("s1", false)
         };
         db.save_style(&mine).unwrap();
-        assert_eq!(db.list_styles().unwrap().len(), 4);
+        assert_eq!(db.list_styles().unwrap(), vec![mine.clone()]);
         db.delete_style("s1").unwrap();
-        assert_eq!(db.list_styles().unwrap().len(), 3);
+        assert!(db.list_styles().unwrap().is_empty());
+    }
+
+    #[test]
+    fn replace_builtins_upserts_orders_and_deletes_stale() {
+        let db = db();
+        let mine = Style { source: StyleSource::Mine, ..builtin("mine", false) };
+        db.save_style(&mine).unwrap();
+        db.replace_builtin_styles(&[builtin("b", true), builtin("a", false)]).unwrap();
+        let ids = |db: &Db| db.list_styles().unwrap().into_iter().map(|s| s.id).collect::<Vec<_>>();
+        assert_eq!(ids(&db), ["b", "a", "mine"]);
+        assert_eq!(db.get_style("b").unwrap().unwrap().template.unwrap().size, 10);
+        // "a" disappears from the API, "c" is new.
+        db.replace_builtin_styles(&[builtin("b", true), builtin("c", true)]).unwrap();
+        assert_eq!(ids(&db), ["b", "c", "mine"]);
+        assert!(db.delete_style("b").is_err(), "built-ins stay read-only");
+    }
+
+    #[test]
+    fn migration_adds_columns_and_drops_legacy_builtins() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("tayang.db");
+        {
+            let c = Connection::open(&path).unwrap();
+            c.execute_batch(
+                "CREATE TABLE styles (id TEXT PRIMARY KEY, name TEXT NOT NULL, source TEXT NOT NULL, \
+                 source_url TEXT, notes TEXT NOT NULL, prompt TEXT NOT NULL, created_at TEXT NOT NULL);
+                 INSERT INTO styles VALUES ('builtin-bold-explainer','x','builtin',NULL,'{}','p','t');
+                 INSERT INTO styles VALUES ('keep','y','mine',NULL,'{}','p','t');",
+            )
+            .unwrap();
+        }
+        let db = Db::open(&path).unwrap();
+        let styles = db.list_styles().unwrap();
+        assert_eq!(styles.len(), 1);
+        assert_eq!(styles[0].id, "keep");
+        assert_eq!(styles[0].template, None);
+        drop(db);
+        assert_eq!(Db::open(&path).unwrap().list_styles().unwrap().len(), 1);
     }
 
     #[test]

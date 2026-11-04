@@ -248,6 +248,37 @@ pub struct Style {
     pub notes: BTreeMap<StyleAspect, String>,
     pub prompt: String,
     pub created_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub engine: Option<StyleEngine>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preview_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub template: Option<StyleTemplate>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<u32>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum StyleEngine {
+    Hyperframes,
+    Remotion,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StyleTemplate {
+    pub sha256: String,
+    pub size: u64,
+    pub version: u32,
+}
+
+/// Result of `sync_styles`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StylesSync {
+    pub styles: Vec<Style>,
+    pub offline: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -295,6 +326,7 @@ pub struct Settings {
     pub format: VideoFormat,
     pub fps: u32,
     pub onboarded: bool,
+    pub api_url: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
