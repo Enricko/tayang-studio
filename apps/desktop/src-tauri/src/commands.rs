@@ -230,6 +230,43 @@ pub fn approve_project(state: State<'_, AppState>, project_id: String) -> CmdRes
     approve(&state.db, &project_id)
 }
 
+// ---- autopilots ----
+
+#[tauri::command]
+pub fn list_autopilots(state: State<'_, AppState>) -> CmdResult<Vec<Autopilot>> {
+    state.db.list_autopilots().map_err(err)
+}
+
+#[tauri::command]
+pub fn save_autopilot(state: State<'_, AppState>, input: AutopilotInput) -> CmdResult<Autopilot> {
+    state.db.save_autopilot(&input).map_err(err)
+}
+
+#[tauri::command]
+pub fn delete_autopilot(state: State<'_, AppState>, id: String) -> CmdResult<()> {
+    state.db.delete_autopilot(&id).map_err(err)
+}
+
+#[tauri::command]
+pub fn set_autopilot_status(state: State<'_, AppState>, id: String, status: AutopilotStatus) -> CmdResult<Autopilot> {
+    state.db.set_autopilot_status(&id, status).map_err(err)
+}
+
+#[tauri::command]
+pub fn list_slots(state: State<'_, AppState>, from: String, to: String) -> CmdResult<Vec<AutopilotSlot>> {
+    state.db.list_slots(&from, &to).map_err(err)
+}
+
+#[tauri::command]
+pub fn upsert_slot(state: State<'_, AppState>, autopilot_id: String, due_at: String) -> CmdResult<AutopilotSlot> {
+    state.db.upsert_slot(&autopilot_id, &due_at).map_err(err)
+}
+
+#[tauri::command]
+pub fn update_slot(state: State<'_, AppState>, id: String, patch: serde_json::Value) -> CmdResult<AutopilotSlot> {
+    state.db.update_slot(&id, patch).map_err(err)
+}
+
 // ---- chats ----
 
 #[tauri::command]
