@@ -34,8 +34,17 @@ tauri-plugin-single-instance = "=2.5.5"
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
+# Sign-in token storage in the OS keychain. Pinned; each OS uses its native store. Linux talks to the
+# Secret Service over pure-Rust D-Bus (zbus) with pure-Rust crypto: no libdbus, no OpenSSL.
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "=3.6.3", features = ["apple-native"] }
+
 [target.'cfg(windows)'.dependencies]
 winreg = "0.56"
+keyring = { version = "=3.6.3", features = ["windows-native"] }
+
+[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
+keyring = { version = "=3.6.3", features = ["async-secret-service", "async-io", "crypto-rust"] }
 
 [dev-dependencies]
 tempfile = "3"
