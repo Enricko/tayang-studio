@@ -44,6 +44,7 @@ pub fn run() {
             commands::allow_style_media(app.handle());
             media::sweep_study_dirs(std::path::Path::new(&working));
             app.manage(usage::UsageCache::default());
+            let api_url = styles_sync::effective_api_url(&settings);
             app.manage(AppState {
                 db,
                 acp: acp::AcpManager::new(),
@@ -51,6 +52,10 @@ pub fn run() {
                 home,
                 study_working: Default::default(),
             });
+            // Signed in? Checked against the API in the background; the UI listens for the answer.
+            let auth = commands::auth_manager(app.handle(), &data)?;
+            app.manage(auth.clone());
+            tauri::async_runtime::spawn(async move { auth.refresh(&api_url).await });
             // A tray that can't be made never crashes the start: background mode goes off, the window stays.
             if scheduler::sync_tray(app.handle(), &settings).is_err() {
                 if let Some(state) = app.try_state::<AppState>() {
@@ -132,6 +137,10 @@ pub fn run() {
             commands::install_style_template,
             commands::render_command,
             commands::write_brief,
+            commands::auth_start,
+            commands::auth_cancel,
+            commands::auth_status,
+            commands::auth_logout,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Tayang Studio");
@@ -142,6 +151,9 @@ pub fn run() {
             scheduler::show_main(handle);
         }
         if matches!(event, tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit) {
+            if let Some(auth) = handle.try_state::<std::sync::Arc<auth::Auth>>() {
+                auth.shutdown();
+            }
             // Don't leave agent processes behind.
             if let Some(state) = handle.try_state::<AppState>() {
                 tauri::async_runtime::block_on(state.acp.stop_all());

@@ -7,6 +7,7 @@ use crate::types::*;
 use crate::media;
 use crate::acp::{AcpManager, AcpSink, PromptPart};
 use crate::projects;
+use crate::auth::{AccountCache, Auth, AuthSink, FileStore, KeyringStore, SecureStore};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -94,7 +95,16 @@ pub fn update_settings(
     state: State<'_, AppState>,
     patch: serde_json::Value,
 ) -> CmdResult<Settings> {
+    let old_api = crate::styles_sync::effective_api_url(&state.db.get_settings(&state.home));
     let settings = state.db.update_settings(patch).map_err(err)?;
+    let new_api = crate::styles_sync::effective_api_url(&settings);
+    if new_api != old_api {
+        // A token belongs to the API it came from: show the new API's own state.
+        if let Some(auth) = app.try_state::<Arc<Auth>>() {
+            let auth = auth.inner().clone();
+            tauri::async_runtime::spawn(async move { auth.refresh(&new_api).await });
+        }
+    }
     allow_asset_folders(&app, &state.db, &settings.working_folder);
     if crate::scheduler::sync_tray(&app, &settings).is_err() {
         // No tray here: background mode is turned back off and the user is told why.
@@ -585,6 +595,86 @@ pub fn delete_job(state: State<'_, AppState>, id: String) -> CmdResult<()> {
 #[tauri::command]
 pub fn upsert_job(state: State<'_, AppState>, job: Job) -> CmdResult<()> {
     state.db.upsert_job(&job).map_err(err)
+}
+
+// ---- sign in ----
+
+struct TauriAuthSink(AppHandle);
+
+impl AuthSink for TauriAuthSink {
+    fn changed(&self, status: &AuthStatus) {
+        let _ = self.0.emit(crate::auth::EVENT, status);
+    }
+}
+
+/// The account cache in the app database (managed after this is made, so looked up per call).
+struct AppAccountCache(AppHandle);
+
+impl AccountCache for AppAccountCache {
+    fn load(&self, key: &str) -> Option<Account> {
+        self.0.try_state::<AppState>().and_then(|s| s.db.load(key))
+    }
+    fn save(&self, key: &str, account: Option<&Account>) {
+        if let Some(s) = self.0.try_state::<AppState>() {
+            s.db.save(key, account);
+        }
+    }
+}
+
+/// The app's sign-in state: tokens in the OS keychain, `<app_data>/auth.json` only when it fails.
+pub fn auth_manager(app: &AppHandle, data_dir: &Path) -> Result<Arc<Auth>, String> {
+    let store = SecureStore::new(KeyringStore, FileStore::new(data_dir.join("auth.json")));
+    Auth::new(
+        Arc::new(store),
+        Arc::new(AppAccountCache(app.clone())),
+        Arc::new(TauriAuthSink(app.clone())),
+        std::time::Duration::from_secs(1),
+    )
+}
+
+fn api_base(state: &AppState) -> String {
+    crate::styles_sync::effective_api_url(&state.db.get_settings(&state.home))
+}
+
+/// `auth:<code>`, the code being the kebab-case `AuthError` the UI knows.
+fn auth_err(e: AuthError) -> String {
+    let code = serde_json::to_value(e).ok().and_then(|v| v.as_str().map(String::from)).unwrap_or_default();
+    format!("auth:{code}")
+}
+
+/// Starts signing in: gets a code from the API, opens the browser and polls in the background.
+/// Errors are `auth:<code>`; `auth:cancelled` when a cancel came first.
+#[tauri::command]
+pub async fn auth_start(app: AppHandle, state: State<'_, AppState>, auth: State<'_, Arc<Auth>>) -> CmdResult<AuthStart> {
+    let base = api_base(&state);
+    match auth.start(&base).await {
+        Ok(Some(started)) => {
+            use tauri_plugin_opener::OpenerExt;
+            // The dialog has "Open browser again" for when this doesn't work.
+            if let Err(e) = app.opener().open_url(&started.verification_uri_complete, None::<&str>) {
+                eprintln!("[auth] couldn't open the browser: {e}");
+            }
+            Ok(started)
+        }
+        Ok(None) => Err("auth:cancelled".into()),
+        Err(e) => Err(auth_err(e)),
+    }
+}
+
+#[tauri::command]
+pub fn auth_cancel(auth: State<'_, Arc<Auth>>) {
+    auth.cancel();
+}
+
+#[tauri::command]
+pub fn auth_status(auth: State<'_, Arc<Auth>>) -> AuthStatus {
+    auth.status()
+}
+
+#[tauri::command]
+pub async fn auth_logout(state: State<'_, AppState>, auth: State<'_, Arc<Auth>>) -> CmdResult<()> {
+    let base = api_base(&state);
+    auth.logout(&base).await.map_err(auth_err)
 }
 
 // ---- agent ----
