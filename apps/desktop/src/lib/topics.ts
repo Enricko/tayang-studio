@@ -72,16 +72,16 @@ function projectDraft(title: string, kind: VideoKind, settings: Pick<Settings, '
 }
 
 /**
- * A draft video with the plain brief and no chat or agent turn (a schedule the agent proposed names
- * topics that aren't made yet). Its chat is created when the user opens it.
+ * What a draft video with the plain brief is made from, and no chat or agent turn (a schedule the agent
+ * proposed names topics that aren't made yet). Its chat is created when the user opens it.
  */
-export async function createDraftProject(
+export function draftProject(
   title: string,
   kind: VideoKind,
   settings: Pick<Settings, 'format' | 'language' | 'fps' | 'frameCheck'>,
-): Promise<Project> {
+): { input: NewProject; brief: string } {
   const { input, draft } = projectDraft(title, kind, settings, null);
-  return createProject(input, buildProjectBrief(draft, null, settings));
+  return { input, brief: buildProjectBrief(draft, null, settings) };
 }
 
 /**

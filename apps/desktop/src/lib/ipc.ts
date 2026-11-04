@@ -43,6 +43,13 @@ export const updateProject = (id: string, patch: Partial<Project>) =>
   invoke<Project>('update_project', { id, patch });
 export const setSchedule = (projectId: string, at: string | null) =>
   invoke<Project>('set_schedule', { projectId, at });
+/** One video of a confirmed schedule card: an existing one by id, or a new draft with its brief. */
+export type BatchItem = { projectId: string; at: string } | { at: string; draft: { input: NewProject; brief: string } };
+/**
+ * Schedules a whole card or nothing: Rust checks every item, then writes, and undoes it all when a write
+ * fails. Errors are `schedule:<code>[:n]`.
+ */
+export const scheduleVideos = (items: BatchItem[]) => invoke<Project[]>('schedule_videos', { items });
 export const setPosted = (projectId: string, posted: boolean) =>
   invoke<Project>('set_posted', { projectId, posted });
 export const approveProject = (projectId: string) => invoke<Project>('approve_project', { projectId });

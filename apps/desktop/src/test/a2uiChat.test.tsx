@@ -151,7 +151,7 @@ describe('A2UI in the chat', () => {
     expect(vi.mocked(agentPrompt).mock.calls[0]![1].at(-1)).toMatchObject({ summary: 'Picked: Selat Malaka' });
   });
 
-  it('shows the surface as answered until the agent updates it', () => {
+  it('keeps an answered surface answered: a later update can neither change nor re-enable it', () => {
     const answered = msg('2', 'user', [
       { type: 'text', text: 'Picked: Pick me' },
       { type: 'a2ui-action', summary: 'Picked: Pick me', action: { version: V, action: { name: 'pick', surfaceId: 's1' } } },
@@ -174,7 +174,11 @@ describe('A2UI in the chat', () => {
       },
     ]);
     rerender(<MessageList streaming={false} messages={[first, answered, update]} />);
-    // Updated in place: still one surface, now live again with the new label.
+    expect(screen.getAllByTestId('a2ui-surface')).toHaveLength(1);
+    expect(screen.getByRole('button', { name: 'Pick me' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Pick again' })).toBeNull();
+    // Before it is answered, an update still changes it in place.
+    rerender(<MessageList streaming={false} messages={[first, update]} />);
     expect(screen.getAllByTestId('a2ui-surface')).toHaveLength(1);
     expect(screen.getByRole('button', { name: 'Pick again' })).toBeEnabled();
   });

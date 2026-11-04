@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useRef } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { CalendarDays, File as FileIcon } from 'lucide-react';
 import { formatTimecode, type ChatMessage, type MessagePart } from '@tayang/shared';
@@ -7,7 +7,8 @@ import { Oyen } from '@/components/Oyen';
 import { STICK_EVENT } from '@/components/ScrollToBottom';
 import { ActivityGroup, isHiddenTool, WorkingLine, type ActivityItem, type LiveTurn } from '@/components/Activity';
 import { localized } from '@/lib/stored';
-import { isScheduleRecord, SCHEDULE_ACTION, scheduleFromAction } from '@/lib/scheduleVideos';
+import { ScheduleConfirm } from '@/components/ScheduleConfirm';
+import { confirmSchedule, isScheduleRecord, prepareSchedule, SCHEDULE_ACTION, type PlannedItem } from '@/lib/scheduleVideos';
 import { useApp } from '@/state/app';
 import { useRender } from '@/state/render';
 import { messageKey, useChat, type SendOpts } from '@/state/chat';
@@ -49,12 +50,38 @@ interface Actions {
   /** Surfaces take no input while the agent replies: one gate with the composer and agent picker. */
   locked: boolean;
   sendOptions?: SendOptions;
+  /** A pressed schedule card: Tayang checks it and asks the user in its own dialog. */
+  schedule?: (a: A2uiAction) => void;
 }
 
 /** The screen's own send options for what the agent receives (its agent, build job, prompt prefix). */
 export type SendOptions = (promptParts: MessagePart[]) => SendOpts;
 
 const ActionsContext = createContext<Actions>({ locked: false });
+
+/**
+ * Between the agent's surface id and the key a later surface with the same id gets: a new card that
+ * reuses an answered card's id is a new surface, so the answered one stays as it was.
+ */
+const KEY_SEP = '\u241F';
+/** The agent's own surface id for a surface key. */
+const agentSurfaceId = (key: string) => key.split(KEY_SEP)[0]!;
+
+const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+
+/** The block with every message's surface id changed from `from` to `to`. */
+function rekey(block: unknown[], from: string, to: string): unknown[] {
+  if (from === to) return block;
+  return block.map((m) => {
+    if (!isObj(m)) return m;
+    const out: Record<string, unknown> = { ...m };
+    for (const k of ['createSurface', 'updateComponents', 'updateDataModel', 'deleteSurface']) {
+      const body = m[k];
+      if (isObj(body) && body.surfaceId === from) out[k] = { ...body, surfaceId: to };
+    }
+    return out;
+  });
+}
 
 /** What the chat's A2UI surfaces look like after every agent block, in order. */
 interface A2uiState {
@@ -63,44 +90,64 @@ interface A2uiState {
   /** The message that first showed each surface; later blocks update it in place. */
   owner: Record<string, string>;
   version: Record<string, number>;
-  /** Answered by the user and not updated by the agent since. */
+  /** Answered by the user: from then on no block can change or re-enable it. */
   answered: Record<string, boolean>;
+  /** For each `<message id>:<part index>`, the surface key of each of its blocks (null: none, or ignored). */
+  keys: Record<string, (string | null)[]>;
 }
 
 function deriveA2ui(messages: ChatMessage[]): A2uiState {
-  const st: A2uiState = { chatId: messages[0]?.chatId ?? '', set: emptySurfaces(), owner: {}, version: {}, answered: {} };
+  const st: A2uiState = { chatId: messages[0]?.chatId ?? '', set: emptySurfaces(), owner: {}, version: {}, answered: {}, keys: {} };
+  /** The agent's surface id → the key of its latest surface. */
+  const current: Record<string, string> = {};
+  let fresh = 0;
   for (const m of messages) {
     if (m.role === 'agent') {
-      for (const p of m.parts) {
-        if (p.type !== 'text') continue;
+      m.parts.forEach((p, i) => {
+        if (p.type !== 'text') return;
+        const keys: (string | null)[] = [];
         for (const block of extractA2ui(p.text).blocks) {
-          st.set = applyMessages(st.set, block);
           const sid = blockSurfaceId(block);
-          if (!sid) continue;
-          st.owner[sid] ??= m.id;
-          st.version[sid] = (st.version[sid] ?? 0) + 1;
-          st.answered[sid] = false;
+          if (!sid) {
+            st.set = applyMessages(st.set, block);
+            keys.push(null);
+            continue;
+          }
+          let key = current[sid] ?? sid;
+          if (st.answered[key]) {
+            // An answered card never changes again; a new card under its id is a new surface, here.
+            if (!block.some((x) => isObj(x) && isObj(x.createSurface))) {
+              keys.push(null);
+              continue;
+            }
+            key = `${sid}${KEY_SEP}${++fresh}`;
+          }
+          current[sid] = key;
+          st.set = applyMessages(st.set, rekey(block, sid, key));
+          st.owner[key] ??= m.id;
+          st.version[key] = (st.version[key] ?? 0) + 1;
+          st.answered[key] = false;
+          keys.push(key);
         }
-      }
+        st.keys[`${m.id}:${i}`] = keys;
+      });
     } else {
-      // A user's answer, or the system line that records a schedule Tayang made from a card.
+      // A user's answer, or the system line that records a schedule card Tayang took.
       for (const p of m.parts) {
         if (p.type !== 'a2ui-action') continue;
         const sid = (p.action as { action?: { surfaceId?: unknown } }).action?.surfaceId;
-        if (typeof sid === 'string') st.answered[sid] = true;
+        if (typeof sid === 'string') st.answered[current[sid] ?? sid] = true;
       }
     }
   }
   return st;
 }
 
-function isUpdateOnly(text: string, messageId: string, a2ui: A2uiState): boolean {
+/** Whether an agent text part only updated surfaces drawn by earlier messages. */
+function isUpdateOnly(text: string, keys: (string | null)[] | undefined, messageId: string, a2ui: A2uiState): boolean {
   const { text: prose, blocks, pending } = extractA2ui(text);
   if (prose || pending || !blocks.length) return false;
-  return blocks.every((b) => {
-    const sid = blockSurfaceId(b);
-    return !sid || a2ui.owner[sid] !== messageId;
-  });
+  return (keys ?? []).every((k) => !k || a2ui.owner[k] !== messageId);
 }
 
 function sendAction(chatId: string, a: A2uiAction, sendOptions?: SendOptions) {
@@ -112,10 +159,10 @@ function sendAction(chatId: string, a: A2uiAction, sendOptions?: SendOptions) {
 }
 
 /** An agent text part: prose, the surfaces it owns, and a placeholder for a block still streaming. */
-function AgentText({ text, messageId, a2ui }: { text: string; messageId: string; a2ui: A2uiState }) {
+function AgentText({ text, messageId, part, a2ui }: { text: string; messageId: string; part: number; a2ui: A2uiState }) {
   const { text: rawProse, blocks, pending: a2uiPending, invalid } = useMemo(() => extractA2ui(stripFramesToken(text)), [text]);
   const { t } = useTranslation();
-  const { handle, locked, sendOptions } = useContext(ActionsContext);
+  const { handle, locked, sendOptions, schedule } = useContext(ActionsContext);
   // Older agents answer topics with a ```json block. Where a screen shows topic cards (it provides the
   // handler), hide that block, also while it is still streaming; other chats keep it as written.
   const { prose, pending: jsonPending } = useMemo(() => {
@@ -129,9 +176,8 @@ function AgentText({ text, messageId, a2ui }: { text: string; messageId: string;
   }, [rawProse, handle]);
   const pending = a2uiPending || jsonPending;
   const ids: string[] = [];
-  for (const b of blocks) {
-    const sid = blockSurfaceId(b);
-    if (sid && a2ui.owner[sid] === messageId && !ids.includes(sid) && a2ui.set.surfaces[sid]) ids.push(sid);
+  for (const key of a2ui.keys[`${messageId}:${part}`] ?? []) {
+    if (key && a2ui.owner[key] === messageId && !ids.includes(key) && a2ui.set.surfaces[key]) ids.push(key);
   }
   return (
     <>
@@ -142,10 +188,12 @@ function AgentText({ text, messageId, a2ui }: { text: string; messageId: string;
           surface={a2ui.set.surfaces[sid]!}
           disabled={a2ui.answered[sid]}
           locked={locked}
-          onAction={(a) => {
-            // Tayang schedules a confirmed schedule card itself, in every chat, and the agent gets no turn.
+          onAction={(pressed) => {
+            // The agent and the stored answer know the surface by the agent's own id.
+            const a = { ...pressed, surfaceId: agentSurfaceId(pressed.surfaceId) };
+            // A schedule card is Tayang's to confirm, in every chat; the agent gets no turn for it.
             if (a.name === SCHEDULE_ACTION) {
-              void scheduleFromAction(a2ui.chatId, a);
+              schedule?.(a);
               return;
             }
             if (!handle?.(a)) sendAction(a2ui.chatId, a, sendOptions);
@@ -195,7 +243,7 @@ function Parts({
       return;
     }
     flush(false);
-    if (p.type === 'text') out.push(<AgentText key={i} text={p.text} messageId={messageId} a2ui={a2ui} />);
+    if (p.type === 'text') out.push(<AgentText key={i} text={p.text} messageId={messageId} part={i} a2ui={a2ui} />);
     else if (p.type === 'mention') out.push(<Chip key={i}>@{p.title}</Chip>);
     else if (p.type === 'frame') out.push(<FrameChip key={i} part={p} />);
   });
@@ -260,12 +308,36 @@ export function MessageList({
   const a2ui = useMemo(() => deriveA2ui(messages), // the version note is in the language of the moment
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [messages, inst.language]);
+  const chatId = messages[0]?.chatId ?? '';
+  // A pressed schedule card: checked first (`checking`), then shown in Tayang's dialog, then written (`saving`).
+  const [confirm, setConfirm] = useState<{ action: A2uiAction; items: PlannedItem[] } | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const schedule = useCallback(
+    (a: A2uiAction) => {
+      if (checking || saving) return;
+      setChecking(true);
+      void prepareSchedule(chatId, a)
+        .then((items) => items && setConfirm({ action: a, items }))
+        .finally(() => setChecking(false));
+    },
+    [chatId, checking, saving],
+  );
+  const confirmNow = async () => {
+    if (!confirm || saving) return;
+    setSaving(true);
+    try {
+      await confirmSchedule(chatId, confirm.action, confirm.items);
+    } finally {
+      setSaving(false);
+      setConfirm(null);
+    }
+  };
   const actions = useMemo(
-    () => ({ handle: onA2uiAction, locked: streaming || busy, sendOptions }),
-    [onA2uiAction, streaming, busy, sendOptions],
+    () => ({ handle: onA2uiAction, locked: streaming || busy || checking || saving || confirm !== null, sendOptions, schedule }),
+    [onA2uiAction, streaming, busy, checking, saving, confirm, sendOptions, schedule],
   );
   const last = messages[messages.length - 1];
-  const chatId = messages[0]?.chatId ?? '';
   const startedAt = useChat((s) => (chatId ? s.turnStartedAt[chatId] : undefined));
   const render = useRender((s) => (chatId ? Object.values(s.runs).find((r) => r.chatId === chatId) : undefined));
   const turn = useMemo<LiveTurn>(() => ({ startedAt, render }), [startedAt, render]);
@@ -320,7 +392,8 @@ export function MessageList({
           !working &&
           m.parts.every(
             (p) =>
-              (p.type === 'text' && isUpdateOnly(p.text, m.id, a2ui)) || (p.type === 'tool' && isHiddenTool(p)),
+              (p.type === 'text' && isUpdateOnly(p.text, a2ui.keys[`${m.id}:${m.parts.indexOf(p)}`], m.id, a2ui)) ||
+              (p.type === 'tool' && isHiddenTool(p)),
           )
         ) {
           return null;
@@ -341,6 +414,12 @@ export function MessageList({
         </div>
       )}
       {children}
+      <ScheduleConfirm
+        items={confirm?.items ?? null}
+        busy={saving}
+        onConfirm={() => void confirmNow()}
+        onCancel={() => setConfirm(null)}
+      />
       <div ref={end} />
     </div>
     </ActionsContext.Provider>
