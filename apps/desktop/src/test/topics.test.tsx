@@ -31,6 +31,9 @@ vi.mock('@/lib/events', () => ({
 vi.mock('@tauri-apps/plugin-opener', () => ({ openUrl: vi.fn() }));
 
 import * as ipc from '@/lib/ipc';
+import { buildTopicIdeasPrompt } from '@tayang/skills';
+import { extractA2ui } from '@/a2ui/parse';
+import { applyMessages, emptySurfaces } from '@/a2ui/surface';
 import { ideasFromReply } from '@/lib/topics';
 import { Calendar } from '@/screens/Calendar';
 import { ChatNew } from '@/screens/ChatNew';
@@ -71,16 +74,21 @@ const reply = (styleId: string) =>
       updateComponents: {
         surfaceId: 'topics',
         components: [
-          { id: 'root', component: 'Column', children: ['b'] },
-          { id: 't', component: 'Text', text: 'Mengapa Selat Malaka penting' },
+          { id: 'root', component: 'Column', children: ['card1'] },
+          { id: 'card1', component: 'Card', child: 'col1' },
+          { id: 'col1', component: 'Column', children: ['t', 'why', 'b'] },
+          { id: 't', component: 'Text', text: 'Mengapa Selat Malaka penting', variant: 'h4' },
+          { id: 'why', component: 'Text', text: 'Peta animasi jalur kapal', variant: 'caption' },
           {
             id: 'b',
             component: 'Button',
-            child: 't',
+            child: 'b-t',
+            variant: 'primary',
             action: {
               event: { name: 'pick_topic', context: { title: 'Mengapa Selat Malaka penting', kind: 'data', lengthSec: 45, styleId } },
             },
           },
+          { id: 'b-t', component: 'Text', text: 'Make this' },
         ],
       },
     },
@@ -130,6 +138,36 @@ describe('Calendar make it', () => {
   });
 });
 
+describe('the prompt example', () => {
+  const prompt = buildTopicIdeasPrompt(['data'], 'id');
+  const example = /```a2ui\n[\s\S]*?\n```/.exec(prompt.slice(prompt.indexOf('Example of the block')))![0];
+
+  it('parses with extractA2ui and builds a surface with a Card, h4, caption and Make this button', () => {
+    const { blocks } = extractA2ui(example);
+    expect(blocks).toHaveLength(1);
+    const set = applyMessages(emptySurfaces(), blocks[0]!);
+    const c = set.surfaces.topics!.components;
+    expect(set.surfaces.topics!.catalogId).toBe('https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json');
+    expect(c.root).toMatchObject({ component: 'Column' });
+    expect(c.card1).toMatchObject({ component: 'Card', child: 'col1' });
+    expect(c.title1).toMatchObject({ variant: 'h4' });
+    expect(c.why1).toMatchObject({ variant: 'caption' });
+    expect(c['go1-text']).toMatchObject({ text: 'Make this' });
+    expect(ideasFromReply(example)).toEqual([
+      { title: 'Mengapa Selat Malaka begitu penting', kind: 'data', lengthSec: 45, styleId: 'atlas-journey' },
+    ]);
+  });
+
+  it('adds fit hints for known styles and keeps unknown names', () => {
+    const p = buildTopicIdeasPrompt(['data'], 'en', [
+      { id: 'atlas-journey', name: 'Atlas journey' },
+      { id: 'mine', name: 'My style' },
+    ]);
+    expect(p).toContain('best for places, routes, borders and trade');
+    expect(p).toContain('My style (styleId "mine")');
+  });
+});
+
 describe('ideasFromReply (Calendar ideas)', () => {
   it('reads Make this buttons from an a2ui reply, else a json block', () => {
     expect(ideasFromReply(reply('atlas-journey'))).toEqual([
@@ -154,7 +192,7 @@ describe('topic ideas in a new chat', () => {
   it('keeps the intro sentence, shows cards and creates the project with the style on pick_topic', async () => {
     await askTopics(reply('atlas-journey'));
     expect(await screen.findByText('Ini tiga ide yang cocok untuk video animasi.')).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Mengapa Selat Malaka penting' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Make this' }));
     await waitFor(() => expect(ipc.createProject).toHaveBeenCalled());
     expect(vi.mocked(ipc.createProject).mock.calls[0]![0]).toMatchObject({
       title: 'Mengapa Selat Malaka penting',
@@ -169,7 +207,7 @@ describe('topic ideas in a new chat', () => {
 
   it('leaves styleId out when it is not a synced style', async () => {
     await askTopics(reply('unknown-style'));
-    await userEvent.click(await screen.findByRole('button', { name: 'Mengapa Selat Malaka penting' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Make this' }));
     await waitFor(() => expect(ipc.createProject).toHaveBeenCalled());
     expect(vi.mocked(ipc.createProject).mock.calls[0]![0]).not.toHaveProperty('styleId');
   });
