@@ -146,6 +146,20 @@ describe('Requirements', () => {
     expect(ipc.agentStart).not.toHaveBeenCalled();
   });
 
+  it('Chrome on a Mac without Homebrew is installed by the user from google.com/chrome', async () => {
+    const user = userEvent.setup();
+    vi.mocked(ipc.getSystemInfo).mockResolvedValue({ os: 'macos', osVersion: '26', packageManager: null });
+    vi.mocked(ipc.checkTools).mockResolvedValue(
+      missingFfmpeg.map((t) => (t.id === 'chrome' ? tool('chrome', 'Chrome', true, false) : t)),
+    );
+    render(<Requirements />);
+    expect(await screen.findByText('Install Google Chrome, then press Check again')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Install Chrome' }));
+    expect(openUrl).toHaveBeenCalledWith('https://www.google.com/chrome/');
+    expect(ipc.agentStart).not.toHaveBeenCalled();
+    expect(screen.queryByText(/apt install/)).toBeNull();
+  });
+
   it('shows what the agent said when the tool is still missing', async () => {
     const user = userEvent.setup();
     render(<Requirements />);

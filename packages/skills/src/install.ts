@@ -5,6 +5,9 @@ const KEY_MASK = 'sk_••••';
 /** Where Node.js comes from: agents need Node to run, so the agent can't install it. */
 export const NODE_DOWNLOAD_URL = 'https://nodejs.org/en/download';
 
+/** Where Google Chrome comes from on a Mac without Homebrew: a drag-to-Applications app the agent can't install. */
+export const CHROME_DOWNLOAD_URL = 'https://www.google.com/chrome/';
+
 /** A system package install. Only Linux package managers need sudo. */
 function pmInstall(sys: SystemInfo, pkg: string): string {
   switch (sys.packageManager) {
@@ -23,6 +26,16 @@ function pmInstall(sys: SystemInfo, pkg: string): string {
 
 /** A Mac without Homebrew installs into ~/.local/bin, no sudo. */
 const macNoBrew = (sys: SystemInfo) => sys.os === 'macos' && sys.packageManager !== 'brew';
+
+/**
+ * The page the user installs a tool from themselves, when the agent can't: Node (agents run on it) and
+ * Chrome on a Mac without Homebrew. Null when the agent installs it.
+ */
+export function manualInstallUrl(tool: ToolId, sys: SystemInfo | null): string | null {
+  if (tool === 'node') return NODE_DOWNLOAD_URL;
+  if (tool === 'chrome' && sys && macNoBrew(sys)) return CHROME_DOWNLOAD_URL;
+  return null;
+}
 
 const MAC_FFMPEG = [
   'mkdir -p ~/.local/bin',
@@ -82,6 +95,7 @@ function commandsFor(tool: ToolId, sys: SystemInfo, agent: AgentId, key: string)
     case 'chrome':
       if (pm === 'brew') return ['brew install --cask google-chrome'];
       if (pm === 'winget' || sys.os === 'windows') return ['winget install --id Google.Chrome -e'];
+      if (sys.os === 'macos') return []; // the user installs it from CHROME_DOWNLOAD_URL
       return [pmInstall(sys, 'chromium')];
     case 'elevenlabs-mcp':
       return elevenLabsCommands(sys, agent, key);

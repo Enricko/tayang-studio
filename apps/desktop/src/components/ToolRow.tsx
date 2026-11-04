@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { AlertTriangle, Check, Download } from 'lucide-react';
 import type { SystemInfo, ToolId, ToolStatus } from '@tayang/shared';
 import { openUrl } from '@tauri-apps/plugin-opener';
-import { installCommands, NODE_DOWNLOAD_URL } from '@tayang/skills';
+import { installCommands, manualInstallUrl } from '@tayang/skills';
 import sleepy from '@/assets/brand/oyen-expr-sleepy.svg';
 import { AgentLogo } from '@/components/AgentLogo';
 import { Button } from '@/components/Button';
@@ -36,6 +36,11 @@ const COPY: Record<ToolId, { detail: string; missing?: string; ask: string }> = 
     missing: 'Not found · needed to copy a style from a TikTok, Reels or YouTube link',
     ask: 'Install yt-dlp on this computer, then confirm yt-dlp --version works.',
   },
+};
+
+/** Copy for a tool the user installs from its download page (`manualInstallUrl`). */
+const MANUAL_MISSING: Partial<Record<ToolId, string>> = {
+  chrome: 'Install Google Chrome, then press Check again',
 };
 
 function LogList({ log, done }: { log: LogLine[]; done: boolean }) {
@@ -82,6 +87,8 @@ export function ToolRow({ tool, sys, agentName, busy, onInstall, onAskKey }: {
   const copy = COPY[tool.id];
   const isEleven = tool.id === 'elevenlabs-mcp';
 
+  // Node, and Chrome on a Mac without Homebrew: the user installs it from the download page.
+  const manualUrl = manualInstallUrl(tool.id, sys);
   const status = inst?.status ?? 'missing';
   const ok = tool.ok || status === 'done';
   const showMissing = !ok && (status === 'missing' || status === 'failed' || status === 'key');
@@ -89,7 +96,7 @@ export function ToolRow({ tool, sys, agentName, busy, onInstall, onAskKey }: {
     ? status === 'done'
       ? isEleven ? `Added to ${agentName} · voiceover is on` : `Installed by ${agentName}`
       : copy.detail
-    : copy.missing ?? (isEleven ? copy.detail : tool.detail || copy.detail);
+    : (manualUrl && MANUAL_MISSING[tool.id]) || copy.missing || (isEleven ? copy.detail : tool.detail || copy.detail);
   const label = isEleven ? `Add to ${agentName}` : 'Install';
   const expected = sys ? installCommands(tool.id, sys, agent) : [];
 
@@ -116,7 +123,7 @@ export function ToolRow({ tool, sys, agentName, busy, onInstall, onAskKey }: {
             disabled={busy}
             aria-label={status === 'failed' ? undefined : `${label} ${tool.name}`}
             onClick={() =>
-              tool.id === 'node' ? void openUrl(NODE_DOWNLOAD_URL).catch(() => {}) : isEleven ? onAskKey() : onInstall()
+              manualUrl ? void openUrl(manualUrl).catch(() => {}) : isEleven ? onAskKey() : onInstall()
             }
           >
             {status === 'failed' ? 'Try again' : label}

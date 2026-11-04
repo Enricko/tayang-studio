@@ -8,6 +8,8 @@ import {
   buildTopicIdeasPrompt,
   installCommands,
   NODE_DOWNLOAD_URL,
+  CHROME_DOWNLOAD_URL,
+  manualInstallUrl,
   needsSudo,
   parseStyleResult,
   parseTopicIdeas,
@@ -64,6 +66,16 @@ describe('install', () => {
     expect(installCommands('chrome', win, 'claude')).toEqual(['winget install --id Google.Chrome -e']);
     expect(installCommands('chrome', apt, 'claude')).toEqual(['sudo apt install -y chromium']);
     expect(NODE_DOWNLOAD_URL).toBe('https://nodejs.org/en/download');
+  });
+  it('the user installs Node, and Chrome on a Mac without Homebrew, from the download page', () => {
+    const bare: SystemInfo = { os: 'macos', osVersion: '15', packageManager: null };
+    expect(manualInstallUrl('node', mac)).toBe(NODE_DOWNLOAD_URL);
+    expect(manualInstallUrl('chrome', bare)).toBe(CHROME_DOWNLOAD_URL);
+    expect(CHROME_DOWNLOAD_URL).toBe('https://www.google.com/chrome/');
+    expect(installCommands('chrome', bare, 'claude')).toEqual([]);
+    expect(manualInstallUrl('chrome', mac)).toBeNull();
+    expect(manualInstallUrl('chrome', apt)).toBeNull();
+    expect(manualInstallUrl('ffmpeg', bare)).toBeNull();
   });
   it('elevenlabs', () => {
     expect(installCommands('elevenlabs-mcp', mac, 'claude')).toEqual([
