@@ -147,6 +147,8 @@ pub async fn install_template<F: Fetcher>(
         .filter(|id| !id.is_empty() && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_'))
         .and_then(|id| db.get_style(id).ok().flatten())
         .filter(|o| o.source == StyleSource::Builtin);
+    // The clone's own frozen template: a cached zip of it still installs when the original's can't be fetched.
+    let snapshot = style.template.clone();
     let (template_id, template) = match original {
         Some(o) => (o.id.clone(), o.template.or(style.template)),
         None => (style_id.clone(), style.template),
@@ -167,16 +169,37 @@ pub async fn install_template<F: Fetcher>(
         _ => {
             let url = endpoint(api_url, &format!("/v1/styles/{}/template", urlencode(&template_id)));
             let limit = (template.size + 1024 * 1024).min(MAX_TEMPLATE);
-            let res = fetcher.get(&url, limit).await?;
-            if !(200..300).contains(&res.status) {
-                return Err(format!("Couldn't download the template (status {})", res.status));
+            let downloaded: Result<Vec<u8>, String> = async {
+                let res = fetcher.get(&url, limit).await?;
+                if !(200..300).contains(&res.status) {
+                    return Err(format!("Couldn't download the template (status {})", res.status));
+                }
+                if sha256_hex(&res.body) != want {
+                    return Err("The downloaded template failed its checksum".into());
+                }
+                Ok(res.body)
             }
-            if sha256_hex(&res.body) != want {
-                return Err("The downloaded template failed its checksum".into());
+            .await;
+            match downloaded {
+                Ok(body) => {
+                    std::fs::create_dir_all(templates_dir).map_err(|e| e.to_string())?;
+                    std::fs::write(&cached, &body).map_err(|e| e.to_string())?;
+                    body
+                }
+                Err(e) => {
+                    // Offline, or the server moved on: the clone's own cached snapshot still works.
+                    let old = snapshot
+                        .filter(|t| t.sha256.to_ascii_lowercase() != want)
+                        .and_then(|t| {
+                            let sha = t.sha256.to_ascii_lowercase();
+                            std::fs::read(templates_dir.join(format!("{sha}.zip"))).ok().filter(|b| sha256_hex(b) == sha)
+                        });
+                    match old {
+                        Some(b) => b,
+                        None => return Err(e),
+                    }
+                }
             }
-            std::fs::create_dir_all(templates_dir).map_err(|e| e.to_string())?;
-            std::fs::write(&cached, &res.body).map_err(|e| e.to_string())?;
-            res.body
         }
     };
     extract_zip(&bytes, &folder)?;
@@ -512,6 +535,24 @@ mod tests {
         clone_of_atlas(&s, Some("atlas"), StyleTemplate { sha256: sha256_hex(&old), size: old.len() as u64, version: 1 });
         assert!(install_template(&s.db, &f, "https://api.test", &s.templates, "p1").await.unwrap());
         assert!(s.folder.join("src").join("new.ts").exists());
+    }
+
+    #[tokio::test]
+    async fn a_clone_falls_back_to_its_cached_snapshot_when_the_download_fails() {
+        let old = zip_bytes(&[("tayang.json", b"{}"), ("src/old.ts", b"1")]);
+        let new = zip_bytes(&[("tayang.json", b"{}"), ("src/new.ts", b"2")]);
+        let (s, mut f) = setup(&new, &new);
+        clone_of_atlas(&s, Some("atlas"), StyleTemplate { sha256: sha256_hex(&old), size: old.len() as u64, version: 1 });
+        std::fs::create_dir_all(&s.templates).unwrap();
+        std::fs::write(s.templates.join(format!("{}.zip", sha256_hex(&old))), &old).unwrap();
+        f.routes.insert("https://api.test/v1/styles/atlas/template".into(), (503, b"down".to_vec()));
+        assert!(install_template(&s.db, &f, "https://api.test", &s.templates, "p1").await.unwrap());
+        assert!(s.folder.join("src").join("old.ts").exists());
+        // Without the cached snapshot the download error is reported.
+        std::fs::remove_dir_all(&s.folder).unwrap();
+        std::fs::remove_file(s.templates.join(format!("{}.zip", sha256_hex(&old)))).unwrap();
+        let err = install_template(&s.db, &f, "https://api.test", &s.templates, "p1").await.unwrap_err();
+        assert!(err.contains("503"), "{err}");
     }
 
     #[tokio::test]
