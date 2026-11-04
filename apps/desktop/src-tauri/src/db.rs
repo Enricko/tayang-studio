@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS styles (
 );
 CREATE TABLE IF NOT EXISTS jobs (
   id TEXT PRIMARY KEY, kind TEXT NOT NULL, title TEXT NOT NULL, project_id TEXT, chat_id TEXT,
-  agent_id TEXT NOT NULL, status TEXT NOT NULL, progress REAL, note TEXT, updated_at TEXT NOT NULL
+  agent_id TEXT NOT NULL, status TEXT NOT NULL, progress REAL, note TEXT, source_url TEXT, updated_at TEXT NOT NULL
 );
 ";
 
@@ -70,10 +70,10 @@ const PROJECT_KEYS: [&str; 13] = [
 const CHAT_SELECT: &str = "SELECT id, project_id AS projectId, agent_id AS agentId, title, \
     created_at AS createdAt FROM chats";
 const JOB_SELECT: &str = "SELECT id, kind, title, project_id AS projectId, chat_id AS chatId, \
-    agent_id AS agentId, status, progress, note, updated_at AS updatedAt FROM jobs";
-const JOB_KEYS: [&str; 10] = [
+    agent_id AS agentId, status, progress, note, source_url AS sourceUrl, updated_at AS updatedAt FROM jobs";
+const JOB_KEYS: [&str; 11] = [
     "id", "kind", "title", "projectId", "chatId", "agentId", "status", "progress", "note",
-    "updatedAt",
+    "sourceUrl", "updatedAt",
 ];
 
 pub const DEFAULT_API_URL: &str = "https://api.tayang.app";
@@ -165,6 +165,7 @@ impl Db {
     fn init(conn: Connection) -> Result<Db> {
         conn.execute_batch(SCHEMA)?;
         Self::migrate_styles(&conn)?;
+        Self::migrate_jobs(&conn)?;
         Ok(Db { conn: Mutex::new(conn), home: Mutex::new(Default::default()) })
     }
 
@@ -432,6 +433,19 @@ impl Db {
         Ok(())
     }
 
+    /// Adds `jobs.source_url` to databases created before it.
+    fn migrate_jobs(conn: &Connection) -> Result<()> {
+        let mut stmt = conn.prepare("PRAGMA table_info(jobs)")?;
+        let have = stmt
+            .query_map([], |r| r.get::<_, String>(1))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        drop(stmt);
+        if !have.iter().any(|c| c == "source_url") {
+            conn.execute_batch("ALTER TABLE jobs ADD COLUMN source_url TEXT")?;
+        }
+        Ok(())
+    }
+
     /// Replaces every built-in style with `styles` (API order is kept, styles the API no
     /// longer lists are deleted). Copied and own styles are untouched.
     pub fn replace_builtin_styles(&self, styles: &[Style]) -> Result<()> {
@@ -551,11 +565,11 @@ impl Db {
     pub fn upsert_job(&self, j: &Job) -> Result<()> {
         let vals = bind_values(j, &JOB_KEYS)?;
         self.conn().execute(
-            "INSERT INTO jobs (id, kind, title, project_id, chat_id, agent_id, status, progress, note, updated_at) \
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10) ON CONFLICT(id) DO UPDATE SET kind=excluded.kind, \
+            "INSERT INTO jobs (id, kind, title, project_id, chat_id, agent_id, status, progress, note, source_url, updated_at) \
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11) ON CONFLICT(id) DO UPDATE SET kind=excluded.kind, \
              title=excluded.title, project_id=excluded.project_id, chat_id=excluded.chat_id, \
              agent_id=excluded.agent_id, status=excluded.status, progress=excluded.progress, \
-             note=excluded.note, updated_at=excluded.updated_at",
+             note=excluded.note, source_url=excluded.source_url, updated_at=excluded.updated_at",
             params_from_iter(vals),
         )?;
         Ok(())
@@ -568,6 +582,12 @@ impl Db {
             "UPDATE jobs SET status = 'failed', note = ?1, updated_at = ?2 WHERE status = 'working'",
             rusqlite::params![note, now()],
         )?)
+    }
+
+    /// Removes a job from the board. Deleting a job that isn't there is fine.
+    pub fn delete_job(&self, id: &str) -> Result<()> {
+        self.conn().execute("DELETE FROM jobs WHERE id = ?1", [id])?;
+        Ok(())
     }
 
     pub fn list_jobs(&self) -> Result<Vec<Job>> {
@@ -788,6 +808,7 @@ mod tests {
             status: JobStatus::Queued,
             progress: None,
             note: None,
+            source_url: None,
             updated_at: "2026-01-01T00:00:00Z".into(),
         };
         db.upsert_job(&j).unwrap();
@@ -796,6 +817,53 @@ mod tests {
         j.updated_at = "2026-01-02T00:00:00Z".into();
         db.upsert_job(&j).unwrap();
         assert_eq!(db.list_jobs().unwrap(), vec![j]);
+    }
+
+    #[test]
+    fn jobs_migration_adds_source_url_to_an_old_database() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("tayang.db");
+        {
+            let c = Connection::open(&path).unwrap();
+            c.execute_batch(
+                "CREATE TABLE jobs (id TEXT PRIMARY KEY, kind TEXT NOT NULL, title TEXT NOT NULL, \
+                 project_id TEXT, chat_id TEXT, agent_id TEXT NOT NULL, status TEXT NOT NULL, \
+                 progress REAL, note TEXT, updated_at TEXT NOT NULL);
+                 INSERT INTO jobs VALUES ('old','study-style','Study','{}',NULL,'claude','failed',NULL,'n','t');",
+            )
+            .unwrap();
+        }
+        let db = Db::open(&path).unwrap();
+        let jobs = db.list_jobs().unwrap();
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0].source_url, None);
+        drop(db);
+        // Opening again must not try to add the column twice.
+        assert_eq!(Db::open(&path).unwrap().list_jobs().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn delete_job_removes_only_that_job() {
+        let db = db();
+        let job = |id: &str| Job {
+            id: id.into(),
+            kind: JobKind::Build,
+            title: id.into(),
+            project_id: None,
+            chat_id: None,
+            agent_id: AgentId::Claude,
+            status: JobStatus::Failed,
+            progress: None,
+            note: None,
+            source_url: None,
+            updated_at: "2026-01-01T00:00:00Z".into(),
+        };
+        db.upsert_job(&job("a")).unwrap();
+        db.upsert_job(&job("b")).unwrap();
+        db.delete_job("a").unwrap();
+        db.delete_job("missing").unwrap();
+        let ids: Vec<_> = db.list_jobs().unwrap().into_iter().map(|j| j.id).collect();
+        assert_eq!(ids, ["b"]);
     }
 
     #[test]
@@ -811,14 +879,18 @@ mod tests {
             status,
             progress: None,
             note: None,
+            source_url: None,
             updated_at: "2026-01-01T00:00:00Z".into(),
         };
-        db.upsert_job(&job("w", JobStatus::Working)).unwrap();
+        let mut w = job("w", JobStatus::Working);
+        w.source_url = Some("https://youtu.be/abc".into());
+        db.upsert_job(&w).unwrap();
         db.upsert_job(&job("d", JobStatus::Done)).unwrap();
         assert_eq!(db.fail_stale_jobs("closed").unwrap(), 1);
         let jobs = db.list_jobs().unwrap();
         let w = jobs.iter().find(|j| j.id == "w").unwrap();
         assert_eq!((w.status, w.note.as_deref()), (JobStatus::Failed, Some("closed")));
+        assert_eq!(w.source_url.as_deref(), Some("https://youtu.be/abc"));
         assert_eq!(jobs.iter().find(|j| j.id == "d").unwrap().status, JobStatus::Done);
     }
 }

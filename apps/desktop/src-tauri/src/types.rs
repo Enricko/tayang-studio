@@ -328,6 +328,9 @@ pub struct Job {
     pub status: JobStatus,
     pub progress: Option<f64>,
     pub note: Option<String>,
+    /// The link a style study was reading, so a failed study can be tried again.
+    #[serde(default)]
+    pub source_url: Option<String>,
     pub updated_at: String,
 }
 

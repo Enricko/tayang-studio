@@ -270,6 +270,11 @@ pub fn list_jobs(state: State<'_, AppState>) -> CmdResult<Vec<Job>> {
 }
 
 #[tauri::command]
+pub fn delete_job(state: State<'_, AppState>, id: String) -> CmdResult<()> {
+    state.db.delete_job(&id).map_err(err)
+}
+
+#[tauri::command]
 pub fn upsert_job(state: State<'_, AppState>, job: Job) -> CmdResult<()> {
     state.db.upsert_job(&job).map_err(err)
 }
