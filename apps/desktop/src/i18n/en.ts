@@ -386,6 +386,7 @@ export const en = {
     newChatNote: "A new chat doesn't see any of your videos until you mention one with @",
     placeholderNew: 'Describe the video you want, or type @ to start from one you made',
     writeScript: 'Write the script for "{{title}}", about {{seconds}} seconds.',
+    topicNotes: 'What I asked for: {{notes}}',
     seconds: '{{n}}s',
     render: 'Render video',
     rendering: 'Rendering…',

@@ -386,6 +386,7 @@ export const id: Translations = {
     newChatNote: 'Chat baru belum bisa melihat videomu sampai kamu menyebutnya dengan @',
     placeholderNew: 'Ceritakan video yang ingin kamu buat, atau ketik @ untuk mulai dari video yang sudah ada',
     writeScript: 'Tulis skrip untuk "{{title}}", sekitar {{seconds}} detik.',
+    topicNotes: 'Yang aku minta: {{notes}}',
     seconds: '{{n}} dtk',
     render: 'Render video',
     rendering: 'Merender…',

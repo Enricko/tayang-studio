@@ -278,6 +278,12 @@ describe('createTopicProject', () => {
     await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
     expect(JSON.stringify(vi.mocked(ipc.agentPrompt).mock.calls[0]![1])).toContain('Kenapa kopi pahit');
   });
+
+  it('startTopic passes on what the user asked for on the card', async () => {
+    await startTopic({ ...idea, notes: 'no voice-over, no music' }, { settings, agent: 'claude' });
+    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
+    expect(JSON.stringify(vi.mocked(ipc.agentPrompt).mock.calls[0]![1])).toContain('What I asked for: no voice-over, no music');
+  });
 });
 
 describe('the prompt example', () => {

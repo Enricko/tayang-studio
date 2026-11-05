@@ -131,6 +131,10 @@ describe('topics', () => {
     });
     expect(topicIdeaFromAction({ title: 'T', kind: 'nope' })).toMatchObject({ kind: 'explainer', lengthSec: 30 });
     expect(topicIdeaFromAction({ kind: 'promo' })).toBeNull();
+    // What the user asked for rides along, trimmed and capped; empty notes are left out.
+    expect(topicIdeaFromAction({ title: 'T', notes: '  no voice-over  ' })!.notes).toBe('no voice-over');
+    expect(topicIdeaFromAction({ title: 'T', notes: '' })).not.toHaveProperty('notes');
+    expect(topicIdeaFromAction({ title: 'T', notes: 'x'.repeat(2000) })!.notes).toHaveLength(600);
     // An agent can't ask for a 1-second or a 3-hour video.
     expect(topicIdeaFromAction({ title: 'T', lengthSec: 1 })!.lengthSec).toBe(5);
     expect(topicIdeaFromAction({ title: 'T', lengthSec: 10800 })!.lengthSec).toBe(600);

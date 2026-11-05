@@ -43,7 +43,7 @@ function topicExample(): string {
           { id: 'col1', component: 'Column', children: ['title1', 'why1', 'go1'] },
           { id: 'title1', component: 'Text', text: 'Mengapa Selat Malaka begitu penting', variant: 'h4' },
           { id: 'why1', component: 'Text', text: 'Peta animasi jalur kapal dan angka perdagangan', variant: 'caption' },
-          { id: 'go1', component: 'Button', child: 'go1-text', variant: 'primary', action: { event: { name: 'pick_topic', context: { title: 'Mengapa Selat Malaka begitu penting', kind: 'data', lengthSec: 45, styleId: 'atlas-journey' } } } },
+          { id: 'go1', component: 'Button', child: 'go1-text', variant: 'primary', action: { event: { name: 'pick_topic', context: { title: 'Mengapa Selat Malaka begitu penting', kind: 'data', lengthSec: 45, styleId: 'atlas-journey', notes: '' } } } },
           { id: 'go1-text', component: 'Text', text: 'Make this' },
         ],
       },
@@ -68,7 +68,7 @@ export function buildTopicIdeasPrompt(
   const lang = language === 'id' ? 'Indonesian' : 'English';
   const list = styles.length ? styles : DEFAULT_TOPIC_STYLES;
   const action =
-    '{"event":{"name":"pick_topic","context":{"title":"<the idea title>","kind":"<kind>","lengthSec":<number>,"styleId":"<style id or empty>"}}}';
+    '{"event":{"name":"pick_topic","context":{"title":"<the idea title>","kind":"<kind>","lengthSec":<number>,"styleId":"<style id or empty>","notes":"<what the user asked for that the title does not say, or empty>"}}}';
   return [
     `Suggest exactly 3 topic ideas for short videos. Write them in ${lang}. Allowed kinds: ${kinds.join(', ')}.`,
     '',
@@ -94,17 +94,24 @@ export function buildTopicIdeasPrompt(
 export const TOPIC_LENGTH = { min: 5, max: 600 } as const;
 export const clampTopicLength = (sec: number) => Math.min(TOPIC_LENGTH.max, Math.max(TOPIC_LENGTH.min, Math.round(sec)));
 
-/** What a pick_topic button press carries, or null when it has no title. */
+/** The longest `notes` a topic card may carry into the project chat. */
+const NOTES_MAX = 600;
+
+/**
+ * What a pick_topic button press carries, or null when it has no title. `notes` are the user's own wishes
+ * for the video that the title can't hold (no voice-over, a fact to include), passed on to the project chat.
+ */
 export function topicIdeaFromAction(
   context: Record<string, unknown>,
-): { title: string; kind: VideoKind; lengthSec: number; styleId?: string } | null {
+): { title: string; kind: VideoKind; lengthSec: number; styleId?: string; notes?: string } | null {
   const title = typeof context.title === 'string' ? context.title.trim() : '';
   if (!title) return null;
   const kind = VIDEO_KINDS.includes(context.kind as VideoKind) ? (context.kind as VideoKind) : 'explainer';
   const len = Number(context.lengthSec);
   const lengthSec = Number.isFinite(len) && len > 0 ? clampTopicLength(len) : 30;
   const styleId = typeof context.styleId === 'string' && context.styleId ? context.styleId : undefined;
-  return { title, kind, lengthSec, ...(styleId ? { styleId } : {}) };
+  const notes = typeof context.notes === 'string' ? context.notes.trim().slice(0, NOTES_MAX) : '';
+  return { title, kind, lengthSec, ...(styleId ? { styleId } : {}), ...(notes ? { notes } : {}) };
 }
 
 /** Agents that still answer with a ```json block: pull the ideas out and drop the block from the text. */

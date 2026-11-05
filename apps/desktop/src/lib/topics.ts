@@ -13,6 +13,8 @@ export interface TopicIdea {
   kind: VideoKind;
   lengthSec: number;
   styleId?: string;
+  /** What the user asked for that the title doesn't say (no voice-over, a fact to include). */
+  notes?: string;
 }
 
 /** The three ideas of a reply: A2UI "Make this" buttons first, then the older ```json block. */
@@ -166,7 +168,16 @@ export async function startTopic(idea: TopicIdea, opts: TopicProjectOpts): Promi
   const { settings, agent } = opts;
   const { project, chat } = await createTopicProject(idea, opts);
   useApp.getState().navigate({ name: 'chat', chatId: chat.id });
-  const ask: MessagePart[] = [{ type: 'text', text: i18n.t('chat.writeScript', { title: idea.title, seconds: idea.lengthSec }) }];
+  // The project chat is new: what the user asked for on the card goes along, or it is lost.
+  const ask: MessagePart[] = [
+    {
+      type: 'text',
+      text: [
+        i18n.t('chat.writeScript', { title: idea.title, seconds: idea.lengthSec }),
+        ...(idea.notes ? [i18n.t('chat.topicNotes', { notes: idea.notes })] : []),
+      ].join('\n\n'),
+    },
+  ];
   void useChat.getState().send(chat.id, ask, {
     agentId: agent,
     job: { projectId: project.id, title: project.title },
