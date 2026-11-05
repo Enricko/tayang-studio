@@ -9,7 +9,8 @@ vi.mock('@/lib/ipc', () => ({
   listChats: vi.fn().mockResolvedValue([]),
   createChat: vi.fn(),
 }));
-vi.mock('@/lib/events', () => ({ onAgentUpdate: vi.fn(async () => () => {}), onPermission: vi.fn(async () => () => {}) }));
+vi.mock('@/lib/events', () => ({
+  onQuestion: vi.fn(async () => () => {}), onAgentUpdate: vi.fn(async () => () => {}), onPermission: vi.fn(async () => () => {}) }));
 
 import { listProjects, videoThumbnail } from '@/lib/ipc';
 import { Videos } from '@/screens/Videos';

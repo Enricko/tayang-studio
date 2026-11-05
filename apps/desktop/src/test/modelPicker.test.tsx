@@ -10,7 +10,8 @@ vi.mock('@/lib/ipc', () => ({
   attachFile: vi.fn(),
   assetUrl: (p: string) => p,
 }));
-vi.mock('@/lib/events', () => ({ onAgentUpdate: vi.fn(async () => () => {}), onPermission: vi.fn(async () => () => {}) }));
+vi.mock('@/lib/events', () => ({
+  onQuestion: vi.fn(async () => () => {}), onAgentUpdate: vi.fn(async () => () => {}), onPermission: vi.fn(async () => () => {}) }));
 
 import * as ipc from '@/lib/ipc';
 import { ModelPicker } from '@/components/Composer';

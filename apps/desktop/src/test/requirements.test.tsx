@@ -22,6 +22,7 @@ type UpdateCb = (e: { chatId: string; update: AgentUpdate }) => void;
 type PermCb = (r: PermissionRequest) => void;
 const handlers: { update: UpdateCb[]; perm: PermCb[] } = { update: [], perm: [] };
 vi.mock('@/lib/events', () => ({
+  onQuestion: vi.fn(async () => () => {}),
   onAgentUpdate: vi.fn(async (cb: UpdateCb) => {
     handlers.update.push(cb);
     return () => {};

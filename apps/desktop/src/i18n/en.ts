@@ -148,6 +148,14 @@ export const en = {
     willAsk: '{{agent}} will ask to run',
     nothingRuns: 'Nothing it asks about runs until you allow it',
   },
+  question: {
+    aria: 'The agent asks you',
+    asks: '{{agent}} asks you',
+    other: 'Other (type your own)',
+    send: 'Send',
+    skip: 'Skip',
+    skipped: 'Skipped the question',
+  },
   permission: {
     askedAgent: 'Tayang asked {{agent}}',
     wantsToRun: '{{agent}} wants to run',

@@ -1,11 +1,12 @@
 import { notifyAgent } from '@/lib/agentNotify';
 import { create } from 'zustand';
 import { FOREGROUND_RULE, RENDERS_RULE, buildSessionPreamble, languageHint, sessionFacts, stripFramesToken } from '@tayang/skills';
-import type { AgentId, AgentUpdate, Chat, ChatMessage, Style, FileInfo, JobStatus, MessagePart, PermissionRequest } from '@tayang/shared';
+import type { AgentId, AgentQuestion, AgentUpdate, Chat, ChatMessage, Style, FileInfo, JobStatus, MessagePart, PermissionRequest, QuestionResponse } from '@tayang/shared';
 import {
   addMessage,
   agentCancel,
   agentRespondPermission,
+  agentRespondQuestion,
   agentPrompt,
   agentSetAuto,
   agentStart,
@@ -16,10 +17,10 @@ import {
   updateChatAgent,
   upsertJob,
 } from '@/lib/ipc';
-import { onAgentUpdate, onPermission } from '@/lib/events';
+import { onAgentUpdate, onPermission, onQuestion } from '@/lib/events';
 import { extractA2ui } from '@/a2ui/parse';
 import { agentErrorText, AGENT_NAMES } from '@/lib/agents';
-import { uiLanguage } from '@/i18n';
+import { i18n, uiLanguage } from '@/i18n';
 import { stored } from '@/lib/stored';
 import { finishedRender } from '@/lib/renderCheck';
 import { isRenderTool } from '@/lib/renderTool';
@@ -63,6 +64,8 @@ interface ChatState {
   turnStartedAt: Record<string, number>;
   /** Open permission requests per chat, oldest first. The card shows the head. */
   permissions: Record<string, PermissionRequest[]>;
+  /** The agent's open questions per chat (ACP elicitation), oldest first. */
+  questions: Record<string, AgentQuestion[]>;
   attachments: Record<string, MessagePart[]>;
   /** Chats whose agent session was started in this app session. */
   started: Record<string, boolean>;
@@ -89,6 +92,8 @@ interface ChatState {
   /** Resolves to an error message when the agent could not be reached, otherwise null. */
   send(chatId: string, parts: MessagePart[], opts?: SendOpts): Promise<string | null>;
   respondPermission(chatId: string, optionId: string | null): Promise<void>;
+  /** Answers the chat's oldest open question; `summary` (what was picked) goes into the chat as the user's line. */
+  respondQuestion(chatId: string, response: QuestionResponse, summary: string): Promise<void>;
   /** Stops the running turn; it ends with done (cancelled). */
   cancel(chatId: string): Promise<void>;
   /** Ends the chat's agent process; the next send starts a new one. */
@@ -342,6 +347,11 @@ let unlisten: Promise<() => void>[] = [];
 
 const NO_PERMISSION = null;
 /** The permission request a chat's card shows: the oldest open one. */
+const NO_QUESTION = null;
+/** The question a chat's card shows: the oldest open one. */
+export const headQuestion = (s: { questions: Record<string, AgentQuestion[]> }, chatId: string | null) =>
+  (chatId ? s.questions[chatId]?.[0] : undefined) ?? NO_QUESTION;
+
 export const headPermission = (s: { permissions: Record<string, PermissionRequest[]> }, chatId: string | null) =>
   (chatId ? s.permissions[chatId]?.[0] : undefined) ?? NO_PERMISSION;
 
@@ -405,6 +415,7 @@ export const useChat = create<ChatState>((set, get) => {
     set((s) => ({
       streaming: { ...s.streaming, [chatId]: false },
       permissions: { ...s.permissions, [chatId]: [] },
+      questions: { ...s.questions, [chatId]: [] },
       turnStartedAt: turns,
     }));
     // Whatever the turn was rendering is over with it.
@@ -637,6 +648,7 @@ export const useChat = create<ChatState>((set, get) => {
     streaming: {},
     turnStartedAt: {},
     permissions: {},
+    questions: {},
     attachments: {},
     started: {},
     auto: {},
@@ -795,6 +807,19 @@ export const useChat = create<ChatState>((set, get) => {
       await agentRespondPermission(req.requestId, optionId);
     },
 
+    async respondQuestion(chatId, response, summary) {
+      const [q, ...rest] = get().questions[chatId] ?? [];
+      if (!q) return;
+      set((s) => ({ questions: { ...s.questions, [chatId]: rest } }));
+      if (!rest.length && get().streaming[chatId]) writeJob(chatId, 'working');
+      // The answer is part of the conversation: kept in the chat as the user's line.
+      const text = response.action === 'accept' && summary ? summary : i18n.t('question.skipped');
+      const line = localMessage(chatId, 'user', [{ type: 'text', text }]);
+      append(chatId, line);
+      void persist(chatId, line);
+      await agentRespondQuestion(q.requestId, response);
+    },
+
     async cancel(chatId) {
       await agentCancel(chatId).catch(() => {});
     },
@@ -848,6 +873,12 @@ export const useChat = create<ChatState>((set, get) => {
       if (unlisten.length) return;
       unlisten = [
         onAgentUpdate(({ chatId, update }) => onUpdate(chatId, update)),
+        onQuestion((q) => {
+          if (!tracked.has(q.chatId)) return;
+          writeJob(q.chatId, 'needs-you', stored('agents.waitingAnswer'));
+          void notifyAgent(q.chatId, 'asks');
+          set((s) => ({ questions: { ...s.questions, [q.chatId]: [...(s.questions[q.chatId] ?? []), q] } }));
+        }),
         onPermission((req) => {
           if (!tracked.has(req.chatId)) return;
           writeJob(req.chatId, 'needs-you');
@@ -878,7 +909,7 @@ export const useChat = create<ChatState>((set, get) => {
       resetProjectStatus();
       stopAllWatches();
       useRender.setState({ runs: {} });
-      set({ messages: {}, streaming: {}, turnStartedAt: {}, permissions: {}, attachments: {}, started: {}, auto: {}, pendingAuto: null, autoBusy: {}, rows: {}, drafts: {}, styles: [] });
+      set({ messages: {}, streaming: {}, turnStartedAt: {}, permissions: {}, questions: {}, attachments: {}, started: {}, auto: {}, pendingAuto: null, autoBusy: {}, rows: {}, drafts: {}, styles: [] });
     },
   };
 });

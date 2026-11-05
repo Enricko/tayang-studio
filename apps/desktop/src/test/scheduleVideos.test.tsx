@@ -24,6 +24,7 @@ vi.mock('@/lib/ipc', () => ({
   assetUrl: (p: string) => p,
 }));
 vi.mock('@/lib/events', () => ({
+  onQuestion: vi.fn(async () => () => {}),
   onAgentUpdate: vi.fn(async (_cb: (e: { chatId: string; update: AgentUpdate }) => void) => () => {}),
   onPermission: vi.fn(async () => () => {}),
 }));

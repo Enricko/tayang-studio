@@ -17,7 +17,8 @@ vi.mock('@/lib/ipc', () => ({
   findProjectFiles: vi.fn(async () => []),
   readProjectFile: vi.fn(),
 }));
-vi.mock('@/lib/events', () => ({ onAgentUpdate: vi.fn(async () => () => {}), onPermission: vi.fn(async () => () => {}) }));
+vi.mock('@/lib/events', () => ({
+  onQuestion: vi.fn(async () => () => {}), onAgentUpdate: vi.fn(async () => () => {}), onPermission: vi.fn(async () => () => {}) }));
 
 import * as ipc from '@/lib/ipc';
 import { ChatProject } from '@/screens/ChatProject';

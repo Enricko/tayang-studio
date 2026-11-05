@@ -1,5 +1,5 @@
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import type { AgentUpdate, PermissionRequest } from '@tayang/shared';
+import type { AgentQuestion, AgentUpdate, PermissionRequest } from '@tayang/shared';
 
 export function onAgentUpdate(
   cb: (e: { chatId: string; update: AgentUpdate }) => void,
@@ -9,4 +9,9 @@ export function onAgentUpdate(
 
 export function onPermission(cb: (req: PermissionRequest) => void): Promise<UnlistenFn> {
   return listen<PermissionRequest>('agent://permission', (e) => cb(e.payload));
+}
+
+/** An agent asks the user something (ACP elicitation). */
+export function onQuestion(cb: (q: AgentQuestion) => void): Promise<UnlistenFn> {
+  return listen<AgentQuestion>('agent://question', (e) => cb(e.payload));
 }

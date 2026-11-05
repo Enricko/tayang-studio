@@ -297,6 +297,21 @@ export interface ModelChoice {
   description?: string;
 }
 
+/** A question the agent asks the user (ACP `elicitation/create`, form mode). */
+export interface AgentQuestion {
+  chatId: string;
+  requestId: string;
+  message: string;
+  /** JSON Schema of the answer: `properties` with options (`oneOf`), multi-select arrays, text. */
+  schema: { type?: string; properties?: Record<string, unknown>; required?: string[] };
+}
+
+/** The answer to an AgentQuestion. */
+export type QuestionResponse =
+  | { action: 'accept'; content: Record<string, string | number | boolean | string[]> }
+  | { action: 'decline' }
+  | { action: 'cancel' };
+
 export interface PermissionRequest {
   chatId: string;
   requestId: string;

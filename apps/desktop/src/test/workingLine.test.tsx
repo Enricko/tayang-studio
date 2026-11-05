@@ -3,7 +3,8 @@ import { vi } from 'vitest';
 import type { ChatMessage, MessagePart } from '@tayang/shared';
 
 vi.mock('@/lib/ipc', () => ({ assetUrl: (p: string) => p }));
-vi.mock('@/lib/events', () => ({ onAgentUpdate: vi.fn(async () => () => {}), onPermission: vi.fn(async () => () => {}) }));
+vi.mock('@/lib/events', () => ({
+  onQuestion: vi.fn(async () => () => {}), onAgentUpdate: vi.fn(async () => () => {}), onPermission: vi.fn(async () => () => {}) }));
 
 import { MessageList } from '@/components/MessageList';
 import { setUiLanguage } from '@/i18n';

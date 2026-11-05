@@ -150,6 +150,14 @@ export const id: Translations = {
     willAsk: '{{agent}} akan minta izin menjalankan',
     nothingRuns: 'Tidak ada yang jalan sebelum kamu izinkan',
   },
+  question: {
+    aria: 'Agen bertanya',
+    asks: '{{agent}} bertanya',
+    other: 'Lainnya (tulis sendiri)',
+    send: 'Kirim',
+    skip: 'Lewati',
+    skipped: 'Melewati pertanyaan',
+  },
   permission: {
     askedAgent: 'Tayang meminta {{agent}}',
     wantsToRun: '{{agent}} ingin menjalankan',

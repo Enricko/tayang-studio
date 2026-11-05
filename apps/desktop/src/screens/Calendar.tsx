@@ -7,6 +7,7 @@ import { Button } from '@/components/Button';
 import { ScheduleDialog } from '@/components/ScheduleDialog';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { PermissionCard } from '@/components/PermissionCard';
+import { QuestionCard } from '@/components/QuestionCard';
 import { locale } from '@/i18n';
 import { calendarState, type CalendarState } from '@/lib/calendarState';
 import { approveProject, listAutopilots, listProjects, listSlots, listStyles, setPosted, setSchedule, updateSlot } from '@/lib/ipc';
@@ -17,7 +18,7 @@ import { ideasFromReply, startTopic, type TopicIdea } from '@/lib/topics';
 import { cn } from '@/lib/utils';
 import { useApp } from '@/state/app';
 import { AUTOPILOT_ENABLED } from '@/lib/features';
-import { headPermission, useChat } from '@/state/chat';
+import { headPermission, headQuestion, useChat } from '@/state/chat';
 
 const KINDS: VideoKind[] = ['explainer', 'promo', 'quote', 'news', 'tutorial', 'data', 'event'];
 const NO_MESSAGES: never[] = [];
@@ -116,6 +117,7 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
   const messages = useChat((s) => (chatId ? s.messages[chatId] : undefined)) ?? NO_MESSAGES;
   const streaming = useChat((s) => (chatId ? !!s.streaming[chatId] : false));
   const permission = useChat((s) => headPermission(s, chatId));
+  const question = useChat((s) => headQuestion(s, chatId));
 
   useEffect(() => {
     let alive = true;
@@ -506,6 +508,13 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
               </Button>
             </div>
           ))}
+          {question && chatId && (
+            <QuestionCard
+              question={question}
+              agentId={settings?.defaultAgent ?? 'claude'}
+              onRespond={(r, summary) => void useChat.getState().respondQuestion(chatId, r, summary)}
+            />
+          )}
           {permission && chatId && (
             <PermissionCard
               request={permission}

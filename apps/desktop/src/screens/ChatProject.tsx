@@ -6,6 +6,7 @@ import { Button } from '@/components/Button';
 import { Composer } from '@/components/Composer';
 import { MessageList } from '@/components/MessageList';
 import { PermissionCard } from '@/components/PermissionCard';
+import { QuestionCard } from '@/components/QuestionCard';
 import { ResizeHandle } from '@/components/ResizeHandle';
 import { Preview } from '@/screens/preview/Preview';
 import { FileTree } from '@/components/workspace/FileTree';
@@ -21,7 +22,7 @@ import { getChat, listProjects, mediaProbe, mediaRender, renderCommand, updatePr
 import { LANGUAGE_NAMES } from '@/i18n';
 import { projectSendOptions } from '@/lib/openProject';
 import { useApp } from '@/state/app';
-import { headPermission, useChat, type SendOpts } from '@/state/chat';
+import { headPermission, headQuestion, useChat, type SendOpts } from '@/state/chat';
 import { useUsage } from '@/state/usage';
 import { FILES, PREVIEW, useFittedLayout, useLayout } from '@/state/layout';
 import { useProjectTabs, useWorkspace } from '@/state/workspace';
@@ -52,6 +53,7 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
   const messages = useChat((s) => s.messages[chatId]) ?? NO_MESSAGES;
   const streaming = useChat((s) => !!s.streaming[chatId]);
   const permission = useChat((s) => headPermission(s, chatId));
+  const question = useChat((s) => headQuestion(s, chatId));
   const fitted = useFittedLayout(true);
   const renderRunning = useRender((s) => (project ? !!s.runs[project.id] : false));
   const projectsVersion = useApp((s) => s.projectsVersion);
@@ -253,6 +255,13 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
           <div className="relative min-h-0 flex-1">
           <div ref={scrollRef} className="no-scrollbar h-full overflow-y-auto px-6 py-6">
             <MessageList messages={messages} streaming={streaming} sendOptions={sendOptions} scrollRef={scrollRef}>
+              {question && (
+                <QuestionCard
+                  question={question}
+                  agentId={agent}
+                  onRespond={(r, summary) => void useChat.getState().respondQuestion(chatId, r, summary)}
+                />
+              )}
               {permission && (
                 <PermissionCard
                   request={permission}

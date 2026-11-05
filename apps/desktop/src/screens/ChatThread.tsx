@@ -5,6 +5,7 @@ import { topicIdeaFromAction } from '@tayang/skills';
 import { Composer, type MentionRef } from '@/components/Composer';
 import { MessageList } from '@/components/MessageList';
 import { PermissionCard } from '@/components/PermissionCard';
+import { QuestionCard } from '@/components/QuestionCard';
 import { ScrollToBottom } from '@/components/ScrollToBottom';
 import { stylesFor, TemplateChip, templateOf, useChipTemplate, useStyles } from '@/components/TemplateChip';
 import { TurnRail } from '@/components/TurnRail';
@@ -13,7 +14,7 @@ import { lastMentionedStyle, mentionContext, mentionedIn, styleContext } from '@
 import { ideasFromReply, startTopic, type TopicIdea } from '@/lib/topics';
 import { extractA2ui } from '@/a2ui/parse';
 import { useApp } from '@/state/app';
-import { appendSystem, headPermission, useChat } from '@/state/chat';
+import { appendSystem, headPermission, headQuestion, useChat } from '@/state/chat';
 import { stored } from '@/lib/stored';
 import type { A2uiAction } from '@/a2ui/render';
 import { useUsage } from '@/state/usage';
@@ -41,6 +42,7 @@ export function ChatThread({ chatId, draft, styleId: routeStyleId }: { chatId: s
   const messages = useChat((s) => s.messages[chatId]) ?? NO_MESSAGES;
   const streaming = useChat((s) => !!s.streaming[chatId]);
   const permission = useChat((s) => headPermission(s, chatId));
+  const question = useChat((s) => headQuestion(s, chatId));
   const agent = row?.agentId ?? settings?.defaultAgent ?? 'claude';
   // The template New chat was started from; kept until a topic starts a project, or the user removes it.
   const [styleId, setStyleId] = useState<string | null>(routeStyleId ?? null);
@@ -167,6 +169,13 @@ export function ChatThread({ chatId, draft, styleId: routeStyleId }: { chatId: s
                 onA2uiAction={onA2uiAction}
                 sendOptions={() => ({ agentId: agent })}
               >
+                {question && (
+                  <QuestionCard
+                    question={question}
+                    agentId={agent}
+                    onRespond={(r, summary) => void useChat.getState().respondQuestion(chatId, r, summary)}
+                  />
+                )}
                 {permission && (
                   <PermissionCard
                     request={permission}

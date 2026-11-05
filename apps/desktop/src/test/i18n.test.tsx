@@ -16,7 +16,8 @@ vi.mock('@/lib/ipc', () => ({
   getSystemInfo: vi.fn().mockResolvedValue({ os: 'macos', osVersion: '15', packageManager: 'brew' }),
   checkTools: vi.fn().mockResolvedValue([]),
 }));
-vi.mock('@/lib/events', () => ({ onAgentUpdate: vi.fn(async () => () => {}), onPermission: vi.fn(async () => () => {}) }));
+vi.mock('@/lib/events', () => ({
+  onQuestion: vi.fn(async () => () => {}), onAgentUpdate: vi.fn(async () => () => {}), onPermission: vi.fn(async () => () => {}) }));
 vi.mock('@tauri-apps/plugin-opener', () => ({ openUrl: vi.fn() }));
 
 import { en } from '@/i18n/en';

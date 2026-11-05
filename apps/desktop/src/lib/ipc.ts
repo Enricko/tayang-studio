@@ -22,6 +22,7 @@ import type {
   Style,
   SystemInfo,
   ToolStatus,
+  QuestionResponse,
 } from '@tayang/shared';
 
 // ---- system and settings ----
@@ -138,6 +139,9 @@ export const agentCancel = (chatId: string) => invoke<void>('agent_cancel', { ch
 export const agentStop = (chatId: string) => invoke<void>('agent_stop', { chatId });
 export const agentRespondPermission = (requestId: string, optionId: string | null) =>
   invoke<void>('agent_respond_permission', { requestId, optionId });
+/** Answers an agent's question (ACP elicitation). */
+export const agentRespondQuestion = (requestId: string, response: QuestionResponse) =>
+  invoke<void>('agent_respond_question', { requestId, response });
 
 // ---- media ----
 export const mediaLatestRender = (projectId: string) =>
