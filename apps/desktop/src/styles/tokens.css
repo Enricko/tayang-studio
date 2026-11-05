@@ -123,6 +123,37 @@
   }
 }
 
+/* Every scrollbar: thin, a quiet thumb on no track. The standard properties are what current WebKit
+   (macOS) and WebView2 (Windows) draw from; the ::-webkit-scrollbar rules only reach older webviews that
+   don't know them, since a browser that knows the standard ones ignores the rest. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(255 255 255 / 0.16) transparent;
+}
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+  background-color: rgb(255 255 255 / 0.16);
+}
+
+/* A scrollbar that only shows while the pointer is over the list (the sidebar's Recent). */
+.scrollbar-on-hover {
+  scrollbar-width: none;
+}
+.scrollbar-on-hover:hover,
+.scrollbar-on-hover:focus-within {
+  scrollbar-width: thin;
+}
+
 /* Scrolls like normal, shows no scrollbar (the chat's turn rail replaces it). */
 .no-scrollbar {
   scrollbar-width: none;

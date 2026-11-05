@@ -204,7 +204,7 @@ export function Sidebar({ active, collapsed = false }: { active: SidebarKey; col
         </div>
 
         {!rail && (
-          <div data-recent className="mt-6 flex min-h-0 flex-col gap-1 overflow-y-auto">
+          <div data-recent className="scrollbar-on-hover mt-6 flex min-h-0 flex-col gap-1 overflow-y-auto">
             <span className="px-3 pb-1 text-xs text-text-3">{t('sidebar.recent')}</span>
             {recent.slice(0, RECENT).map((c) => {
               const st = status(c.id);
