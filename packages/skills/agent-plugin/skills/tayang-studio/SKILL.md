@@ -40,12 +40,22 @@ When the video is finished, make sure the final mp4 is in the project's renders/
 
 ## AI images and voice
 
-Tayang can make AI images and a voiceover, paid with the user's Tayang credits. Every session has `$TAYANG_AI_URL` and `$TAYANG_AI_TOKEN`:
+Tayang makes AI images and voice-overs with the user's Tayang credits. Every session has `$TAYANG_AI_URL` and `$TAYANG_AI_TOKEN`.
+
+1. Before you plan a video, check the credits: `curl -s "$TAYANG_AI_URL/usage" -H "Authorization: Bearer $TAYANG_AI_TOKEN"`. It answers like `{"signedIn":true,"credits":28,"imagesAffordable":28,"voiceMinutesAffordable":4,"posts":5}`.
+2. With credits, Tayang's API is the only source for these:
+   - Every voice-over comes from `/voice`. Never use another text-to-speech: not macOS `say`, edge-tts, Piper, a pipeline's own TTS, or an API key of your own.
+   - Every picture you can't build in code (an illustrated scene, a character, a background, a texture) comes from `/image`. Never use stock photos, other image generators or images from the web.
+   - Plan within what is left: a voice-over longer than `voiceMinutesAffordable` minutes doesn't fit, so tighten the script or ask the user.
+3. Without credits (`credits` 0, or `signedIn` false): build everything in code, with on-screen text instead of narration, and tell the user once, in one short line, that AI voice and images come with Tayang credits (Settings › Account has the plans and a gift code field).
+4. The user's wishes come first: no voice-over when they asked for none, and no images where shapes and type do the job. Text, charts and maps are always built in code.
+
+The two calls:
 
 - Image (1 credit each): `curl -s -X POST "$TAYANG_AI_URL/image" -H "Authorization: Bearer $TAYANG_AI_TOKEN" -d '{"prompt":"<what to draw, in English>","aspect":"9:16","out":"assets/<name>.jpg"}'`. `aspect` is 9:16, 16:9 or 1:1; `"count"` makes up to 4 (`<name>-2.jpg`…).
 - Voice (about 7 credits a minute): `curl -s -X POST "$TAYANG_AI_URL/voice" -H "Authorization: Bearer $TAYANG_AI_TOKEN" -d '{"text":"<the narration>","language":"id","out":"audio/<name>.mp3"}'`.
 
-The answer lists the saved files (inside your folder). Use them only for a picture you can't build in code, or when the user wants narration; never for text, charts or maps. If the answer is an error (`signed-out`, `plan-required`, `quota-exceeded`), make the video without them and say so once, in one short line.
+The answer lists the saved files (inside your folder) and `creditsLeft`. If it is an error (`signed-out`, `plan-required`, `quota-exceeded`), finish the video without that asset and say so once, in one short line.
 
 ## Check the frames
 
