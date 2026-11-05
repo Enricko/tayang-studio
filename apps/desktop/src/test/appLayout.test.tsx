@@ -103,7 +103,7 @@ describe('App sidebar resizing', () => {
     expect(within(nav).queryByText('Recent')).toBeNull();
     // usage lives in the status bar, not the rail
     expect(within(nav).queryByRole('button', { name: 'Claude Code usage' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Agent usage' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Claude Code usage' })).toBeInTheDocument();
     // out again
     drag(handle, 64, 260);
     expect(panel.style.width).toBe('260px');

@@ -10,9 +10,10 @@ import { useApp } from '@/state/app';
 import { useUsage } from '@/state/usage';
 
 /**
- * The bar along the bottom of the window: each agent's usage (logo, a small meter of its 5 hour
- * window, `56% used 4h 39m · 7% used 6d 17h`), the open chat's agent first, then a refresh button;
- * the Tayang account's credits on the right. Clicking the usage opens the usage popover.
+ * The bar along the bottom of the window: the usage of the agent in use (the open chat's, else the
+ * default one): logo, a small meter of its 5 hour window, `56% used 4h 39m · 7% used 6d 17h`; then
+ * a refresh button, and the Tayang account's credits on the right. Clicking the usage opens the
+ * popover with every agent.
  */
 export function StatusBar() {
   const { t } = useTranslation();
@@ -27,7 +28,8 @@ export function StatusBar() {
     useUsage.getState().start();
   }, []);
 
-  const agents = [...usage].sort((a, b) => Number(b.agentId === first) - Number(a.agentId === first));
+  // Only the agent in use; the popover lists every agent.
+  const shown = usage.find((u) => u.agentId === first);
 
   return (
     <footer
@@ -37,23 +39,17 @@ export function StatusBar() {
       <UsagePopover>
         <button
           type="button"
-          aria-label={t('usage.barAria')}
-          className="flex h-6 min-w-0 cursor-pointer items-center gap-4 overflow-hidden rounded px-1.5 text-left hover:bg-raised/50"
+          aria-label={t('usage.aria', { agent: AGENT_NAMES[first] })}
+          className="flex h-6 min-w-0 cursor-pointer items-center overflow-hidden rounded px-1.5 text-left hover:bg-raised/50"
         >
-          {agents.length === 0 ? (
-            <span className="whitespace-nowrap">{loaded ? t('usage.unavailable') : t('usage.loading')}</span>
-          ) : (
-            agents.map((u) => (
-              <span key={u.agentId} data-testid="status-agent" className="flex shrink-0 items-center gap-2">
-                <AgentLogo id={u.agentId} size={14} />
-                {/* An agent without plan limits (opencode) has nothing to fill a meter with. */}
-                {u.status === 'ok' && !u.spend && (
-                  <UsageMeter percent={u.session?.usedPercent ?? 0} label={t('usage.aria', { agent: AGENT_NAMES[u.agentId] })} className="w-14" />
-                )}
-                <span className="whitespace-nowrap">{usageLine(u)}</span>
-              </span>
-            ))
-          )}
+          <span data-testid="status-agent" className="flex min-w-0 items-center gap-2">
+            <AgentLogo id={first} size={14} />
+            {/* An agent without plan limits (opencode) has nothing to fill a meter with. */}
+            {shown?.status === 'ok' && !shown.spend && (
+              <UsageMeter percent={shown.session?.usedPercent ?? 0} label={t('usage.aria', { agent: AGENT_NAMES[first] })} className="w-14 shrink-0" />
+            )}
+            <span className="truncate">{shown ? usageLine(shown) : loaded ? t('usage.unavailable') : t('usage.loading')}</span>
+          </span>
         </button>
       </UsagePopover>
       <button

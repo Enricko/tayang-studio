@@ -697,7 +697,6 @@ export const en = {
     creditsLine_one: '{{count}} credit · {{posts}} posts',
     creditsLine_other: '{{count}} credits · {{posts}} posts',
     statusBar: 'Status bar',
-    barAria: 'Agent usage',
     loading: 'Loading usage',
     aria: '{{agent}} usage',
     title: 'Usage',

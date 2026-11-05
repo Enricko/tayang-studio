@@ -84,7 +84,7 @@ describe('mergeUsage', () => {
   });
 });
 
-describe('status bar usage and popover', () => {
+describe('status bar: the agent in use, all of them in the popover', () => {
   beforeEach(() => {
     stopUsagePolling();
     useUsage.setState({ usage: [], loaded: false, loading: false });
@@ -100,7 +100,7 @@ describe('status bar usage and popover', () => {
     const bar = screen.getByRole('progressbar', { name: 'Claude Code usage' });
     expect(bar).toHaveAttribute('aria-valuenow', '33');
 
-    await userEvent.click(screen.getByRole('button', { name: 'Agent usage' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Claude Code usage' }));
     expect(await screen.findByText('Usage')).toBeInTheDocument();
     expect(screen.getByText('all agents')).toBeInTheDocument();
     expect(screen.getAllByTestId('usage-row')).toHaveLength(2);
@@ -120,7 +120,7 @@ describe('status bar usage and popover', () => {
 
   it('goes to the Agents screen from usage details', async () => {
     render(<StatusBar />);
-    await userEvent.click(screen.getByRole('button', { name: 'Agent usage' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Claude Code usage' }));
     await userEvent.click(await screen.findByRole('button', { name: /Usage details & history/ }));
     expect(useApp.getState().route).toEqual({ name: 'agents' });
   });
@@ -131,7 +131,7 @@ describe('status bar usage and popover', () => {
     render(<StatusBar />);
     expect(await screen.findByText('today $0.00 · 186.6K tokens')).toBeInTheDocument();
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Agent usage' }));
+    await userEvent.click(screen.getByRole('button', { name: 'opencode usage' }));
     expect(await screen.findByText('$0.00 · 186.6K tokens')).toBeInTheDocument();
     expect(screen.getByText('$0.00 · 186.6K tokens').parentElement).toHaveAttribute('title', '54 replies');
     expect(screen.getByText('$1.50 · 1.2M tokens')).toBeInTheDocument();

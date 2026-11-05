@@ -1298,7 +1298,7 @@ describe('Agent picker', () => {
     expect(screen.queryByRole('menuitem')).not.toBeInTheDocument();
   });
 
-  it('the status bar puts the open chat agent first', async () => {
+  it('the status bar shows the open chat agent only', async () => {
     vi.mocked(ipc.getChat).mockResolvedValue({ ...chat('c1', 'p1'), agentId: 'gemini' });
     const ok = (agentId: 'claude' | 'gemini', usedPercent: number) =>
       ({ agentId, status: 'ok', session: { usedPercent, resetsAt: null }, weekly: null, modelWeekly: null, updatedAt: '', message: null }) as const;
@@ -1309,8 +1309,9 @@ describe('Agent picker', () => {
         <ChatProject chatId="c1" />
       </>,
     );
-    await waitFor(() => expect(screen.getAllByTestId('status-agent')[0]).toHaveTextContent('22% used'));
-    expect(screen.getAllByTestId('status-agent')[1]).toHaveTextContent('11% used');
+    await waitFor(() => expect(screen.getByTestId('status-agent')).toHaveTextContent('22% used'));
+    expect(screen.getByRole('button', { name: 'Gemini CLI usage' })).toBeInTheDocument();
+    expect(screen.queryByText(/11% used/)).toBeNull();
   });
 });
 

@@ -691,7 +691,6 @@ export const id: Translations = {
     creditsLine_one: '{{count}} kredit · {{posts}} post',
     creditsLine_other: '{{count}} kredit · {{posts}} post',
     statusBar: 'Bilah status',
-    barAria: 'Pemakaian agen',
     loading: 'Memuat pemakaian',
     aria: 'Pemakaian {{agent}}',
     title: 'Pemakaian',
