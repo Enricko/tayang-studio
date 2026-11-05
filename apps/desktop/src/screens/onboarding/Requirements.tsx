@@ -8,7 +8,7 @@ import { OnboardingHeader } from '@/components/OnboardingHeader';
 import { AGENT_NAMES } from '@/lib/agents';
 import { locale } from '@/i18n';
 import { toolName } from '@/lib/tools';
-import { getSystemInfo, updateSettings } from '@/lib/ipc';
+import { getSystemInfo } from '@/lib/ipc';
 import { cn } from '@/lib/utils';
 import { useApp } from '@/state/app';
 import { useInstall } from '@/state/install';
@@ -18,7 +18,7 @@ const PM: Record<string, string> = { brew: 'Homebrew', winget: 'winget', apt: 'a
 const OS: Record<string, string> = { macos: 'macOS', windows: 'Windows', linux: 'Linux' };
 
 export function Requirements() {
-  const { navigate, settings, setSettings } = useApp();
+  const { navigate, settings } = useApp();
   const { t } = useTranslation();
   const statuses = useInstall((s) => s.statuses);
   const active = useInstall((s) => s.active);
@@ -60,11 +60,8 @@ export function Requirements() {
     void start(tool, { sys, agent: agentId, elevenLabsKey: key });
   };
 
-  const begin = async () => {
-    const next = await updateSettings({ onboarded: true });
-    setSettings(next);
-    navigate({ name: 'chat-new' });
-  };
+  // The tools are ready: last comes the optional Tayang sign-in, which finishes onboarding.
+  const begin = () => navigate({ name: 'onboarding-account' });
 
   const group = (title: string, note: string, tools: ToolStatus[]) => (
     <section className="flex flex-col gap-3" key={title}>

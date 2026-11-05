@@ -26,12 +26,13 @@ import { Style } from '@/screens/Style';
 import { Videos } from '@/screens/Videos';
 import { Connect } from '@/screens/onboarding/Connect';
 import { Requirements } from '@/screens/onboarding/Requirements';
+import { AccountStep } from '@/screens/onboarding/AccountStep';
 import { Welcome } from '@/screens/onboarding/Welcome';
 import { useApp, type Route } from '@/state/app';
 import { SIDEBAR, useFittedLayout, useLayout, useSidebarShortcut, useWindowWidthSync } from '@/state/layout';
 import { refreshJobs } from '@/state/jobs';
 
-const ONBOARDING = new Set<Route['name']>(['welcome', 'connect', 'requirements']);
+const ONBOARDING = new Set<Route['name']>(['welcome', 'connect', 'requirements', 'onboarding-account']);
 
 const SIDEBAR_KEY: Partial<Record<Route['name'], SidebarKey>> = {
   'chat-new': 'chat',
@@ -48,6 +49,7 @@ const SIDEBAR_KEY: Partial<Record<Route['name'], SidebarKey>> = {
 function Onboarding({ name }: { name: Route['name'] }) {
   if (name === 'connect') return <Connect />;
   if (name === 'requirements') return <Requirements />;
+  if (name === 'onboarding-account') return <AccountStep />;
   return <Welcome />;
 }
 

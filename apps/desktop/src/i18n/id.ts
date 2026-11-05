@@ -42,7 +42,19 @@ export const id: Translations = {
     resizeFiles: 'Ubah lebar panel file',
   },
   onboarding: {
-    step: 'Langkah {{step}} dari 3',
+    account: {
+      title: 'Masuk ke Tayang',
+      intro: 'Opsional. Akun Tayang menambah hal yang tidak bisa dibuat agenmu sendiri, dibayar dengan kredit paketmu.',
+      perkImages: 'Gambar AI untuk videomu',
+      perkVoice: 'Voiceover bahasa Indonesia dan Inggris',
+      perkPost: 'Posting video ke TikTok, Instagram, YouTube, dan lainnya, sekarang atau terjadwal',
+      signIn: 'Masuk dengan Google',
+      later: 'Kamu bisa masuk nanti di Pengaturan › Akun.',
+      signedIn: 'Sudah masuk',
+      start: 'Mulai membuat video',
+      skip: 'Lewati dulu',
+    },
+    step: 'Langkah {{step}} dari {{total}}',
     welcome: {
       eyebrow: 'TAYANG STUDIO · GRATIS DAN OPEN SOURCE',
       headline1: 'Video motion graphic,',

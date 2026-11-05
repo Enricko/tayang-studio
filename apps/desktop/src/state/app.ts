@@ -5,6 +5,8 @@ export type Route =
   | { name: 'welcome' }
   | { name: 'connect' }
   | { name: 'requirements' }
+  /** Onboarding's last, optional step: sign in to a Tayang account. */
+  | { name: 'onboarding-account' }
   | { name: 'chat-new'; styleId?: string }
   | {
       name: 'chat';

@@ -40,7 +40,19 @@ export const en = {
     resizeFiles: 'Resize files',
   },
   onboarding: {
-    step: 'Step {{step}} of 3',
+    account: {
+      title: 'Sign in to Tayang',
+      intro: 'Optional. A Tayang account adds what your agent can\'t make on its own, paid with your plan\'s credits.',
+      perkImages: 'AI images for your videos',
+      perkVoice: 'Voiceover in Indonesian and English',
+      perkPost: 'Post videos to TikTok, Instagram, YouTube and more, now or on schedule',
+      signIn: 'Sign in with Google',
+      later: 'You can sign in later in Settings › Account.',
+      signedIn: 'Signed in',
+      start: 'Start making videos',
+      skip: 'Skip for now',
+    },
+    step: 'Step {{step}} of {{total}}',
     welcome: {
       eyebrow: 'TAYANG STUDIO · FREE AND OPEN SOURCE',
       headline1: 'Motion videos,',
