@@ -637,7 +637,7 @@ export const id: Translations = {
     update: 'Perbarui',
     downloading: 'Mengunduh… {{percent}}%',
     downloadingNoPercent: 'Mengunduh…',
-    restart: 'Mulai ulang untuk memperbarui',
+    restart: 'Mulai ulang sekarang',
     agentsWorking_one: 'Memulai ulang akan menghentikan agen yang sedang bekerja.',
     agentsWorking_other: 'Memulai ulang akan menghentikan {{count}} agen yang sedang bekerja.',
     failed: 'Gagal memperbarui: {{message}}',

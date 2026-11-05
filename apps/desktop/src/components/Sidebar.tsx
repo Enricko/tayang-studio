@@ -268,7 +268,7 @@ export function Sidebar({ active, collapsed = false }: { active: SidebarKey; col
           </div>
         )}
 
-        <div className={cn('mt-auto flex flex-col gap-3', rail && 'items-center')}>
+        <div className={cn('mt-auto flex shrink-0 flex-col gap-3 pt-3', rail && 'items-center')}>
           <NavItem
             rail={rail}
             active={active === 'settings'}

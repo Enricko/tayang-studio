@@ -29,13 +29,13 @@ export function UpdateBanner() {
       )}
       {phase === 'ready' && working > 0 && <p className="m-0 text-text-2">{t('updates.agentsWorking', { count: working })}</p>}
       {phase === 'available' && (
-        <Button className="h-8 text-[13px]" onClick={() => void download()}>
+        <Button className="h-auto min-h-8 py-1.5 text-[13px] whitespace-normal" onClick={() => void download()}>
           <ArrowDownToLine size={14} aria-hidden="true" />
           {error ? t('updates.retry') : t('updates.update')}
         </Button>
       )}
       {phase === 'ready' && (
-        <Button className="h-8 text-[13px]" onClick={() => void restart()}>
+        <Button className="h-auto min-h-8 py-1.5 text-[13px] whitespace-normal" onClick={() => void restart()}>
           <RotateCw size={14} aria-hidden="true" />
           {t('updates.restart')}
         </Button>
