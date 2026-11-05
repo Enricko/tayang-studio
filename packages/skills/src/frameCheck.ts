@@ -31,6 +31,13 @@ export const stripFramesToken = (text: string): string => {
 export const FOREGROUND_RULE =
   "Run installs, renders and pipelines in the foreground and wait for them to finish before you reply. Never start a long job in the background and end your turn: you can't message the user after your turn ends, and Tayang shows the user that you're still working while your turn runs. If a command needs more than a few minutes, say so first, then run it and wait.";
 
+/**
+ * AI images and voiceover through Tayang, paid with the user's credits ($TAYANG_AI_URL and
+ * $TAYANG_AI_TOKEN are set on every agent session; see the desktop's ai_proxy.rs).
+ */
+export const AI_ASSETS_RULE =
+  'Tayang can make AI images and voiceover with the user\'s Tayang credits. Image: `curl -s -X POST "$TAYANG_AI_URL/image" -H "Authorization: Bearer $TAYANG_AI_TOKEN" -d \'{"prompt":"<what to draw, in English>","aspect":"9:16","out":"assets/<name>.jpg"}\'` (1 credit per image; aspect 9:16, 16:9 or 1:1; up to 4 with "count"). Voice: `curl -s -X POST "$TAYANG_AI_URL/voice" -H "Authorization: Bearer $TAYANG_AI_TOKEN" -d \'{"text":"<the narration>","language":"id","out":"audio/<name>.mp3"}\'` (about 7 credits per minute). The answer lists the saved files. Use them only when the video needs a picture you can\'t build in code or the user wants narration, never for text or charts. If the answer is an error (signed-out, plan-required, quota-exceeded), make the video without them and tell the user once in one short line.';
+
 /** Tayang's preview and status read the render from renders/; a template pipeline may write it elsewhere. */
 export const RENDERS_RULE =
   "When the video is finished, make sure the final mp4 is in the project's renders/ folder (copy it there if your pipeline writes it elsewhere). Tayang's preview and status read it from there.";

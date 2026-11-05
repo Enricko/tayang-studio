@@ -6,6 +6,7 @@ import { disable as disableAutostart, enable as enableAutostart } from '@tauri-a
 import { DEFAULT_SETTINGS, type AgentInfo, type Settings as SettingsT, type SystemInfo, type ToolId } from '@tayang/shared';
 import { AccountSection } from '@/components/Account';
 import { ArchiveSection } from '@/components/ArchiveSection';
+import { SocialAccounts } from '@/components/SocialAccounts';
 import { AgentLogo } from '@/components/AgentLogo';
 import { Button } from '@/components/Button';
 import { ToolRow, TOOL_ORDER } from '@/components/ToolRow';
@@ -468,6 +469,7 @@ export function Settings() {
         <section id="account" className="flex flex-col gap-3">
           <h2 className="m-0 text-base font-medium">{t('settings.sections.account')}</h2>
           <AccountSection />
+          <SocialAccounts />
           <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3">
             <div className="mr-auto flex flex-col gap-1">
               <label htmlFor="share-install-stats" className="text-sm font-medium">

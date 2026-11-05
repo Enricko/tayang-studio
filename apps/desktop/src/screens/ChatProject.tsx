@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { PanelRight } from 'lucide-react';
+import { PanelRight, Send } from 'lucide-react';
 import type { AgentId, Chat, MessagePart, Project } from '@tayang/shared';
 import { Button } from '@/components/Button';
 import { Composer } from '@/components/Composer';
@@ -11,6 +11,7 @@ import { Preview } from '@/screens/preview/Preview';
 import { FileTree } from '@/components/workspace/FileTree';
 import { Workspace } from '@/components/workspace/Workspace';
 import { ScheduleDialog } from '@/components/ScheduleDialog';
+import { PostDialog } from '@/components/PostDialog';
 import { ScrollToBottom } from '@/components/ScrollToBottom';
 import { TurnRail } from '@/components/TurnRail';
 import { StepBar } from '@/components/StepBar';
@@ -42,6 +43,7 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
   const agent = chat?.agentId ?? defaultAgent;
   const [project, setProject] = useState<Project | null>(null);
   const [scheduling, setScheduling] = useState(false);
+  const [posting, setPosting] = useState(false);
   const [rendering, setRendering] = useState(false);
   const [renderError, setRenderError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
@@ -189,6 +191,17 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
             {t('schedule.action')}
           </Button>
         )}
+        {project && (
+          <Button
+            variant="secondary"
+            disabled={project.status !== 'rendered' && !project.socialPostId}
+            title={project.status !== 'rendered' ? t('post.renderFirst') : undefined}
+            onClick={() => setPosting(true)}
+          >
+            <Send size={14} aria-hidden="true" />
+            {project.socialPostId ? t('post.postedLabel') : t('post.action')}
+          </Button>
+        )}
         <Button
           variant="primary"
           disabled={!project || rendering || streaming}
@@ -215,6 +228,7 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
         )}
       </header>
       <ScheduleDialog open={scheduling} onOpenChange={setScheduling} project={project} onSaved={setProject} />
+      {project && <PostDialog open={posting} onOpenChange={setPosting} project={project} onPosted={setProject} />}
       {runs && runs.render.length > 0 && (
         <p className="m-0 border-b border-border px-6 py-2 font-mono text-xs break-words text-text-3">
           {t('chat.renderCommand', { commands: [...(runs.install?.length ? [runs.install] : []), runs.render].map(shellDisplay).join(' && ') })}

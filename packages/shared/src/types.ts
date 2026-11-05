@@ -58,6 +58,8 @@ export interface Project {
   remindedAt: string | null;
   /** When the "review before it's due" reminder was shown (RFC 3339); cleared when the schedule changes. */
   reviewRemindedAt: string | null;
+  /** The auto-post this video went out with (the Tayang API's post id); missing when never posted. */
+  socialPostId?: string | null;
   durationSec: number | null;
   createdAt: string;
   updatedAt: string;

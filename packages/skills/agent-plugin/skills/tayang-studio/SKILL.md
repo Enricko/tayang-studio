@@ -38,6 +38,15 @@ Run installs, renders and pipelines in the foreground and wait for them to finis
 
 When the video is finished, make sure the final mp4 is in the project's renders/ folder (copy it there if your pipeline writes it elsewhere). Tayang's preview and status read it from there.
 
+## AI images and voice
+
+Tayang can make AI images and a voiceover, paid with the user's Tayang credits. Every session has `$TAYANG_AI_URL` and `$TAYANG_AI_TOKEN`:
+
+- Image (1 credit each): `curl -s -X POST "$TAYANG_AI_URL/image" -H "Authorization: Bearer $TAYANG_AI_TOKEN" -d '{"prompt":"<what to draw, in English>","aspect":"9:16","out":"assets/<name>.jpg"}'`. `aspect` is 9:16, 16:9 or 1:1; `"count"` makes up to 4 (`<name>-2.jpg`…).
+- Voice (about 7 credits a minute): `curl -s -X POST "$TAYANG_AI_URL/voice" -H "Authorization: Bearer $TAYANG_AI_TOKEN" -d '{"text":"<the narration>","language":"id","out":"audio/<name>.mp3"}'`.
+
+The answer lists the saved files (inside your folder). Use them only for a picture you can't build in code, or when the user wants narration; never for text, charts or maps. If the answer is an error (`signed-out`, `plan-required`, `quota-exceeded`), make the video without them and say so once, in one short line.
+
 ## Check the frames
 
 Before you say a video is done, unless the project brief or the message says to skip the frame check:
