@@ -199,8 +199,9 @@ function Shell({ route }: { route: Route }) {
   useSidebarShortcut();
 
   return (
-    <div className="flex h-full flex-col bg-background">
-    <div className="flex min-h-0 flex-1">
+    // The window never scrolls as a page: each panel scrolls on its own.
+    <div className="flex h-full flex-col overflow-hidden bg-background">
+    <div className="flex min-h-0 flex-1 overflow-hidden">
       <div id="app-sidebar" className="relative h-full shrink-0" style={{ width: fitted.sidebar }}>
         <Sidebar active={SIDEBAR_KEY[route.name] ?? 'chat'} collapsed={fitted.collapsed} />
         <ResizeHandle
