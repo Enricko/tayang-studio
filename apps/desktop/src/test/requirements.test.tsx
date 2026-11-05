@@ -55,6 +55,7 @@ const settings: Settings = {
   openAtLogin: false,
   buildJobsChecked: true,
   projectStatusChecked: true,
+  agentModels: {},
 };
 
 const tool = (id: ToolStatus['id'], name: string, required: boolean, ok: boolean): ToolStatus => ({

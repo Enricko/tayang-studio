@@ -303,6 +303,7 @@ impl Db {
             "openAtLogin": false,
             "buildJobsChecked": false,
             "projectStatusChecked": false,
+            "agentModels": {},
         })
     }
 

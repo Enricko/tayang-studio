@@ -752,3 +752,68 @@ async fn a_failed_off_stops_only_the_session_it_ran_on() {
     manager.prompt("c1", vec![PromptPart::Text("hello".into())]).await.expect("the new session is alive");
     manager.stop("c1").await.unwrap();
 }
+
+async fn started_with_model(ws: &Workspace, args: &[&str], model: Option<&str>) -> (AcpManager, Arc<RecordingSink>) {
+    let manager = AcpManager::new();
+    let sink = Arc::new(RecordingSink::default());
+    let mut command = fake_agent();
+    command.extend(args.iter().map(|a| a.to_string()));
+    let options = SessionOptions { model: model.map(str::to_string), ..Default::default() };
+    manager.start_with("c1", &command, &ws.cwd, sink.clone(), options).await.expect("agent starts");
+    (manager, sink)
+}
+
+fn last_models(sink: &RecordingSink) -> Option<(Option<String>, Vec<String>)> {
+    sink.updates().into_iter().rev().find_map(|u| match u {
+        AgentUpdate::Models { current, options } => Some((current, options.into_iter().map(|o| o.value).collect())),
+        _ => None,
+    })
+}
+
+#[tokio::test]
+async fn config_option_models_are_reported_and_switched() {
+    let ws = workspace();
+    let (manager, sink) = started_with_model(&ws, &["--config-models"], None).await;
+    // Grouped options are flattened.
+    assert_eq!(last_models(&sink), Some((Some("fast".into()), vec!["fast".into(), "smart-free".into()])));
+    manager.set_model("c1", "smart-free").await.unwrap();
+    assert_eq!(last_models(&sink).unwrap().0.as_deref(), Some("smart-free"));
+    ask(&manager, &sink, "model").await;
+    assert_eq!(sink.texts().last().map(String::as_str), Some("model smart-free"));
+    // A model the agent didn't offer is refused before asking it.
+    assert!(manager.set_model("c1", "made-up").await.is_err());
+    manager.stop("c1").await.unwrap();
+}
+
+#[tokio::test]
+async fn legacy_models_switch_with_set_model() {
+    let ws = workspace();
+    let (manager, sink) = started_with_model(&ws, &["--legacy-models"], None).await;
+    assert_eq!(manager.models("c1").unwrap().unwrap().config_id, None);
+    manager.set_model("c1", "smart-free").await.unwrap();
+    ask(&manager, &sink, "model").await;
+    assert_eq!(sink.texts().last().map(String::as_str), Some("model smart-free"));
+    manager.stop("c1").await.unwrap();
+}
+
+#[tokio::test]
+async fn a_session_starts_on_the_picked_model_when_offered() {
+    let ws = workspace();
+    let (manager, sink) = started_with_model(&ws, &["--config-models"], Some("smart-free")).await;
+    assert_eq!(last_models(&sink).unwrap().0.as_deref(), Some("smart-free"));
+    manager.stop("c1").await.unwrap();
+    // A pick the agent no longer offers leaves its default, and the start still works.
+    let (manager, sink) = started_with_model(&ws, &["--config-models"], Some("gone")).await;
+    assert_eq!(last_models(&sink).unwrap().0.as_deref(), Some("fast"));
+    manager.stop("c1").await.unwrap();
+}
+
+#[tokio::test]
+async fn agents_without_models_report_none() {
+    let ws = workspace();
+    let (manager, sink) = started_with_model(&ws, &[], Some("fast")).await;
+    assert!(manager.models("c1").unwrap().is_none());
+    assert!(last_models(&sink).is_none());
+    assert!(manager.set_model("c1", "fast").await.is_err());
+    manager.stop("c1").await.unwrap();
+}

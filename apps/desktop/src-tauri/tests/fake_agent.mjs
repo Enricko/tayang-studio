@@ -41,6 +41,21 @@ let sessionMeta = null;
 let cancelWaiter = null;
 let cancelled = false;
 let currentMode = "default";
+// --config-models: session/new reports a `model` config option (set with session/set_config_option);
+// --legacy-models: the older `models` field (set with session/set_model). Prompt "model" reports it.
+let currentModel = "fast";
+const MODELS = [
+  { value: "fast", name: "Fast" },
+  { value: "smart-free", name: "Smart (free)" },
+];
+const modelOption = () => ({
+  id: "model",
+  name: "Model",
+  category: "model",
+  type: "select",
+  currentValue: currentModel,
+  options: [{ group: "zen", name: "Zen", options: MODELS }],
+});
 
 function send(msg) {
   process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...msg }) + "\n");
@@ -130,6 +145,9 @@ async function runPrompt(params) {
     }
     case "mode":
       text(`mode ${currentMode}`);
+      return "end_turn";
+    case "model":
+      text(`model ${currentModel}`);
       return "end_turn";
     case "crash":
       text("about to crash");
@@ -226,8 +244,31 @@ function handle(msg) {
             availableModes: ids.map((id) => ({ id, name: id })),
           };
         }
+        if (process.argv.includes("--config-models")) result.configOptions = [modelOption()];
+        if (process.argv.includes("--legacy-models")) {
+          result.models = {
+            currentModelId: currentModel,
+            availableModels: MODELS.map((m) => ({ modelId: m.value, name: m.name })),
+          };
+        }
         send({ id, result });
       }
+      return;
+    case "session/set_config_option":
+      if (params?.configId !== "model" || !MODELS.some((m) => m.value === params?.value)) {
+        send({ id, error: { code: -32602, message: "no such model" } });
+        return;
+      }
+      currentModel = params.value;
+      send({ id, result: { configOptions: [modelOption()] } });
+      return;
+    case "session/set_model":
+      if (!MODELS.some((m) => m.value === params?.modelId)) {
+        send({ id, error: { code: -32602, message: "no such model" } });
+        return;
+      }
+      currentModel = params.modelId;
+      send({ id, result: {} });
       return;
     case "session/set_mode":
       if (process.argv.includes("--bad-set-mode") || typeof params?.modeId !== "string") {

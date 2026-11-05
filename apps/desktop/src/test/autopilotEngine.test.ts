@@ -156,6 +156,7 @@ const settings: Settings = {
   openAtLogin: false,
   buildJobsChecked: true,
   projectStatusChecked: true,
+  agentModels: {},
 };
 
 const atlas: Style = { id: 'atlas-journey', name: 'Atlas journey', source: 'builtin', sourceUrl: null, notes: {}, prompt: 'Animated maps', createdAt: '' };

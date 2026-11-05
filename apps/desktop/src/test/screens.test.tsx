@@ -115,6 +115,7 @@ const settings: Settings = {
   openAtLogin: false,
   buildJobsChecked: true,
   projectStatusChecked: true,
+  agentModels: {},
 };
 
 const project = (id: string, title: string, status: Project['status'], scheduledAt: string | null = null, extra: Partial<Project> = {}): Project => ({

@@ -944,7 +944,7 @@ fn session_options(agent: AgentId, plugin: Option<&Path>, skills: bool) -> crate
     let env = vec![("TAYANG_STUDIO".to_string(), "1".to_string())];
     let use_modes = agent == AgentId::Claude;
     if agent != AgentId::Claude || !skills {
-        return crate::acp::SessionOptions { meta: None, env, auto: false, use_modes, mode_timeout: None };
+        return crate::acp::SessionOptions { meta: None, env, auto: false, use_modes, mode_timeout: None, model: None };
     }
     let mut meta = serde_json::json!({ "systemPrompt": { "append": TAYANG_APPEND } });
     if let Some(path) = plugin {
@@ -952,7 +952,7 @@ fn session_options(agent: AgentId, plugin: Option<&Path>, skills: bool) -> crate
             "options": { "plugins": [{ "type": "local", "path": path.to_string_lossy() }] }
         });
     }
-    crate::acp::SessionOptions { meta: Some(meta), env, auto: false, use_modes, mode_timeout: None }
+    crate::acp::SessionOptions { meta: Some(meta), env, auto: false, use_modes, mode_timeout: None, model: None }
 }
 
 /// Starts the chat's agent. Resolves `true` when Claude started without the Tayang
@@ -983,6 +983,7 @@ pub async fn agent_start(
     };
     let mut options = session_options(agent_id, plugin.as_deref(), skills);
     options.auto = wants_auto(&chat_id, auto.unwrap_or(false));
+    options.model = picked_model(&state, agent_id);
     let skills_as_text = skills && needs_skills_text(agent_id, plugin.as_deref());
     state
         .acp
@@ -990,6 +991,69 @@ pub async fn agent_start(
         .await
         .map_err(err)?;
     Ok(skills_as_text)
+}
+
+fn agent_key(agent: AgentId) -> String {
+    serde_json::to_value(agent).ok().and_then(|v| v.as_str().map(str::to_string)).unwrap_or_default()
+}
+
+/// The model the user picked for this agent, if any.
+fn picked_model(state: &AppState, agent: AgentId) -> Option<String> {
+    state.db.get_settings(&state.home).agent_models.get(&agent_key(agent)).cloned()
+}
+
+/// The models an agent offers, and the one in use.
+#[derive(serde::Serialize)]
+pub struct AgentModels {
+    current: Option<String>,
+    options: Vec<crate::types::ModelChoice>,
+}
+
+/// Picks the model for an agent (None: its own default) and, when `chat_id` has a session
+/// running, switches that session now. Later sessions of the agent start on it.
+#[tauri::command]
+pub async fn set_agent_model(
+    state: State<'_, AppState>,
+    agent_id: AgentId,
+    model: Option<String>,
+    chat_id: Option<String>,
+) -> CmdResult<Settings> {
+    let settings = state
+        .db
+        .update_settings(serde_json::json!({ "agentModels": { agent_key(agent_id): model } }))
+        .map_err(err)?;
+    if let (Some(chat), Some(value)) = (chat_id.as_deref(), model.as_deref()) {
+        // No session yet is fine: it starts on the picked model.
+        if state.acp.models(chat).is_ok() {
+            state.acp.set_model(chat, value).await.map_err(err)?;
+        }
+    }
+    Ok(settings)
+}
+
+/// Never shows anything: a probe session's updates go nowhere.
+struct QuietSink;
+impl crate::acp::AcpSink for QuietSink {
+    fn update(&self, _chat_id: &str, _u: AgentUpdate) {}
+    fn permission(&self, _req: crate::types::PermissionRequest) {}
+}
+
+/// The models an agent offers, read by opening a short session in a scratch folder (for the picker
+/// before any chat with that agent has run). None when the agent doesn't report models.
+#[tauri::command]
+pub async fn agent_models(app: AppHandle, state: State<'_, AppState>, agent_id: AgentId) -> CmdResult<Option<AgentModels>> {
+    let mut command = system::acp_command(agent_id).ok_or("This agent has no start command")?;
+    let program = command[0].clone();
+    let found = system::Exec::which(&RealExec, &program).ok_or_else(|| format!("Can't find {program} on this computer"))?;
+    command[0] = found.to_string_lossy().into_owned();
+    let cwd = app.path().app_cache_dir().map_err(err)?.join("model-probe");
+    std::fs::create_dir_all(&cwd).map_err(err)?;
+    let probe = format!("models-{}", agent_key(agent_id));
+    let options = session_options(agent_id, None, false);
+    state.acp.start_with(&probe, &command, &cwd, Arc::new(QuietSink), options).await.map_err(err)?;
+    let models = state.acp.models(&probe).ok().flatten();
+    let _ = state.acp.stop(&probe).await;
+    Ok(models.map(|m| AgentModels { current: m.current, options: m.options }))
 }
 
 /// Style studies and the autopilots' topic chats always run in auto mode; the install chat

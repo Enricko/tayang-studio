@@ -102,6 +102,7 @@ const settings: Settings = {
   openAtLogin: false,
   buildJobsChecked: true,
   projectStatusChecked: true,
+  agentModels: {},
 };
 
 describe('Indonesian interface', () => {

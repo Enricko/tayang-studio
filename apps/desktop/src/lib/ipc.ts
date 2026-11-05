@@ -12,6 +12,7 @@ import type {
   Job,
   MediaInfo,
   MessagePart,
+  ModelChoice,
   NewProject,
   Project,
   ProjectStatus,
@@ -198,3 +199,15 @@ export const projectFiles = (projectId: string, dir = '') => invoke<ProjectFile[
 /** Files whose name contains `query`; dependency and dot folders are not searched. */
 export const findProjectFiles = (projectId: string, query: string) => invoke<ProjectFile[]>('find_project_files', { projectId, query });
 export const readProjectFile = (projectId: string, path: string) => invoke<ProjectFileContent>('read_project_file', { projectId, path });
+
+// ---- agent models ----
+
+export interface AgentModels {
+  current: string | null;
+  options: ModelChoice[];
+}
+/** The models an agent offers, read from a short session in a scratch folder; null when it reports none. */
+export const agentModels = (agentId: AgentId) => invoke<AgentModels | null>('agent_models', { agentId });
+/** Picks the agent's model (null: its own default); a running session of `chatId` switches now. */
+export const setAgentModel = (agentId: AgentId, model: string | null, chatId: string | null) =>
+  invoke<Settings>('set_agent_model', { agentId, model, chatId });

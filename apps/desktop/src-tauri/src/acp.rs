@@ -5,7 +5,7 @@
 
 use crate::projects;
 use crate::types::{
-    AgentUpdate, PermissionOption, PermissionOptionKind, PermissionRequest, ToolCallStatus,
+    AgentUpdate, ModelChoice, PermissionOption, PermissionOptionKind, PermissionRequest, ToolCallStatus,
 };
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
@@ -248,6 +248,8 @@ pub struct SessionOptions {
     pub use_modes: bool,
     /// How long `session/set_mode` may take before Tayang approves requests itself.
     pub mode_timeout: Option<Duration>,
+    /// The model to switch to once the session is open, when the agent offers it.
+    pub model: Option<String>,
 }
 
 /// How auto mode was applied to a session.
@@ -283,6 +285,60 @@ fn parse_modes(created: &Value) -> ModeState {
         current: modes.get("currentModeId").and_then(Value::as_str).map(str::to_string),
         updates: 0,
     }
+}
+
+/// The models a session offers. Agents report them two ways: a `model` session config option
+/// (`configOptions`, switched with `session/set_config_option`) or the older `models` field
+/// (switched with `session/set_model`); `config_id` says which.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ModelState {
+    pub config_id: Option<String>,
+    pub current: Option<String>,
+    pub options: Vec<ModelChoice>,
+}
+
+fn choice(v: &Value, value_key: &str) -> Option<ModelChoice> {
+    let value = v.get(value_key)?.as_str()?.to_string();
+    Some(ModelChoice {
+        name: v.get("name").and_then(Value::as_str).unwrap_or(&value).to_string(),
+        description: v.get("description").and_then(Value::as_str).map(str::to_string),
+        value,
+    })
+}
+
+/// The models in a `session/new` (or `session/set_config_option`) result, or a
+/// `config_option_update`: the `model` config option first, else the `models` field.
+pub fn parse_models(v: &Value) -> Option<ModelState> {
+    let config = v.get("configOptions").and_then(Value::as_array).and_then(|opts| {
+        opts.iter().find(|o| {
+            o.get("category").and_then(Value::as_str) == Some("model") || o.get("id").and_then(Value::as_str) == Some("model")
+        })
+    });
+    if let Some(o) = config {
+        let mut options = Vec::new();
+        for item in o.get("options").and_then(Value::as_array).into_iter().flatten() {
+            // Options may come in named groups.
+            match item.get("options").and_then(Value::as_array) {
+                Some(group) => options.extend(group.iter().filter_map(|g| choice(g, "value"))),
+                None => options.extend(choice(item, "value")),
+            }
+        }
+        return Some(ModelState {
+            config_id: o.get("id").and_then(Value::as_str).map(str::to_string),
+            current: o.get("currentValue").and_then(Value::as_str).map(str::to_string),
+            options,
+        });
+    }
+    let models = v.get("models")?;
+    Some(ModelState {
+        config_id: None,
+        current: models.get("currentModelId").and_then(Value::as_str).map(str::to_string),
+        options: models
+            .get("availableModels")
+            .and_then(Value::as_array)
+            .map(|a| a.iter().filter_map(|m| choice(m, "modelId")).collect())
+            .unwrap_or_default(),
+    })
 }
 
 fn spawn_agent(command: &[String], cwd: &Path, env: &[(String, String)]) -> Result<Child> {
@@ -458,6 +514,8 @@ struct SessionCore {
     permissions: Arc<Permissions>,
     session_id: OnceLock<String>,
     modes: Mutex<ModeState>,
+    /// The models the agent offers; None when it reports none.
+    models: Mutex<Option<ModelState>>,
     /// Answer permission requests with allow-once instead of asking the user.
     auto_approve: AtomicBool,
     /// The user wants auto mode. While the agent's own `auto` mode isn't the current mode
@@ -613,6 +671,12 @@ impl SessionCore {
                     });
                 }
             }
+            "config_option_update" => {
+                if let Some(fresh) = parse_models(update) {
+                    *self.models.lock().unwrap() = Some(fresh);
+                    self.emit_models();
+                }
+            }
             "current_mode_update" => {
                 if let Some(mode) = update.get("currentModeId").and_then(Value::as_str) {
                     let mut modes = self.modes.lock().unwrap();
@@ -705,6 +769,52 @@ impl SessionCore {
             .ok_or_else(|| AcpError("The agent did not open a session".into()))?;
         let _ = self.session_id.set(session_id.to_string());
         *self.modes.lock().unwrap() = parse_modes(&created);
+        *self.models.lock().unwrap() = parse_models(&created);
+        Ok(())
+    }
+
+    /// Tells the UI the session's models (nothing when the agent reports none).
+    fn emit_models(&self) {
+        let state = self.models.lock().unwrap().clone();
+        if let Some(m) = state {
+            self.emit(AgentUpdate::Models { current: m.current, options: m.options });
+        }
+    }
+
+    /// Switches the session's model; the error text is the agent's message. A value the agent
+    /// didn't offer is refused before asking it.
+    async fn set_model(&self, value: &str) -> Result<()> {
+        let config_id = {
+            let models = self.models.lock().unwrap();
+            let m = models.as_ref().ok_or_else(|| AcpError("This agent doesn't let Tayang pick its model".into()))?;
+            if !m.options.iter().any(|o| o.value == value) {
+                return Err(AcpError(format!("This agent doesn't offer the model {value}")));
+            }
+            m.config_id.clone()
+        };
+        let session_id = self.session_id().to_string();
+        let reply = match &config_id {
+            Some(id) => {
+                self.rpc
+                    .request("session/set_config_option", json!({ "sessionId": session_id, "configId": id, "value": value }))
+                    .await
+            }
+            None => self.rpc.request("session/set_model", json!({ "sessionId": session_id, "modelId": value })).await,
+        }
+        .map_err(|e| AcpError(e.message))?;
+        {
+            let mut models = self.models.lock().unwrap();
+            // The reply may carry the options as they are now; otherwise the pick is the current one.
+            match parse_models(&reply) {
+                Some(fresh) if fresh.current.is_some() => *models = Some(fresh),
+                _ => {
+                    if let Some(m) = models.as_mut() {
+                        m.current = Some(value.to_string());
+                    }
+                }
+            }
+        }
+        self.emit_models();
         Ok(())
     }
 
@@ -995,6 +1105,7 @@ impl AgentSession {
             permissions,
             session_id: OnceLock::new(),
             modes: Mutex::new(ModeState::default()),
+            models: Mutex::new(None),
             auto_approve: AtomicBool::new(false),
             want_auto: AtomicBool::new(false),
             requested_auto: AtomicBool::new(false),
@@ -1016,7 +1127,22 @@ impl AgentSession {
             supervisor: Mutex::new(Some(supervisor)),
         };
         match tokio::time::timeout(start_timeout, session.core.handshake(options.meta)).await {
-            Ok(Ok(())) => Ok(session),
+            Ok(Ok(())) => {
+                // The model picked for this agent, when it still offers it; a failed switch keeps
+                // the agent's own default rather than failing the start.
+                if let Some(want) = options.model.as_deref() {
+                    let offered = session.core.models.lock().unwrap().as_ref().is_some_and(|m| {
+                        m.current.as_deref() != Some(want) && m.options.iter().any(|o| o.value == want)
+                    });
+                    if offered {
+                        if let Err(e) = session.core.set_model(want).await {
+                            eprintln!("[agent {}] couldn't switch to the model {want}: {e}", session.core.chat_id);
+                        }
+                    }
+                }
+                session.core.emit_models();
+                Ok(session)
+            }
             Ok(Err(e)) => {
                 session.shutdown().await;
                 Err(e)
@@ -1170,6 +1296,16 @@ impl AcpManager {
     /// Sends `session/set_mode`; the error is the agent's message.
     pub async fn set_mode(&self, chat_id: &str, mode_id: &str) -> Result<()> {
         self.session(chat_id)?.core.set_mode(mode_id).await
+    }
+
+    /// Switches a running session's model (see `parse_models` for how agents offer them).
+    pub async fn set_model(&self, chat_id: &str, value: &str) -> Result<()> {
+        self.session(chat_id)?.core.set_model(value).await
+    }
+
+    /// The models a running session offers.
+    pub fn models(&self, chat_id: &str) -> Result<Option<ModelState>> {
+        Ok(self.session(chat_id)?.core.models.lock().unwrap().clone())
     }
 
     /// Mode ids the agent listed in `session/new`.

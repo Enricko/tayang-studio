@@ -112,6 +112,8 @@ pub fn run() {
             commands::project_files,
             commands::find_project_files,
             commands::read_project_file,
+            commands::set_agent_model,
+            commands::agent_models,
             commands::list_recent_chats,
             commands::list_archived_chats,
             commands::set_thread_archived,

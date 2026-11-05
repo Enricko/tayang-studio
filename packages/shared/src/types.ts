@@ -247,6 +247,8 @@ export interface Settings {
   buildJobsChecked: boolean;
   /** Project statuses were backfilled once from their renders and chats. */
   projectStatusChecked: boolean;
+  /** The model picked for each agent (agent id → the agent's own model value); missing: its default. */
+  agentModels: Partial<Record<AgentId, string>>;
 }
 
 /** Defaults; workingFolder is `<home>/Tayang`, resolved at runtime. */
@@ -267,6 +269,7 @@ export const DEFAULT_SETTINGS: Omit<Settings, 'workingFolder'> = {
   openAtLogin: false,
   buildJobsChecked: false,
   projectStatusChecked: false,
+  agentModels: {},
 };
 
 export type AgentUpdate =
@@ -281,7 +284,16 @@ export type AgentUpdate =
       path?: string;
     }
   | { kind: 'done'; stopReason: string }
-  | { kind: 'error'; message: string };
+  | { kind: 'error'; message: string }
+  /** The models the agent offers for this session and the one in use. */
+  | { kind: 'models'; current: string | null; options: ModelChoice[] };
+
+/** One model an agent offers: `value` is what the agent is told, `name` what the user reads. */
+export interface ModelChoice {
+  value: string;
+  name: string;
+  description?: string;
+}
 
 export interface PermissionRequest {
   chatId: string;

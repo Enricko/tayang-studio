@@ -86,6 +86,7 @@ const settings: Settings = {
   openAtLogin: false,
   buildJobsChecked: true,
   projectStatusChecked: true,
+  agentModels: {},
 };
 
 const mkProject = (id: string, title: string): Project => ({

@@ -14,14 +14,16 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover';
+import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { AGENT_NAMES } from '@/lib/agents';
-import { assetUrl, attachFile, detectAgents } from '@/lib/ipc';
+import { assetUrl, attachFile, detectAgents, setAgentModel } from '@/lib/ipc';
 import { cn } from '@/lib/utils';
 import { useApp } from '@/state/app';
 import { autoOn, useChat, type StyleRef } from '@/state/chat';
+import { modelOptions, useModels } from '@/state/models';
 
 export const QUICK_CHIPS = ['faster', 'bigger', 'colors', 'music', 'short'] as const;
 
@@ -148,6 +150,100 @@ function AgentPicker({
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+/** A model value's readable tail when the agent gave no name for it ("opencode/big-pickle" → "big-pickle"). */
+const shortModel = (value: string) => value.split('/').pop() ?? value;
+
+/**
+ * The agent's model: what the chat's session runs on, or the one picked for the agent, else its
+ * default. Picking one saves it for the agent (later sessions start on it) and switches the chat's
+ * running session now. The list comes from the agent itself; before any session it is asked once.
+ */
+export function ModelPicker({ agent, chatId, disabled }: { agent: AgentId; chatId: string | null; disabled?: boolean }) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const picked = useApp((s) => s.settings?.agentModels?.[agent] ?? null);
+  const live = useModels((s) => (chatId ? (s.byChat[chatId]?.current ?? null) : null));
+  const options = useModels((s) => modelOptions(s, agent, chatId));
+  const loading = useModels((s) => !!s.loading[agent]);
+  const failed = useModels((s) => s.failed[agent] ?? null);
+  useEffect(() => useModels.getState().listen(), []);
+
+  const current = live ?? picked;
+  const label = current ? (options.find((o) => o.value === current)?.name ?? shortModel(current)) : t('composer.modelDefault');
+
+  const onOpenChange = (o: boolean) => {
+    setOpen(o);
+    setError(null);
+    if (o) void useModels.getState().load(agent);
+  };
+
+  const choose = async (value: string | null) => {
+    setOpen(false);
+    try {
+      useApp.getState().setSettings(await setAgentModel(agent, value, chatId));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setOpen(true);
+    }
+  };
+
+  return (
+    <Popover open={open} onOpenChange={onOpenChange}>
+      <Tip label={t('composer.modelLabel', { name: label })}>
+        <PopoverTrigger asChild disabled={disabled}>
+          <button
+            type="button"
+            disabled={disabled}
+            aria-label={t('composer.modelLabel', { name: label })}
+            className={cn(ICON_BUTTON, 'w-auto max-w-44 px-1.5 text-[12px]')}
+          >
+            <span className="truncate">{label}</span>
+            <ChevronDown size={12} strokeWidth={1.5} aria-hidden="true" className="shrink-0" />
+          </button>
+        </PopoverTrigger>
+      </Tip>
+      <PopoverContent side="top" align="start" className="w-80 border-hairline bg-card p-0">
+        <Command>
+          <CommandInput placeholder={t('composer.findModel')} />
+          <CommandList className="max-h-72">
+            {loading && !options.length ? (
+              <p className="m-0 px-3 py-3 text-xs text-text-3">{t('composer.loadingModels', { agent: AGENT_NAMES[agent] })}</p>
+            ) : (
+              <>
+                <CommandEmpty>{t('composer.noModelMatch')}</CommandEmpty>
+                {!options.length && <p className="m-0 px-3 pt-3 pb-1 text-xs text-text-3">{t('composer.noModels')}</p>}
+                <CommandItem value="__default" onSelect={() => void choose(null)} className="h-9 gap-2 text-[13px]">
+                  <span>{t('composer.modelDefault')}</span>
+                  {!picked && <Check size={14} strokeWidth={1.5} aria-hidden="true" className="ml-auto" />}
+                </CommandItem>
+                {options.map((o) => (
+                  <CommandItem
+                    key={o.value}
+                    value={`${o.name} ${o.value}`}
+                    title={o.description ?? o.value}
+                    onSelect={() => void choose(o.value)}
+                    className="min-h-9 gap-2 text-[13px]"
+                  >
+                    <span className="min-w-0 flex-1 truncate">{o.name}</span>
+                    {o.value === current && <Check size={14} strokeWidth={1.5} aria-hidden="true" />}
+                  </CommandItem>
+                ))}
+              </>
+            )}
+          </CommandList>
+        </Command>
+        {(error || failed) && (
+          <p role="alert" className="m-0 border-t border-hairline px-3 py-2 text-xs text-orange-light">
+            {error ?? t('composer.modelsFailed', { message: failed ?? '' })}
+          </p>
+        )}
+        <p className="m-0 border-t border-hairline px-3 py-2 text-[11px] text-text-3">{t('composer.modelHint', { agent: AGENT_NAMES[agent] })}</p>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -504,6 +600,7 @@ export function Composer({
                   </button>
                 </Tip>
               )}
+              <ModelPicker agent={agent} chatId={chatId} disabled={disabled || autoBusy} />
               {onAgentChange && (
                 <Tip label={`${auto ? t('composer.autoOn') : t('composer.autoOff')} · ${t('composer.autoTitle')}`}>
                   <button

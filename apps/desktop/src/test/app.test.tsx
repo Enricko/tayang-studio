@@ -45,6 +45,7 @@ const base: Settings = {
   openAtLogin: false,
   buildJobsChecked: true,
   projectStatusChecked: true,
+  agentModels: {},
 };
 
 describe('App start', () => {

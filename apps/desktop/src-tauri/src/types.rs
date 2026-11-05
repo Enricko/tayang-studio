@@ -457,6 +457,10 @@ pub struct Settings {
     /// The one-time startup backfill of project statuses (rendered, building) has run.
     #[serde(default)]
     pub project_status_checked: bool,
+    /// The model picked for each agent (agent id → the agent's own model value). Missing: the
+    /// agent's own default.
+    #[serde(default)]
+    pub agent_models: std::collections::BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -483,6 +487,22 @@ pub enum AgentUpdate {
     Error {
         message: String,
     },
+    /// The models the agent offers for this session and the one in use (sent when the session
+    /// starts and whenever the model changes).
+    Models {
+        current: Option<String>,
+        options: Vec<ModelChoice>,
+    },
+}
+
+/// One model an agent offers: `value` is what the agent is told, `name` what the user reads.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelChoice {
+    pub value: String,
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

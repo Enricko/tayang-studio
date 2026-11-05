@@ -609,6 +609,8 @@ export const useChat = create<ChatState>((set, get) => {
       endTurnImages(chatId, turnMessage(chatId)?.id, true);
       return;
     }
+    // The session's models are the models store's (see state/models), not part of the conversation.
+    if (u.kind === 'models') return;
     // error: the session is gone, so the next send must start a new one
     settleTools(chatId, 'failed');
     finish(chatId);
