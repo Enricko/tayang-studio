@@ -76,6 +76,8 @@ Signing in is optional. Settings › Account › "Sign in with Google" opens you
 
 Paid plans (Lite, Creator, Pro) are paid with QRIS through SumoPod, a payment service: "Pay with QRIS" opens SumoPod's payment page in your browser, and you pay there from your banking or e-wallet app. Tayang stores your plan, when it ends, and each payment's plan, amount, status and SumoPod payment ID. It never sees or stores card, bank or e-wallet details. The desktop app asks the Tayang API for your plan with your sign-in token, which stays out of the app's window, and remembers on this computer which period end it already reminded you about.
 
+Gift codes (Settings › Account › "Have a gift code?") give one gift per account and one per computer per promo. To tell computers apart, redeeming a code sends the Tayang API a SHA-256 hash of your computer's machine ID (macOS IOPlatformUUID, Windows MachineGuid, Linux machine-id), never the ID itself, and the API hashes it again with its own secret before storing it with the gift. Nothing is sent for this until you redeem a code.
+
 To show your Claude usage, Tayang reads the login Claude Code already stores on this computer and sends it only to Anthropic to fetch your usage numbers.
 
 The Style screen loads YouTube thumbnails from i.ytimg.com for styles copied from YouTube, and built-in style previews from the Tayang API at studio.tayang.app/api. A style copied from a video keeps a short silent preview clip and a poster frame on this computer; the video itself is deleted after the study.
