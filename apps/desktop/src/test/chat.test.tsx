@@ -650,13 +650,13 @@ describe('ChatProject', () => {
     await user.click(screen.getByRole('button', { name: 'Send' }));
     await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalledTimes(1));
     const first = JSON.stringify(vi.mocked(ipc.agentPrompt).mock.calls[0]![1]);
-    expect(first).toContain('a2ui');
+    expect(first).toContain('AskUserQuestion');
     expect(first).toContain('one');
     await emit('c1', { kind: 'done', stopReason: 'end_turn' });
     await user.type(screen.getByRole('textbox', { name: 'Message' }), 'two');
     await user.click(screen.getByRole('button', { name: 'Send' }));
     await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalledTimes(2));
-    expect(JSON.stringify(vi.mocked(ipc.agentPrompt).mock.calls[1]![1])).not.toContain('a2ui');
+    expect(JSON.stringify(vi.mocked(ipc.agentPrompt).mock.calls[1]![1])).not.toContain('AskUserQuestion');
   });
 
   it('does not prefix the skills for Claude, which loads the plugin', async () => {
@@ -666,7 +666,7 @@ describe('ChatProject', () => {
     await user.type(screen.getByRole('textbox', { name: 'Message' }), 'one');
     await user.click(screen.getByRole('button', { name: 'Send' }));
     await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalledTimes(1));
-    expect(JSON.stringify(vi.mocked(ipc.agentPrompt).mock.calls[0]![1])).not.toContain('a2ui');
+    expect(JSON.stringify(vi.mocked(ipc.agentPrompt).mock.calls[0]![1])).not.toContain('AskUserQuestion');
   });
 
   it('sends the skills to Claude as text when the app has no plugin to give it', async () => {
@@ -677,7 +677,7 @@ describe('ChatProject', () => {
     await user.type(screen.getByRole('textbox', { name: 'Message' }), 'one');
     await user.click(screen.getByRole('button', { name: 'Send' }));
     await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalledTimes(1));
-    expect(JSON.stringify(vi.mocked(ipc.agentPrompt).mock.calls[0]![1])).toContain('a2ui');
+    expect(JSON.stringify(vi.mocked(ipc.agentPrompt).mock.calls[0]![1])).toContain('AskUserQuestion');
   });
 
   it('tells an agent that reads Indonesian to answer in Indonesian, once per session', async () => {
@@ -1278,8 +1278,8 @@ describe('Agent picker', () => {
     expect(flat).toContain('Agent: Done, shortened.');
     expect(flat).toContain('Next');
     // A non-Claude agent's new session gets the skills first, then the recap, then the message.
-    expect(flat).toContain('a2ui');
-    expect(flat.indexOf('a2ui')).toBeLessThan(flat.indexOf('You: Make it punchy'));
+    expect(flat).toContain('AskUserQuestion');
+    expect(flat.indexOf('AskUserQuestion')).toBeLessThan(flat.indexOf('You: Make it punchy'));
     expect(flat.indexOf('Agent: Done, shortened.')).toBeLessThan(flat.lastIndexOf('Next'));
     await emit('c1', { kind: 'done', stopReason: 'end_turn' } as never);
     await user.type(screen.getByRole('textbox', { name: 'Message' }), 'Again');

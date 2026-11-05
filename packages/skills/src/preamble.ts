@@ -1,6 +1,5 @@
 import type { UiLanguage } from '@tayang/shared';
 import tayangStudio from '../agent-plugin/skills/tayang-studio/SKILL.md?raw';
-import a2uiOptions from '../agent-plugin/skills/a2ui-options/SKILL.md?raw';
 
 const stripFrontmatter = (text: string): string => text.replace(/^---\n[\s\S]*?\n---\n+/, '').trim();
 
@@ -42,7 +41,6 @@ export function buildSessionPreamble(language?: UiLanguage | null, facts?: Sessi
   return [
     'You are running inside Tayang Studio. Follow these instructions for the whole session.',
     stripFrontmatter(tayangStudio),
-    stripFrontmatter(a2uiOptions),
     languageHint(language),
     sessionFacts(facts),
     '---',

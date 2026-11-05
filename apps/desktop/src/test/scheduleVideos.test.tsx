@@ -174,17 +174,8 @@ describe('checkScheduleItems', () => {
   it("accepts the SKILL.md example as the app's own parser reads it", () => {
     const skill = readFileSync(join(__dirname, '../../../../packages/skills/agent-plugin/skills/tayang-studio/SKILL.md'), 'utf8');
     const section = skill.slice(skill.indexOf('## Scheduling videos'));
-    const { blocks } = extractA2ui(section.replace('"<id>"', '"p1"'));
-    expect(blocks).toHaveLength(1);
-    const set = applyMessages(emptySurfaces(), blocks[0]!);
-    const [surface] = Object.values(set.surfaces);
-    expect(surface!.surfaceId).toMatch(/^schedule-/);
-    expect(surface!.components.root).toBeDefined();
-    const button = Object.values(surface!.components).find((c) => c.component === 'Button') as unknown as {
-      action: { event: { name: string; context: { items: unknown } } };
-    };
-    expect(button.action.event.name).toBe('schedule_videos');
-    const checked = checkScheduleItems(button.action.event.context.items, [proj()], new Set(['p1']), now);
+    const body = JSON.parse(/\$TAYANG_AI_URL\/schedule.*?-d '(\{.*?\})'/.exec(section.replace('"<id>"', '"p1"'))![1]!);
+    const checked = checkScheduleItems(body.items, [proj()], new Set(['p1']), now);
     expect('items' in checked && checked.items.map((i) => i.projectId ?? i.title)).toEqual(['p1', 'Kenapa rupiah melemah']);
   });
 });

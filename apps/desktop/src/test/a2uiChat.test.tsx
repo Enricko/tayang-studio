@@ -332,7 +332,7 @@ describe('skills preamble', () => {
       vi.mocked(agentPrompt).mockClear();
       await useChat.getState().send(id, [{ type: 'text', text: 'go' }], { agentId: 'codex' });
       const sent = JSON.stringify(vi.mocked(agentPrompt).mock.calls[0]![1]);
-      expect(sent.includes('a2ui'), id).toBe(id.startsWith('ideas-'));
+      expect(sent.includes('AskUserQuestion'), id).toBe(id.startsWith('ideas-'));
     }
   });
 

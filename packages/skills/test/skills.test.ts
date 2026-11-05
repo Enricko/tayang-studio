@@ -103,16 +103,17 @@ describe('topics', () => {
     expect(parseTopicIdeas('nothing')).toEqual([]);
     expect(parseTopicIdeas('```json\n{bad\n```')).toEqual([]);
   });
-  it('prompt asks for 3 as an a2ui surface with the motion-only rules', () => {
+  it('prompt asks for 3 ideas through the agent\'s question tool, then POST /video, with the motion-only rules', () => {
     const p = buildTopicIdeasPrompt(['promo'], 'id');
     expect(p).toContain('exactly 3');
-    expect(p).toContain('```a2ui');
-    expect(p).toContain('pick_topic');
+    expect(p).toContain('AskUserQuestion');
+    expect(p).toContain('$TAYANG_AI_URL/video');
     expect(p).toContain('lengthSec');
     expect(p).toContain('styleId');
     expect(p).toMatch(/one short, friendly sentence in Indonesian/);
     expect(p).toMatch(/Never suggest anything that needs filming/);
-    expect(p).toMatch(/never show raw JSON/i);
+    expect(p).toMatch(/Never write JSON or markup for the choice/);
+    expect(p).not.toContain('a2ui');
     expect(p).not.toContain('```json');
   });
   it('prompt lists the given styles, or the three defaults', () => {

@@ -296,23 +296,12 @@ describe('createTopicProject', () => {
 });
 
 describe('the prompt example', () => {
-  const prompt = buildTopicIdeasPrompt(['data'], 'id');
-  const example = /```a2ui\n[\s\S]*?\n```/.exec(prompt.slice(prompt.indexOf('Example of the block')))![0];
-
-  it('parses with extractA2ui and builds a surface with a Card, h4, caption and Make this button', () => {
-    const { blocks } = extractA2ui(example);
-    expect(blocks).toHaveLength(1);
-    const set = applyMessages(emptySurfaces(), blocks[0]!);
-    const c = set.surfaces.topics!.components;
-    expect(set.surfaces.topics!.catalogId).toBe('https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json');
-    expect(c.root).toMatchObject({ component: 'Column' });
-    expect(c.card1).toMatchObject({ component: 'Card', child: 'col1' });
-    expect(c.title1).toMatchObject({ variant: 'h4' });
-    expect(c.why1).toMatchObject({ variant: 'caption' });
-    expect(c['go1-text']).toMatchObject({ text: 'Make this' });
-    expect(ideasFromReply(example)).toEqual([
-      { title: 'Mengapa Selat Malaka begitu penting', kind: 'data', lengthSec: 45, styleId: 'atlas-journey' },
-    ]);
+  it('asks with the question tool and starts the pick with POST /video, with the fields Tayang reads', () => {
+    const prompt = buildTopicIdeasPrompt(['data'], 'id');
+    expect(prompt).toContain('AskUserQuestion');
+    expect(prompt).toContain('$TAYANG_AI_URL/video');
+    for (const field of ['"title"', '"kind"', '"lengthSec"', '"styleId"', '"notes"']) expect(prompt).toContain(field);
+    expect(prompt).not.toMatch(/a2ui/i);
   });
 
   it('adds fit hints for known styles and keeps unknown names', () => {
@@ -369,7 +358,7 @@ describe('topic ideas in a new chat', () => {
     const sent = JSON.stringify(vi.mocked(ipc.agentPrompt).mock.calls[0]![1]);
     expect(sent).toContain('Never suggest anything that needs filming');
     expect(sent).toContain('atlas-journey');
-    expect(sent).toContain('pick_topic');
+    expect(sent).toContain('$TAYANG_AI_URL/video');
   });
 
   it('keeps the intro sentence, shows cards and creates the project with the style on pick_topic', async () => {

@@ -30,7 +30,7 @@ describe('agent plugin', () => {
     });
   });
 
-  it.each(['tayang-studio', 'a2ui-options'])('%s SKILL.md has valid frontmatter', (name) => {
+  it.each(['tayang-studio'])('%s SKILL.md has valid frontmatter', (name) => {
     const fm = frontmatter(read(`skills/${name}/SKILL.md`));
     expect(fm.name).toBe(name);
     expect(fm.description!.length).toBeGreaterThan(20);
@@ -46,49 +46,19 @@ describe('agent plugin', () => {
     );
   });
 
-  it('a2ui-options describes v0.9 exactly', () => {
-    const t = read('skills/a2ui-options/SKILL.md');
-    for (const s of [
-      '"version":"v0.9"',
-      'createSurface',
-      'updateComponents',
-      'updateDataModel',
-      'deleteSurface',
-      'https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json',
-      '"id":"root"',
-      'ChoicePicker',
-      'maxAllowedSelections',
-      'sourceComponentId',
-      // A card that is answered stays as it was: a new card needs a new id.
-      'Give every new card its own new `surfaceId`',
-    ]) {
-      expect(t).toContain(s);
-    }
+  it('asks for choices with the agent\'s own question tool, never A2UI or JSON', () => {
+    const t = read('skills/tayang-studio/SKILL.md');
+    expect(t).toContain('## Choices');
+    expect(t).toContain('AskUserQuestion');
+    expect(t).toContain('Never write JSON or markup for a choice.');
+    expect(t).not.toMatch(/a2ui/i);
+    expect(t).toContain('$TAYANG_AI_URL/video');
   });
 
-  it('uses pick_topic only for the topic contract', () => {
-    for (const name of ['tayang-studio', 'a2ui-options']) {
-      const t = read(`skills/${name}/SKILL.md`);
-      for (const m of t.matchAll(/"name":"pick_topic"(?:,"context":(\{[^}]*\}))?/g)) {
-        // Every pick_topic event in an example carries the topic fields, never another shape.
-        expect(m[1], name).toBeDefined();
-        expect(Object.keys(JSON.parse(m[1]!.replace(/<[^>]*>/g, '0'))).sort(), name).toEqual(
-          ['kind', 'lengthSec', 'styleId', 'title'],
-        );
-      }
-    }
-    const a2ui = read('skills/a2ui-options/SKILL.md');
-    expect(a2ui).not.toContain('"name":"pick_topic"');
-    expect(a2ui).toContain('`pick_topic` is reserved for topic ideas');
-    expect(a2ui).toContain('"name":"pick_option"');
-  });
-
-  it('preamble contains both skills without frontmatter', () => {
+  it('preamble contains the skill without frontmatter, and no A2UI', () => {
     const p = buildSessionPreamble();
     expect(p).toContain('# Tayang Studio');
-    expect(p).toContain('A2UI');
-    expect(p).toContain('createSurface');
-    expect(p).not.toContain('\nname: a2ui-options');
+    expect(p).not.toMatch(/a2ui|createSurface/i);
     expect(p.startsWith('---')).toBe(false);
   });
 
@@ -100,19 +70,15 @@ describe('agent plugin', () => {
     expect(languageHint('en')).toBe('');
   });
 
-  it('teaches scheduling with one schedule_videos card, also in the text preamble', () => {
+  it('teaches scheduling through POST /schedule, also in the text preamble', () => {
     const t = read('skills/tayang-studio/SKILL.md');
     expect(t).toContain('## Scheduling videos');
-    expect(t).toContain('Never say a video is scheduled until the user has confirmed it.');
-    expect(t).toContain('Use a new `surfaceId` for every schedule card');
-    // The example block is valid A2UI: every line parses, and the button carries well-formed items.
-    const block = /```a2ui\n([\s\S]*?)```/.exec(t.slice(t.indexOf('## Scheduling videos')))![1]!;
-    const lines = block.trim().split('\n').map((l) => JSON.parse(l.replace('"<id>"', '"p1"')));
-    const comps = lines[1].updateComponents.components as { component: string; action?: { event: { name: string; context: { items: { at: string }[] } } } }[];
-    const ev = comps.find((c) => c.component === 'Button')!.action!.event;
-    expect(ev.name).toBe('schedule_videos');
-    for (const item of ev.context.items) expect(item.at).toMatch(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d[+-]\d\d:\d\d$/);
-    expect(read('skills/a2ui-options/SKILL.md')).toContain('`schedule_videos` is reserved');
+    expect(t).toContain('Never say a video is scheduled until the user has confirmed it');
+    // The example request is valid: its JSON parses and every time has an offset.
+    const call = /\$TAYANG_AI_URL\/schedule.*?-d '(\{.*?\})'/.exec(t.slice(t.indexOf('## Scheduling videos')))![1]!;
+    const body = JSON.parse(call);
+    expect(body.items.length).toBeGreaterThan(0);
+    for (const item of body.items) expect(item.at).toMatch(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d[+-]\d\d:\d\d$/);
     expect(buildSessionPreamble()).toContain('## Scheduling videos');
   });
 

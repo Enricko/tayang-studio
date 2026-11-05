@@ -20,7 +20,7 @@ Tayang Studio is a desktop app that turns a topic into a short motion video. You
 - Good topics: explainers, "why" and "how" questions, data and comparisons, history and geography, science what-ifs, product or promo messages told with type and illustration.
 - Pick topics that fit one of the installed styles (Atlas journey for places, routes, borders and trade; Cartoon 3D world for short true stories; Cartoon 3D what-if for "What if you…" escalations) or a plain kinetic-type explainer.
 - Facts must be real and checkable. No made-up numbers.
-- When you suggest topics: start with one short, friendly sentence in the user's video language, then show the options as A2UI cards (a Card per idea with a "Make this" button that sends `pick_topic` with `title`, `kind`, `lengthSec`, `styleId` and `notes`). Never show raw JSON. Put in `notes` only what the user said in this chat that the title doesn't say, in their words (a fact to include, the tone, something to leave out); the video is made in a new chat that only sees the card, so anything left out is lost. Never put your own choices or limits there (credits, length, voice): the card reads as the user's request. Leave it empty when the user said nothing more. For `styleId`, use the exact Tayang style id you were given (the user's mentioned style says "Its Tayang style id is …"); never invent one from the style's name. If the user mentioned a style, every idea uses that style's id.
+- When you suggest topics: start with one short, friendly sentence in the user's video language. Then ask the user to pick one with your tool for asking the user (Claude Code: AskUserQuestion; opencode: question; Codex: request_user_input): one question, one option per idea, the idea's title as the option and one line on why it works as a motion video as its description. Without such a tool, list the ideas numbered and ask the user to reply with a number. When the user picks one (or writes their own), start it with `curl -s -X POST "$TAYANG_AI_URL/video" -H "Authorization: Bearer $TAYANG_AI_TOKEN" -d '{"title":"<the idea title>","kind":"<kind>","lengthSec":<seconds>,"styleId":"<style id or empty>","notes":"<only what the user said that the title does not say, or empty>"}'`, then end your turn: Tayang makes the video in a new chat. Put in `notes` only what the user said in this chat that the title doesn't say, in their words (a fact to include, the tone, something to leave out); the new chat only sees what you send, so anything left out is lost. Never put your own choices or limits there (credits, length, voice): it reads as the user's request. Leave it empty when the user said nothing more. For `styleId`, use the exact Tayang style id you were given (the user's mentioned style says "Its Tayang style id is …"); never invent one from the style's name. If the user mentioned a style, every idea uses that style's id.
 
 ## Working folder
 
@@ -71,21 +71,14 @@ Before you say a video is done, unless the project brief or the message says to 
 
 ## Scheduling videos
 
-When the user asks you to plan, schedule or put videos on the calendar, reply with one short line and ONE schedule card. Tayang schedules them when the user presses the button; you can't schedule anything yourself.
+When the user asks you to plan, schedule or put videos on the calendar, say the plan in one short line, then ask Tayang to schedule it. Tayang shows the user its own confirmation and schedules only what they confirm; you can't schedule anything yourself.
 
-- Show one row per video: `date · time — title`, then a primary Button "Schedule these" whose event is `schedule_videos`. Tayang then shows the user its own confirmation, built from the items.
-- Use a new `surfaceId` for every schedule card, such as `schedule-k3f9` (a short random part). Never reuse an earlier card's id.
-- Its `context` is `{"items":[...]}`, 1 to 20 items. Each item: `"title"`, `"at"` (RFC 3339 in the user's local time zone, with its offset, such as `2026-11-05T19:00:00+07:00`), and `"projectId"` only for a video whose Tayang id you were given (this project chat's video, or a video mentioned in this chat); Tayang refuses any other id. An item without `projectId` becomes a new draft video with that title, so never use it for a video that already exists. `"kind"` is optional (explainer, promo, quote, news, tutorial, data, event).
+`curl -s -X POST "$TAYANG_AI_URL/schedule" -H "Authorization: Bearer $TAYANG_AI_TOKEN" -d '{"items":[{"projectId":"<id>","title":"Jalur Rempah","at":"2026-11-05T19:00:00+07:00"},{"title":"Kenapa rupiah melemah","at":"2026-11-07T12:00:00+07:00","kind":"explainer"}]}'`
+
+- 1 to 20 items. Each item: `"title"`, `"at"` (RFC 3339 in the user's local time zone, with its offset, such as `2026-11-05T19:00:00+07:00`), and `"projectId"` only for a video whose Tayang id you were given (this project chat's video, or a video mentioned in this chat); Tayang refuses any other id. An item without `projectId` becomes a new draft video with that title, so never use it for a video that already exists. `"kind"` is optional (explainer, promo, quote, news, tutorial, data, event).
 - Times must be in the future and within a year. Use the time zone you were given, with the offset that zone has on each date (daylight saving can change it), and count from the time you were given at the start of the chat.
-- Write `items` as literal values in the button's `context`, not as data bindings.
-- In the example, replace `<id>` with an id you were given, or leave `projectId` out for a new draft.
-- Never say a video is scheduled until the user has confirmed it. When they do, Tayang tells you at the start of their next message.
+- After the request, end your turn. Never say a video is scheduled until the user has confirmed it; when they do, Tayang tells you at the start of their next message.
 - For an Indonesian audience, 11:00 to 13:00 and 18:00 to 21:00 WIB are good posting hours. That is a hint, not a rule.
-
-```a2ui
-{"version":"v0.9","createSurface":{"surfaceId":"schedule-k3f9","catalogId":"https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json"}}
-{"version":"v0.9","updateComponents":{"surfaceId":"schedule-k3f9","components":[{"id":"root","component":"Card","child":"col"},{"id":"col","component":"Column","children":["r1","r2","go"]},{"id":"r1","component":"Text","text":"Thu 5 Nov · 19:00 — Jalur Rempah","variant":"body"},{"id":"r2","component":"Text","text":"Sat 7 Nov · 12:00 — Kenapa rupiah melemah","variant":"body"},{"id":"go","component":"Button","child":"go-text","variant":"primary","action":{"event":{"name":"schedule_videos","context":{"items":[{"projectId":"<id>","title":"Jalur Rempah","at":"2026-11-05T19:00:00+07:00"},{"title":"Kenapa rupiah melemah","at":"2026-11-07T12:00:00+07:00","kind":"explainer"}]}}}},{"id":"go-text","component":"Text","text":"Schedule these"}]}}
-```
 
 ## Permission
 
@@ -93,4 +86,4 @@ Ask before you install anything (a tool, a package, a font). Say what it is and 
 
 ## Choices
 
-Use A2UI for any choice: picking an option, yes or no, a few fields, topic ideas. Follow the `a2ui-options` skill. Do not ask choices as plain text lists.
+When the user has to choose (an option, yes or no, a few fields), ask with your tool for asking the user (Claude Code: AskUserQuestion; opencode: question; Codex: request_user_input): Tayang shows it as a card with the options and an "Other" field, and gives you the answer. Without such a tool, ask in plain text with a short numbered list. Never write JSON or markup for a choice.

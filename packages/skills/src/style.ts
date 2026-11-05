@@ -26,32 +26,6 @@ const STYLE_FIT: Record<string, string> = {
   'cartoon-3d-what-if': '"What if you…" escalations',
 };
 
-const A2UI_CATALOG = 'https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json';
-
-/** One idea in the exact shape the app draws, as the lines of an a2ui block. */
-function topicExample(): string {
-  const V = 'v0.9';
-  const lines = [
-    { version: V, createSurface: { surfaceId: 'topics', catalogId: A2UI_CATALOG } },
-    {
-      version: V,
-      updateComponents: {
-        surfaceId: 'topics',
-        components: [
-          { id: 'root', component: 'Column', children: ['card1'] },
-          { id: 'card1', component: 'Card', child: 'col1' },
-          { id: 'col1', component: 'Column', children: ['title1', 'why1', 'go1'] },
-          { id: 'title1', component: 'Text', text: 'Mengapa Selat Malaka begitu penting', variant: 'h4' },
-          { id: 'why1', component: 'Text', text: 'Peta animasi jalur kapal dan angka perdagangan', variant: 'caption' },
-          { id: 'go1', component: 'Button', child: 'go1-text', variant: 'primary', action: { event: { name: 'pick_topic', context: { title: 'Mengapa Selat Malaka begitu penting', kind: 'data', lengthSec: 45, styleId: 'atlas-journey', notes: '' } } } },
-          { id: 'go1-text', component: 'Text', text: 'Make this' },
-        ],
-      },
-    },
-  ];
-  return lines.map((l) => JSON.stringify(l)).join('\n');
-}
-
 /** What every topic must be: something Tayang can make in code. Shared by the ideas and autopilot prompts. */
 export const MOTION_RULES = [
   '- Tayang makes videos built entirely in code, as motion design or animation: kinetic type, charts and data, maps and globes, illustrated or cartoon 3D worlds, diagrams.',
@@ -60,6 +34,10 @@ export const MOTION_RULES = [
 ];
 export const FACTS_RULE = '- Facts must be real and checkable. No made-up numbers.';
 
+/** How the agent starts a picked video: Tayang's local endpoint (see the desktop's ai_proxy.rs). */
+export const VIDEO_CALL =
+  `curl -s -X POST "$TAYANG_AI_URL/video" -H "Authorization: Bearer $TAYANG_AI_TOKEN" -d '{"title":"<the idea title>","kind":"<kind>","lengthSec":<seconds>,"styleId":"<style id or empty>","notes":"<or empty>"}'`;
+
 export function buildTopicIdeasPrompt(
   kinds: VideoKind[],
   language: VideoLanguage,
@@ -67,8 +45,6 @@ export function buildTopicIdeasPrompt(
 ): string {
   const lang = language === 'id' ? 'Indonesian' : 'English';
   const list = styles.length ? styles : DEFAULT_TOPIC_STYLES;
-  const action =
-    '{"event":{"name":"pick_topic","context":{"title":"<the idea title>","kind":"<kind>","lengthSec":<number>,"styleId":"<style id or empty>","notes":"<only what the user said that the title does not say, in their words; never your own choices; or empty>"}}}';
   return [
     `Suggest exactly 3 topic ideas for short videos. Write them in ${lang}. Allowed kinds: ${kinds.join(', ')}.`,
     '',
@@ -80,13 +56,11 @@ export function buildTopicIdeasPrompt(
     '',
     'How to reply:',
     `1. Start with one short, friendly sentence in ${lang}, as normal text.`,
-    '2. Then show the 3 ideas as options in one fenced ```a2ui block (A2UI v0.9, one JSON message per line): a createSurface, then an updateComponents with a Card per idea. Each Card holds a Text with variant "h4" (the title), a Text with variant "caption" (one line on why it works as a motion video), and a Button labeled "Make this" whose action is:',
-    `   ${action}`,
-    '   Example of the block, showing the first idea only (for 3 ideas, add card2 and card3 the same way with their own ids, and list all three in the root Column children):',
-    '```a2ui',
-    topicExample(),
-    '```',
-    '3. Never show raw JSON outside the a2ui block, and never add a separate JSON code block.',
+    '2. Then ask the user to pick one with your tool for asking the user (Claude Code: AskUserQuestion; opencode: question; Codex: request_user_input): one question, one option per idea, the title as the option and one line on why it works as a motion video as its description. Without such a tool, list the 3 ideas numbered and ask the user to reply with a number.',
+    '3. When the user picks one (or writes their own), start it, then end your turn: Tayang makes the video in a new chat.',
+    `   ${VIDEO_CALL}`,
+    '   `notes`: only what the user said that the title does not say, in their words; never your own choices; or empty.',
+    '4. Never write JSON or markup for the choice.',
   ].join('\n');
 }
 
