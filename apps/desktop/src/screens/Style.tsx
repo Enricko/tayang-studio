@@ -506,10 +506,7 @@ function Detail({
                 variant="secondary"
                 className="h-9 px-3 text-[13px]"
                 onClick={() =>
-                  navigate({
-                    name: 'chat-new',
-                    ...(style.template ? { styleId: style.id } : {}),
-                  })
+                  navigate({ name: 'chat-new', styleId: style.id })
                 }
               >
                 {t('style.useInChat')}

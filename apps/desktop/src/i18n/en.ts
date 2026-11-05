@@ -380,6 +380,8 @@ export const en = {
     topicStarted: 'Started "{{title}}" as a video',
     templateChipTitle: 'Pick a topic to start from this template',
     startingFrom: 'Starting from the {{name}} template',
+    usingStyle: 'Using the {{name}} style',
+    styleChipTitle: 'Topics you pick here use this style',
     removeTemplate: 'Remove the {{name}} template',
     newChatNote: "A new chat doesn't see any of your videos until you mention one with @",
     placeholderNew: 'Describe the video you want, or type @ to start from one you made',

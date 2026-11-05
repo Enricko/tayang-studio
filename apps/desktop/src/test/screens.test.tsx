@@ -349,6 +349,15 @@ describe('Style built-in styles from the API', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Use in a new chat' }));
     expect(useApp.getState().route).toEqual({ name: 'chat-new', styleId: 'atlas-journey' });
   });
+
+  it('Use in a new chat carries a copied style too, even without a template', async () => {
+    vi.mocked(ipc.syncStyles).mockResolvedValue({ styles: [plain], offline: false });
+    vi.mocked(ipc.listStyles).mockResolvedValue([plain]);
+    render(<Style />);
+    await openCard(plain.name);
+    await userEvent.click(await screen.findByRole('button', { name: 'Use in a new chat' }));
+    expect(useApp.getState().route).toEqual({ name: 'chat-new', styleId: plain.id });
+  });
 });
 
 describe('Style popup', () => {

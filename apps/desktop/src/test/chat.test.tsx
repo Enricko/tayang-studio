@@ -345,6 +345,18 @@ describe('ChatNew template chip and fallbacks', () => {
     await user.click(await screen.findByRole('button', { name: /Ide satu/ }));
   };
 
+  it('shows a style chip for a style without a template, and the topic starts with that style', async () => {
+    const user = userEvent.setup();
+    const copied = { ...template, id: 'copied-9', name: 'Storybook', source: 'copied' as const, template: null };
+    vi.mocked(ipc.listStyles).mockResolvedValue([copied]);
+    useApp.setState({ route: { name: 'chat-new', styleId: copied.id } });
+    render(<ChatRoute />);
+    expect(await screen.findByText('Using the Storybook style')).toBeInTheDocument();
+    await topic(user);
+    await waitFor(() => expect(ipc.createProject).toHaveBeenCalled());
+    expect(vi.mocked(ipc.createProject).mock.calls[0]![0]).toHaveProperty('styleId', 'copied-9');
+  });
+
   it('shows a chip for the pending template and clears it with the x', async () => {
     const user = userEvent.setup();
     vi.mocked(ipc.listStyles).mockResolvedValue([template]);

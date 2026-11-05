@@ -380,6 +380,8 @@ export const id: Translations = {
     topicStarted: 'Video "{{title}}" sudah dimulai',
     templateChipTitle: 'Pilih topik untuk mulai dari template ini',
     startingFrom: 'Mulai dari template {{name}}',
+    usingStyle: 'Pakai gaya {{name}}',
+    styleChipTitle: 'Topik yang kamu pilih di sini memakai gaya ini',
     removeTemplate: 'Hapus template {{name}}',
     newChatNote: 'Chat baru belum bisa melihat videomu sampai kamu menyebutnya dengan @',
     placeholderNew: 'Ceritakan video yang ingin kamu buat, atau ketik @ untuk mulai dari video yang sudah ada',

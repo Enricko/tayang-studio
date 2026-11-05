@@ -39,7 +39,7 @@ export const useChipTemplate = (draftKey: string, styles: Style[]): string | nul
     styles,
   );
 
-/** The template picked on the Style screen, above the composer until a topic starts a project or the user removes it. */
+/** The style picked on the Style screen (a template or a look), above the composer until a topic starts a project or the user removes it. */
 export function TemplateChip({ styleId, onRemove, styles }: { styleId: string | null; onRemove(): void; styles?: Style[] }) {
   const { t } = useTranslation();
   const [read, setStyle] = useState<Style | null>(null);
@@ -57,13 +57,15 @@ export function TemplateChip({ styleId, onRemove, styles }: { styleId: string | 
     };
   }, [styleId, styles]);
 
-  if (!styleId || !style?.template) return null;
+  if (!styleId || !style) return null;
+  // A template style starts the project from its template; any other style is the look topics here use.
+  const label = style.template ? t('chat.startingFrom', { name: style.name }) : t('chat.usingStyle', { name: style.name });
   return (
     <div
-      title={t('chat.templateChipTitle')}
+      title={style.template ? t('chat.templateChipTitle') : t('chat.styleChipTitle')}
       className="mb-2 inline-flex items-center gap-1 rounded-full border border-border bg-card py-1 pr-1 pl-3 text-xs text-text-2"
     >
-      <span>{t('chat.startingFrom', { name: style.name })}</span>
+      <span>{label}</span>
       <button
         type="button"
         aria-label={t('chat.removeTemplate', { name: style.name })}
