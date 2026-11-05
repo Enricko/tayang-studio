@@ -32,7 +32,8 @@ export function QuestionCard({
 
   const field = (f: QuestionField) => (
     <fieldset key={f.key} className="m-0 flex flex-col gap-2 border-0 p-0">
-      {(!single || !question.message) && (
+      {/* The field's own question, unless the card's message already says it (opencode sends a bare "Questions"). */}
+      {(f.description ?? f.title) !== question.message && (!single || !!f.description || !question.message) && (
         <legend className="pb-1.5 text-[13px] text-foreground">
           {f.description ?? f.title}
           {f.required && <span className="text-text-3"> *</span>}
@@ -54,7 +55,7 @@ export function QuestionCard({
               )}
             >
               <span>{c.label}</span>
-              {c.description && <span className="text-xs text-text-3">{c.description}</span>}
+              {c.description && c.description !== c.label && <span className="text-xs text-text-3">{c.description}</span>}
             </button>
           );
         })}
@@ -70,7 +71,7 @@ export function QuestionCard({
               />
               <span className="flex flex-col gap-0.5">
                 {c.label}
-                {c.description && <span className="text-xs text-text-3">{c.description}</span>}
+                {c.description && c.description !== c.label && <span className="text-xs text-text-3">{c.description}</span>}
               </span>
             </label>
           );

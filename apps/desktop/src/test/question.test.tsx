@@ -103,4 +103,31 @@ describe('QuestionCard', () => {
     await userEvent.type(screen.getByRole('textbox', { name: 'Name' }), 'Oyen');
     expect(send).toBeEnabled();
   });
+
+  it("shows opencode's question text from the field, and no description that only repeats the label", async () => {
+    const respond = vi.fn();
+    render(
+      <QuestionCard
+        question={{
+          chatId: 'c1',
+          requestId: 'r',
+          message: 'Questions',
+          schema: {
+            type: 'object',
+            properties: {
+              q0: { type: 'string', title: 'Fruit choice', description: 'Which fruit do you pick?', oneOf: [{ const: 'Apple', title: 'Apple', description: 'Apple' }, { const: 'Banana', title: 'Banana', description: 'Banana' }] },
+              q0_custom: { type: 'string', title: 'Fruit choice (other)', description: 'Type your own answer' },
+            },
+            required: [],
+          },
+        }}
+        onRespond={respond}
+      />,
+    );
+    expect(screen.getByText('Which fruit do you pick?')).toBeInTheDocument();
+    expect(screen.getAllByText('Apple')).toHaveLength(1);
+    await userEvent.click(screen.getByRole('radio', { name: 'Banana' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Send' }));
+    expect(respond).toHaveBeenCalledWith({ action: 'accept', content: { q0: 'Banana' } }, 'Banana');
+  });
 });
