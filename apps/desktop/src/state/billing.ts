@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { useAuth } from '@/state/auth';
 import { findPlan, isLowerPlan, type BillingStatus, type CheckoutResponse, type PaidPlanId } from '@tayang/shared';
 import { POLL_LIMIT_MS, POLL_MS, billingCheckout, billingErrorCode, billingStatus, isPaymentLink, type BillingErrorCode } from '@/lib/billing';
+import { track } from '@/lib/analytics';
 
 /** The plans screen: 1 pick, 2 review and pay (starting / waiting / expired / failed), 3 done.
  * `failed` holds an error code, or the raw message of an unexpected failure. */
@@ -167,6 +168,7 @@ export const useBilling = create<BillingStore>((set, get) => {
       try {
         const checkout = await billingCheckout(plan);
         if (get().attempt !== attempt) return;
+        track('plan checkout started', { plan });
         if (!isPaymentLink(checkout.paymentLinkUrl)) {
           set({ flow: { phase: 'failed', plan, error: 'bad_link' } });
           return;

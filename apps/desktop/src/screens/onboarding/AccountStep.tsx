@@ -7,6 +7,7 @@ import { SignInDialog, initials } from '@/components/Account';
 import { updateSettings } from '@/lib/ipc';
 import { useApp } from '@/state/app';
 import { useAuth } from '@/state/auth';
+import { track } from '@/lib/analytics';
 
 /**
  * The last onboarding step, optional: sign in to a Tayang account (AI images and voice, auto-post,
@@ -34,6 +35,7 @@ export function AccountStep() {
     setError(null);
     try {
       setSettings(await updateSettings({ onboarded: true }));
+      track('onboarding completed', { signed_in: !!account });
       navigate({ name: 'chat-new' });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));

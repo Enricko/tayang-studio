@@ -24,6 +24,7 @@ import { stored } from '@/lib/stored';
 import { agentErrorText } from '@/lib/agents';
 import { onAgentUpdate, onPermission } from '@/lib/events';
 import { refreshJobs } from '@/state/jobs';
+import { track } from '@/lib/analytics';
 
 /** `finishing`: the agent is done and Tayang is saving the style and making its preview; it can't be cancelled. */
 export type StudyPhase = 'idle' | 'running' | 'finishing' | 'done' | 'failed';
@@ -129,6 +130,7 @@ export const useStudy = create<StudyState>((set, get) => {
 
   /** `note` is what the job board keeps; it defaults to the message shown now. */
   const fail = async (message: string, note: string = message) => {
+    track('style study failed', { agent });
     const { studyId, url } = get();
     dropRequests();
     set({ phase: 'failed', error: message });
@@ -197,6 +199,7 @@ export const useStudy = create<StudyState>((set, get) => {
       await cleanUp(studyId);
       if (!mine()) return;
       set((s) => ({ phase: 'done', request: null, error: null, savedVersion: s.savedVersion + 1 }));
+      track('style copied', { engine: parsed.engine ?? 'unknown', restudy: !!restyle, agent, sheets: references.length });
       await writeJob('done', parsed.name, studyId, url);
     } catch (e) {
       if (mine()) await fail(e instanceof Error ? e.message : String(e));

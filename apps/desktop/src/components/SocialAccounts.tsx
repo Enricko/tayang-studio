@@ -8,6 +8,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { cloudErrorCode, cloudUsage, platformName, socialAccounts, socialConnect, socialDisconnect, type CloudErrorCode } from '@/lib/cloud';
 import { useApp } from '@/state/app';
 import { useAuth } from '@/state/auth';
+import { track } from '@/lib/analytics';
 
 /** After "Connect", look for the new account this often, for this long (the user signs in in the browser). */
 const WATCH_EVERY_MS = 4000;
@@ -56,6 +57,7 @@ export function SocialAccounts() {
     setError(null);
     try {
       await socialConnect(platform);
+      track('social account connect started', { platform });
       setConnecting(platform);
       const known = new Set((accounts ?? []).map((a) => a.id));
       const until = Date.now() + WATCH_FOR_MS;

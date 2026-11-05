@@ -9,6 +9,7 @@ import { Oyen } from '@/components/Oyen';
 import { OnboardingHeader } from '@/components/OnboardingHeader';
 import { detectAgents, updateSettings } from '@/lib/ipc';
 import { useApp } from '@/state/app';
+import { track } from '@/lib/analytics';
 
 const ROWS: { id: AgentId; name?: string; installUrl?: string }[] = [
   { id: 'claude', name: 'Claude Code', installUrl: 'https://docs.claude.com/en/docs/claude-code' },
@@ -122,7 +123,10 @@ export function Connect() {
           <Button variant="ghost" className="h-12 px-0 text-[15px]" onClick={() => navigate({ name: 'welcome' })}>
             {t('common.back')}
           </Button>
-          <Button className="h-12 gap-2 px-5 text-[15px]" disabled={!connectedId} onClick={() => navigate({ name: 'requirements' })}>
+          <Button className="h-12 gap-2 px-5 text-[15px]" disabled={!connectedId} onClick={() => {
+            if (connectedId) track('agent connected', { agent: connectedId, during: 'onboarding' });
+            navigate({ name: 'requirements' });
+          }}>
             {t('common.continue')}
             <ArrowRight size={18} strokeWidth={2} aria-hidden="true" />
           </Button>

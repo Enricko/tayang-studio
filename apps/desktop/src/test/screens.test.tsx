@@ -1852,13 +1852,10 @@ describe('Settings', () => {
   it('toggles shareInstallStats through updateSettings and explains what is sent', async () => {
     openSettingsTab('account');
     render(<SettingsScreen />);
-    const sw = await screen.findByRole('switch', { name: 'Share anonymous install stats' });
+    const sw = await screen.findByRole('switch', { name: 'Share anonymous usage stats' });
     expect(sw).toBeChecked();
-    expect(
-      screen.getByText(
-        'Sends a random install ID, your system (macOS, Windows or Linux), its version, your computer\'s processor type and the app version once a day. Nothing about you or your videos.',
-      ),
-    ).toBeInTheDocument();
+    // Says that feature usage goes too, and what never does.
+    expect(screen.getByText(/which features you use .* Never your chats, prompts, files or videos\./)).toBeInTheDocument();
     await userEvent.click(sw);
     await waitFor(() => expect(ipc.updateSettings).toHaveBeenCalledWith({ shareInstallStats: false }));
   });

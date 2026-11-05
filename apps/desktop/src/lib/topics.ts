@@ -7,6 +7,7 @@ import { i18n } from '@/i18n';
 import { stored } from '@/lib/stored';
 import { useApp } from '@/state/app';
 import { appendSystem, useChat } from '@/state/chat';
+import { track } from '@/lib/analytics';
 
 export interface TopicIdea {
   title: string;
@@ -167,6 +168,7 @@ export async function createTopicProject(idea: TopicIdea, opts: TopicProjectOpts
 export async function startTopic(idea: TopicIdea, opts: TopicProjectOpts): Promise<void> {
   const { settings, agent } = opts;
   const { project, chat } = await createTopicProject(idea, opts);
+  track('video started', { kind: idea.kind, length_sec: idea.lengthSec, has_style: !!project.styleId, agent, has_notes: !!idea.notes });
   useApp.getState().navigate({ name: 'chat', chatId: chat.id });
   // The project chat is new: what the user asked for on the card goes along, or it is lost.
   const ask: MessagePart[] = [

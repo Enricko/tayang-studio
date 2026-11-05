@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { check as checkForUpdate, type DownloadEvent, type Update } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
+import { track } from '@/lib/analytics';
 
 /** First check this long after launch, so it never competes with startup. */
 export const FIRST_CHECK_MS = 10 * 1000;
@@ -72,6 +73,7 @@ export const useUpdater = create<UpdaterState>((set, get) => ({
     if (!pending || get().phase !== 'ready') return;
     try {
       // On Windows the installer closes the app itself; elsewhere the new version is started here.
+      track('update installed', { version: pending.version });
       await pending.install();
       await relaunch();
     } catch (e) {

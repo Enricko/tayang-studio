@@ -28,6 +28,7 @@ import { useProjectTabs, useWorkspace } from '@/state/workspace';
 import { setRenderArgv, useRender } from '@/state/render';
 import { advanceProject } from '@/lib/projectStatus';
 import { cn } from '@/lib/utils';
+import { track, trackError } from '@/lib/analytics';
 
 const NO_MESSAGES: never[] = [];
 /** How often the file sidebar reads its folders again while the agent works. */
@@ -159,11 +160,13 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
       await mediaRender(project.id);
       const info = await mediaProbe(project.id).catch(() => null);
       await advanceProject(project.id, 'rendered');
+      track('video rendered', { by: 'tayang', duration_sec: info?.durationSec ?? null, format: project.format });
       setProject(await updateProject(project.id, { durationSec: info?.durationSec ?? null }));
       useApp.getState().bumpProjects();
       setReloadKey((k) => k + 1);
     } catch (e) {
       setRenderError(t('chat.couldntRender', { message: e instanceof Error ? e.message : String(e) }));
+      trackError(e, 'render');
     } finally {
       setRendering(false);
       useRender.getState().end(project.id);

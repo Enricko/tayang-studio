@@ -5,6 +5,7 @@ import { finishedRender } from '@/lib/renderCheck';
 import { advanceProject } from '@/lib/projectStatus';
 import { dropRenderBaseline, turnCount, useChat } from '@/state/chat';
 import { refreshJobs, useJobs } from '@/state/jobs';
+import { track } from '@/lib/analytics';
 
 /** Each job's render is looked up at most once a minute. */
 const EVERY_MS = 60_000;
@@ -42,6 +43,7 @@ export async function settleLateRenders(now: number = Date.now(), jobs?: Job[]):
     if (turnRunning(job) || (job.chatId && turnCount(job.chatId) !== turns)) continue;
     try {
       await upsertJob({ ...job, status: 'done', note: info.name, renderBaselineAt: null, updatedAt: new Date(now).toISOString() });
+      track('video rendered', { by: 'agent', agent: job.agentId, late: true });
       if (job.chatId) dropRenderBaseline(job.chatId);
       changed = true;
     } catch {

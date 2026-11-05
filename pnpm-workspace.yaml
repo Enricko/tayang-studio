@@ -2,5 +2,7 @@ packages:
   - "apps/*"
   - "packages/*"
 allowBuilds:
+  # core-js (from posthog-js) only prints an advert on install: never run it.
+  core-js: false
   esbuild: true
   ffmpeg-static: true

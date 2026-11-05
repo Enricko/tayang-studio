@@ -5,7 +5,9 @@ import { ResizeHandle } from '@/components/ResizeHandle';
 import { Sidebar, type SidebarKey } from '@/components/Sidebar';
 import { setUiLanguage } from '@/i18n';
 import { systemLanguage } from '@/lib/language';
-import { getSettings, syncStyles, updateSettings } from '@/lib/ipc';
+import { getSettings, getSystemInfo, syncStyles, updateSettings } from '@/lib/ipc';
+import { getVersion } from '@tauri-apps/api/app';
+import { startAnalytics } from '@/lib/analytics';
 import { runBillingReminder } from '@/lib/billingReminder';
 import { onTick, startScheduler } from '@/lib/scheduler';
 import { recheckDoneBuildJobs, settleLateRenders } from '@/lib/buildJobs';
@@ -99,6 +101,24 @@ export default function App() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Product analytics follow the "share anonymous stats" setting (see lib/analytics).
+  const share = settings?.shareInstallStats;
+  const installId = settings?.installId ?? '';
+  const uiLanguage = settings?.uiLanguage ?? null;
+  useEffect(() => {
+    if (share === undefined) return;
+    let alive = true;
+    void Promise.all([
+      Promise.resolve().then(() => getVersion()).catch(() => undefined),
+      Promise.resolve().then(() => getSystemInfo()).then((s) => s.os).catch(() => undefined),
+    ]).then(([appVersion, os]) => {
+      if (alive) startAnalytics({ share, installId, appVersion, os, uiLanguage });
+    });
+    return () => {
+      alive = false;
+    };
+  }, [share, installId, uiLanguage]);
 
   // Release builds look for a new version shortly after launch and every few hours.
   useEffect(() => startUpdateChecks(), []);

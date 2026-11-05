@@ -28,6 +28,7 @@ import { localClock } from '@/lib/time';
 import { useApp } from '@/state/app';
 import { refreshJobs, useJobs } from '@/state/jobs';
 import { renderArgvOf, useRender } from '@/state/render';
+import { track } from '@/lib/analytics';
 
 
 /** A project chat's turns show up on the Agents board as this build job. */
@@ -547,6 +548,7 @@ export const useChat = create<ChatState>((set, get) => {
     if ((turnSeq.get(chatId) ?? 0) !== seq || get().streaming[chatId]) return;
     if (info) {
       writeJob(chatId, 'done', info.name);
+      track('video rendered', { by: 'agent', agent: chatAgent.get(chatId) ?? 'unknown' });
       return;
     }
     // The agent's last word, past any system line that landed after it (a busy note, a schedule line).

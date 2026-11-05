@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import type { AuthErrorCode, AuthStart, AuthStatus } from '@tayang/shared';
 import { authCancel, authErrorCode, authLogout, authStart, authStatus, onAuthChanged } from '@/lib/auth';
+import { forgetAccount, identifyAccount, track } from '@/lib/analytics';
+import { useApp } from '@/state/app';
 
 /** The sign-in dialog. `failed` holds an error code, or the raw message of an unexpected failure. */
 export type SignInFlow =
@@ -50,7 +52,15 @@ export const useAuth = create<AuthStore>((set, get) => ({
   },
 
   apply(s) {
-    const { flow } = get();
+    const { flow, status: before } = get();
+    // Analytics: the account by its id (never the email); signing out goes back to the install.
+    if (s.signedIn && s.account && !(before?.signedIn && before.account?.id === s.account.id)) {
+      identifyAccount(s.account.id, s.account.plan);
+      if (before && !before.signedIn) track('signed in');
+    } else if (!s.signedIn && before?.signedIn) {
+      track('signed out');
+      forgetAccount(useApp.getState().settings?.installId ?? '');
+    }
     if (s.state === 'signed-in' && flow.phase !== 'closed') set({ status: s, flow: { phase: 'closed' } });
     else if (active(flow) && s.state === 'error') set({ status: s, flow: { phase: 'failed', error: s.error ?? 'server' } });
     else set({ status: s });

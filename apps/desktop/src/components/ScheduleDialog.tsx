@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input';
 import { setSchedule } from '@/lib/ipc';
 import { askAgentToSchedule } from '@/lib/openProject';
+import { track } from '@/lib/analytics';
 
 const pad = (n: number) => String(n).padStart(2, '0');
 const dateValue = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -79,6 +80,7 @@ export function ScheduleDialog({
     setError(null);
     try {
       onSaved(await setSchedule(target.id, at));
+      track(at ? 'video scheduled' : 'video unscheduled');
       onOpenChange(false);
     } catch {
       setError(t('schedule.cantSave'));

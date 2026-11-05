@@ -13,6 +13,7 @@ import { defaultSlot, localToIso } from '@/components/ScheduleDialog';
 import { cloudErrorCode, platformName, socialAccounts, socialPost, socialPostStatus, type CloudErrorCode } from '@/lib/cloud';
 import { listProjects } from '@/lib/ipc';
 import { useApp } from '@/state/app';
+import { track } from '@/lib/analytics';
 
 const pad = (n: number) => String(n).padStart(2, '0');
 const dateValue = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -90,6 +91,11 @@ export function PostDialog({
     try {
       const result = await socialPost({ projectId: project.id, caption: caption.trim(), accountIds: [...picked], scheduledAt: at, clientRequestId: requestId });
       setPhase({ kind: 'done', result });
+      track('video posted', {
+        accounts: picked.size,
+        scheduled: result.status === 'scheduled',
+        platforms: [...new Set((accounts ?? []).filter((a) => picked.has(a.id)).map((a) => a.platform))].sort().join(','),
+      });
       const fresh = (await listProjects().catch(() => [])).find((p) => p.id === project.id);
       if (fresh) onPosted(fresh);
       useApp.getState().bumpProjects();
@@ -99,6 +105,7 @@ export function PostDialog({
     } catch (e) {
       // The same request id stays for the retry: a post that did go out is found, not made again.
       setError(cloudErrorCode(e));
+      track('video post failed', { error: cloudErrorCode(e) });
       setPhase({ kind: 'form' });
     }
   };

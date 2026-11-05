@@ -19,6 +19,7 @@ import { cn } from '@/lib/utils';
 import { useApp, type Route } from '@/state/app';
 import { useAuth } from '@/state/auth';
 import { useBilling, stepOf, type PayFlow } from '@/state/billing';
+import { track } from '@/lib/analytics';
 
 const POPULAR: PaidPlanId = 'creator';
 /** Confetti waiting for the window to come back is dropped after this long. */
@@ -247,6 +248,7 @@ function PayStep({ flow, onLeave }: { flow: Exclude<PayFlow, { phase: 'closed' |
 
 function DoneStep({ plan, end }: { plan: Plan; end: string | null }) {
   const { t } = useTranslation();
+  useEffect(() => track('plan purchased', { plan: plan.id }), [plan.id]);
   const lang = uiLanguage();
   const navigate = useApp((s) => s.navigate);
   const [still] = useState(prefersReducedMotion);

@@ -24,6 +24,7 @@ import { cn } from '@/lib/utils';
 import { useApp } from '@/state/app';
 import { autoOn, useChat, type StyleRef } from '@/state/chat';
 import { modelOptions, useModels } from '@/state/models';
+import { track } from '@/lib/analytics';
 
 export const QUICK_CHIPS = ['faster', 'bigger', 'colors', 'music', 'short'] as const;
 
@@ -185,6 +186,7 @@ export function ModelPicker({ agent, chatId, disabled }: { agent: AgentId; chatI
     setOpen(false);
     try {
       useApp.getState().setSettings(await setAgentModel(agent, value, chatId));
+      track('model picked', { agent, model: value ?? 'default' });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setOpen(true);
