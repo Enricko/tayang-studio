@@ -63,19 +63,56 @@ impl AiProxy {
     }
 }
 
-/// Starts listening; `folder_for` maps a chat to the folder its agent works in.
+/// Hands an agent's request to the app: `(chat, name, context)` with name `pick_topic` (start a video)
+/// or `schedule_videos` (put videos on the calendar). The app asks the user; the agent only asks.
+pub type Actor = Arc<dyn Fn(&str, &str, Value) + Send + Sync>;
+
+/// `POST /video` and `POST /schedule`: what the agent sends, checked, as the app's action context.
+pub fn parse_action(path: &str, b: &Value) -> Option<Result<(&'static str, Value), String>> {
+    let text = |k: &str| b.get(k).and_then(Value::as_str).map(str::trim).filter(|t| !t.is_empty());
+    match path.split('?').next().unwrap_or("").trim_end_matches('/') {
+        "/video" => Some((|| {
+            let title = text("title").ok_or("title is required")?;
+            if title.chars().count() > 120 {
+                return Err("title must be 120 characters or fewer".into());
+            }
+            let mut ctx = json!({ "title": title });
+            for k in ["kind", "styleId", "notes"] {
+                if let Some(v) = text(k) {
+                    ctx[k] = json!(v.chars().take(600).collect::<String>());
+                }
+            }
+            if let Some(n) = b.get("lengthSec").and_then(Value::as_f64) {
+                ctx["lengthSec"] = json!(n);
+            }
+            Ok(("pick_topic", ctx))
+        })()),
+        "/schedule" => Some((|| {
+            let items = b.get("items").and_then(Value::as_array).ok_or("items must be a list")?;
+            if items.is_empty() || items.len() > 20 {
+                return Err("items must hold 1 to 20 videos".into());
+            }
+            Ok(("schedule_videos", json!({ "items": items })))
+        })()),
+        _ => None,
+    }
+}
+
+/// Starts listening; `folder_for` maps a chat to the folder its agent works in, `act` takes the
+/// agent's /video and /schedule requests.
 pub async fn start(
     folder_for: FolderFor,
     run: Runner,
+    act: Actor,
 ) -> std::io::Result<Arc<AiProxy>> {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
     let proxy = Arc::new(AiProxy { port: listener.local_addr()?.port(), tokens: Mutex::default() });
     let p = proxy.clone();
     tokio::spawn(async move {
         while let Ok((stream, _)) = listener.accept().await {
-            let (p, folder_for, run) = (p.clone(), folder_for.clone(), run.clone());
+            let (p, folder_for, run, act) = (p.clone(), folder_for.clone(), run.clone(), act.clone());
             tokio::spawn(async move {
-                let _ = tokio::time::timeout(std::time::Duration::from_secs(300), serve(stream, &p, &*folder_for, &run)).await;
+                let _ = tokio::time::timeout(std::time::Duration::from_secs(300), serve(stream, &p, &*folder_for, &run, &act)).await;
             });
         }
     });
@@ -148,13 +185,31 @@ fn fail(code: &str, message: &str) -> Value {
     json!({ "error": code, "message": message })
 }
 
-async fn serve(mut s: tokio::net::TcpStream, proxy: &AiProxy, folder_for: &(dyn Fn(&str) -> Option<PathBuf> + Send + Sync), run: &Runner) {
+async fn serve(mut s: tokio::net::TcpStream, proxy: &AiProxy, folder_for: &(dyn Fn(&str) -> Option<PathBuf> + Send + Sync), run: &Runner, act: &Actor) {
     let Some(req) = read_request(&mut s).await else {
         return respond(&mut s, 400, &fail("invalid", "Send a POST with a JSON body under 64 KB")).await;
     };
     let Some(chat) = req.token.as_deref().and_then(|t| proxy.chat_for(t)) else {
         return respond(&mut s, 401, &fail("unauthorized", "Use the TAYANG_AI_TOKEN this session was given")).await;
     };
+    // /video and /schedule: Tayang asks the user; the agent's turn should end there.
+    if req.method == "POST" {
+        if let Ok(body @ Value::Object(_)) = serde_json::from_slice::<Value>(&req.body) {
+            match parse_action(&req.path, &body) {
+                Some(Ok((name, context))) => {
+                    act(&chat, name, context);
+                    let message = if name == "pick_topic" {
+                        "Tayang is starting this video in its own chat. End your turn now: the video is made there."
+                    } else {
+                        "Tayang is showing the user these times to confirm. End your turn now; never say they are scheduled until the user confirms."
+                    };
+                    return respond(&mut s, 200, &json!({ "ok": true, "message": message })).await;
+                }
+                Some(Err(m)) => return respond(&mut s, 400, &fail("invalid", &m)).await,
+                None => {}
+            }
+        }
+    }
     let usage = req.path.split('?').next().unwrap_or("").trim_end_matches('/') == "/usage";
     if req.method != if usage { "GET" } else { "POST" } {
         return respond(&mut s, 405, &fail("invalid", if usage { "Use GET" } else { "Use POST" })).await;
@@ -374,7 +429,10 @@ mod tests {
             rec.lock().unwrap().push((job, folder));
             Box::pin(async { Ok(json!({ "files": ["assets/a.jpg"] })) })
         });
-        let proxy = start(Arc::new(|chat: &str| (chat == "c1").then(|| PathBuf::from("/p/c1"))), run).await.unwrap();
+        let acted: Arc<Mutex<Vec<(String, String, Value)>>> = Arc::default();
+        let rec_act = acted.clone();
+        let act: Actor = Arc::new(move |chat, name, ctx| rec_act.lock().unwrap().push((chat.into(), name.into(), ctx)));
+        let proxy = start(Arc::new(|chat: &str| (chat == "c1").then(|| PathBuf::from("/p/c1"))), run, act).await.unwrap();
         let env = proxy.session_env("c1");
         assert_eq!(env[0].1, format!("http://127.0.0.1:{}", proxy.port));
         let token = env[1].1.clone();
@@ -398,6 +456,21 @@ mod tests {
         assert_eq!(post(proxy.port, "/usage", Some(&again), "{}").await.0, 405);
         assert_eq!(request(proxy.port, "GET", "/image", Some(&again), "").await.0, 405);
         assert_eq!(request(proxy.port, "GET", "/usage", None, "").await.0, 401);
+
+        // The agent asks Tayang to start a video or to schedule: the app gets it, the agent a note to stop.
+        let (status, body) = post(proxy.port, "/video", Some(&again), r#"{"title":" What if the Moon vanished ","kind":"explainer","lengthSec":60,"styleId":"cartoon-3d-world"}"#).await;
+        assert_eq!(status, 200);
+        assert!(body["message"].as_str().unwrap().contains("End your turn"));
+        let (status, _) = post(proxy.port, "/schedule", Some(&again), r#"{"items":[{"title":"A","at":"2099-01-01T12:00:00+07:00"}]}"#).await;
+        assert_eq!(status, 200);
+        assert_eq!(post(proxy.port, "/video", Some(&again), r#"{"kind":"explainer"}"#).await.0, 400);
+        assert_eq!(post(proxy.port, "/schedule", Some(&again), r#"{"items":[]}"#).await.0, 400);
+        assert_eq!(post(proxy.port, "/video", None, r#"{"title":"x"}"#).await.0, 401);
+        let acted = acted.lock().unwrap();
+        assert_eq!(acted.len(), 2);
+        assert_eq!((acted[0].0.as_str(), acted[0].1.as_str()), ("c1", "pick_topic"));
+        assert_eq!(acted[0].2, json!({ "title": "What if the Moon vanished", "kind": "explainer", "lengthSec": 60.0, "styleId": "cartoon-3d-world" }));
+        assert_eq!(acted[1].1, "schedule_videos");
     }
 
     #[test]

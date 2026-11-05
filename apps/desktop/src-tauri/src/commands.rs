@@ -1014,7 +1014,11 @@ pub async fn start_ai_proxy(handle: AppHandle) {
             crate::ai_proxy::run_job(auth.client(), &base, &token, job, &folder).await
         })
     });
-    match crate::ai_proxy::start(folder_for, run).await {
+    let for_act = handle.clone();
+    let act: crate::ai_proxy::Actor = Arc::new(move |chat, name, context| {
+        let _ = for_act.emit("agent://action", serde_json::json!({ "chatId": chat, "name": name, "context": context }));
+    });
+    match crate::ai_proxy::start(folder_for, run, act).await {
         Ok(proxy) => {
             handle.manage(proxy);
         }
