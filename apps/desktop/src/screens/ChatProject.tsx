@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { PanelRight, Send } from 'lucide-react';
+import { Check, Copy, PanelRight, Send, SquareTerminal } from 'lucide-react';
 import type { AgentId, Chat, MessagePart, Project } from '@tayang/shared';
 import { Button } from '@/components/Button';
 import { Composer } from '@/components/Composer';
@@ -185,7 +185,7 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
           )}
         </div>
         {project && (
-          <div className="ml-auto">
+          <div className="@container/steps ml-auto flex min-w-0 flex-1 justify-end overflow-hidden">
             <StepBar status={project.status} rendering={renderRunning} />
           </div>
         )}
@@ -232,11 +232,7 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
       </header>
       <ScheduleDialog open={scheduling} onOpenChange={setScheduling} project={project} onSaved={setProject} />
       {project && <PostDialog open={posting} onOpenChange={setPosting} project={project} onPosted={setProject} />}
-      {runs && runs.render.length > 0 && (
-        <p className="m-0 border-b border-border px-6 py-2 font-mono text-xs break-words text-text-3">
-          {t('chat.renderCommand', { commands: [...(runs.install?.length ? [runs.install] : []), runs.render].map(shellDisplay).join(' && ') })}
-        </p>
-      )}
+      {runs && runs.render.length > 0 && <RenderCommandLine command={[...(runs.install?.length ? [runs.install] : []), runs.render].map(shellDisplay).join(' && ')} />}
       {renderError && (
         <p role="alert" className="m-0 border-b border-border px-6 py-2 text-xs text-orange-light">
           {renderError}
@@ -333,6 +329,43 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
           </aside>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * What Render will run for a project with a tayang.json, shown before the user presses it: one quiet
+ * line, cut short when long (the whole command on hover and in the copy).
+ */
+function RenderCommandLine({ command }: { command: string }) {
+  const { t } = useTranslation();
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    if (!navigator.clipboard) return;
+    navigator.clipboard.writeText(command).then(
+      () => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      },
+      () => {},
+    );
+  };
+  return (
+    <div className="flex h-8 shrink-0 items-center gap-2 border-b border-border px-6 text-xs text-text-3">
+      <SquareTerminal size={13} strokeWidth={1.75} aria-hidden="true" className="shrink-0" />
+      <span className="shrink-0">{t('chat.renderCommand')}</span>
+      <code title={command} className="min-w-0 truncate font-mono text-[11px] text-text-2">
+        {command}
+      </code>
+      <button
+        type="button"
+        aria-label={copied ? t('chat.commandCopied') : t('chat.copyCommand')}
+        title={copied ? t('chat.commandCopied') : t('chat.copyCommand')}
+        onClick={copy}
+        className="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded text-text-3 hover:bg-raised hover:text-foreground"
+      >
+        {copied ? <Check size={12} aria-hidden="true" /> : <Copy size={12} aria-hidden="true" />}
+      </button>
     </div>
   );
 }

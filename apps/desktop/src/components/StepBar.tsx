@@ -41,7 +41,12 @@ export function StepBar(props: Props) {
   const cur = own ? props.current : currentStep(props.status, rendering);
   const onPick = own ? props.onPick : undefined;
   return (
-    <ol aria-label={own ? props.label : t('stepBar.aria')} className="m-0 flex list-none flex-wrap items-center gap-2 p-0">
+    // A project's steps sit in the chat header: one line always, and when its container (`@container/steps`)
+    // is narrow, only the current step keeps its name.
+    <ol
+      aria-label={own ? props.label : t('stepBar.aria')}
+      className={cn('m-0 flex list-none items-center gap-2 p-0', own ? 'flex-wrap' : 'flex-nowrap')}
+    >
       {names.map((name, i) => {
         const done = i < cur;
         const active = i === cur;
@@ -60,7 +65,14 @@ export function StepBar(props: Props) {
             >
               {done ? '✓' : i + 1}
             </span>
-            <span data-step-name className={cn('text-[13px]', active ? 'font-medium text-foreground' : 'text-text-2')}>
+            <span
+              data-step-name
+              className={cn(
+                'text-[13px] whitespace-nowrap',
+                active ? 'font-medium text-foreground' : 'text-text-2',
+                !own && !active && '@max-[34rem]/steps:sr-only',
+              )}
+            >
               {name}
             </span>
             {pulse && (
@@ -73,7 +85,7 @@ export function StepBar(props: Props) {
           </>
         );
         return (
-          <li key={name} aria-current={!onPick && active ? 'step' : undefined} className="flex items-center gap-2">
+          <li key={name} title={name} aria-current={!onPick && active ? 'step' : undefined} className="flex shrink-0 items-center gap-2">
             {onPick ? (
               <button
                 type="button"
@@ -86,7 +98,7 @@ export function StepBar(props: Props) {
             ) : (
               body
             )}
-            {i < names.length - 1 && <span aria-hidden="true" className="h-px w-4 bg-hairline" />}
+            {i < names.length - 1 && <span aria-hidden="true" className={cn('h-px w-4 shrink-0 bg-hairline', !own && '@max-[34rem]/steps:w-2')} />}
           </li>
         );
       })}
