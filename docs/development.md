@@ -49,6 +49,7 @@ Old saved addresses are migrated when the app reads its settings: `https://api.t
 ## Where data lives
 
 - App data (SQLite, `tayang.db`) is in the operating system's app data directory for Tayang Studio.
+- `pnpm dev:desktop` runs as **Tayang Studio Dev** (`app.tayang.studio.dev`, from `src-tauri/tauri.dev.conf.json`), so it has its own app data and runs beside an installed Tayang Studio (`app.tayang.studio`) without sharing chats, settings or its window. On macOS the two folders are `~/Library/Application Support/app.tayang.studio.dev` and `.../app.tayang.studio`. Dev builds keep the sign-in token in `auth-dev.json` there, never in the keychain.
 - Projects live in the working folder the user picks. Agent sessions run with the project folder, or a `.tayang/<purpose>` subfolder of the working folder, as their working directory. They never run outside it.
 
 ## Permissions and the agent's own settings
