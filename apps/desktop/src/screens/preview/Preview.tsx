@@ -275,6 +275,11 @@ export function Preview({
               {i + 1}
             </div>
           ))}
+          {marking && (
+            <span className="pointer-events-none absolute inset-x-0 bottom-3 mx-auto w-fit rounded-full bg-ink/80 px-3 py-1 text-xs text-foreground backdrop-blur-sm">
+              {t('preview.markHint')}
+            </span>
+          )}
           {checked && (
             <span
               data-testid="frames-checked"
@@ -352,10 +357,14 @@ export function Preview({
             variant="ghost"
             aria-label={t('preview.markSpot')}
             aria-pressed={marking}
-            onClick={() => setMarking((m) => !m)}
+            onClick={() => {
+              // A mark belongs to one still frame: playing would clear it.
+              if (!marking) videoRef.current?.pause();
+              setMarking((m) => !m);
+            }}
             className={cn(
               'h-8 w-full min-w-0 gap-1.5 whitespace-nowrap px-2 text-[13px]',
-              marking && 'bg-raised text-foreground',
+              marking && 'bg-primary/15 text-orange-light ring-1 ring-primary/60 hover:bg-primary/20',
             )}
           >
             <MapPin size={16} strokeWidth={1.5} aria-hidden="true" />
@@ -363,6 +372,18 @@ export function Preview({
             <span className="@min-[380px]:hidden">{t('preview.markSpotShort')}</span>
           </Button>
         </div>
+        {marks.length > 0 && (
+          <p role="status" className="m-0 flex items-center gap-2 text-xs text-text-2">
+            {t('preview.marked', { count: marks.length })}
+            <button
+              type="button"
+              onClick={() => setMarks([])}
+              className="cursor-pointer rounded-sm px-1 text-text-3 underline-offset-2 hover:text-foreground hover:underline"
+            >
+              {t('preview.clearMarks')}
+            </button>
+          </p>
+        )}
         {error && (
           <p role="alert" className="m-0 text-xs text-orange-light">
             {error}
