@@ -1,16 +1,16 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { RefreshCw } from 'lucide-react';
-import type { UsageResponse } from '@tayang/shared';
 import { Button } from '@/components/Button';
 import { UsageMeter } from '@/components/UsageBar';
 import { AgentBlock } from '@/components/UsagePopover';
 import { useCloudError } from '@/components/SocialAccounts';
 import { locale } from '@/i18n';
-import { cloudErrorCode, cloudUsage, type CloudErrorCode } from '@/lib/cloud';
+import { giftDate, useGiftAmount } from '@/components/GiftCode';
 import { useApp } from '@/state/app';
 import { useAuth } from '@/state/auth';
 import { useUsage } from '@/state/usage';
+import { useTayangUsage } from '@/state/tayangUsage';
 
 /**
  * Settings › Usage: the Tayang plan's AI credits and auto-posts this cycle, and each agent's own
@@ -22,24 +22,18 @@ export function UsageTab({ onAccount }: { onAccount(): void }) {
   const signedIn = useAuth((s) => !!s.status?.signedIn);
   const agents = useUsage((s) => s.usage);
   const refreshAgents = useUsage((s) => s.refresh);
-  const [usage, setUsage] = useState<UsageResponse | null>(null);
-  const [error, setError] = useState<CloudErrorCode | null>(null);
+  const usage = useTayangUsage((s) => (signedIn ? s.usage : null));
+  const error = useTayangUsage((s) => s.error);
+  const load = useTayangUsage((s) => s.load);
+  const amount = useGiftAmount();
   const navigate = useApp((s) => s.navigate);
-
-  const load = useCallback(() => {
-    setError(null);
-    cloudUsage()
-      .then(setUsage)
-      .catch((e) => setError(cloudErrorCode(e)));
-  }, []);
 
   useEffect(() => {
     void useAuth.getState().init();
     useUsage.getState().start();
   }, []);
   useEffect(() => {
-    if (signedIn) load();
-    else setUsage(null);
+    if (signedIn) void load();
   }, [signedIn, load]);
 
   const reset = usage ? new Intl.DateTimeFormat(locale(), { dateStyle: 'medium' }).format(new Date(usage.cycleEnd)) : null;
@@ -55,7 +49,7 @@ export function UsageTab({ onAccount }: { onAccount(): void }) {
               type="button"
               aria-label={t('cloud.refresh')}
               title={t('cloud.refresh')}
-              onClick={load}
+              onClick={() => void load()}
               className="ml-auto flex size-7 cursor-pointer items-center justify-center rounded-sm text-text-3 hover:bg-raised hover:text-foreground"
             >
               <RefreshCw size={14} aria-hidden="true" />
@@ -82,6 +76,15 @@ export function UsageTab({ onAccount }: { onAccount(): void }) {
                   label={t(`cloud.${m}`)}
                 />
               </div>
+            ))}
+            {(usage.gifts ?? []).map((g) => (
+              <p key={`${g.name}-${g.expiresAt}`} className="m-0 text-xs text-text-2">
+                {t('gift.running', {
+                  name: g.name,
+                  what: amount(g, { credits: g.creditsLeft, posts: g.postsLeft }),
+                  date: giftDate(g.expiresAt),
+                })}
+              </p>
             ))}
             {usage.credits.allowance === 0 && usage.posts.allowance === 0 && (
               <Button variant="secondary" className="h-8 self-start px-3 text-[13px]" onClick={() => navigate({ name: 'plans', from: 'settings' })}>

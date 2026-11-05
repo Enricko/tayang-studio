@@ -4,8 +4,7 @@ import { Archive, Calendar, LayoutPanelLeft, Share2, MessageCircle, Palette, Pla
 import type { RecentChat } from '@tayang/shared';
 import logo from '@/assets/brand/tayang-horizontal-reversed-color.svg';
 import mark from '@/assets/brand/oyen-symbol-color.svg';
-import ditherCard from '@/assets/brand/dither-card.png';
-import { UsageBar, UsageRing } from '@/components/UsageBar';
+import { TayangCreditsCompact, UsageLineCompact, UsageRing } from '@/components/UsageBar';
 import { UpdateBanner } from '@/components/UpdateBanner';
 import { Button } from '@/components/Button';
 import { AllChats } from '@/components/AllChats';
@@ -280,15 +279,9 @@ export function Sidebar({ active, collapsed = false }: { active: SidebarKey; col
           {rail ? (
             <UsageRing />
           ) : (
-            <div className="relative flex flex-col gap-2 overflow-hidden rounded-lg border border-border bg-background p-3">
-              <img
-                src={ditherCard}
-                alt=""
-                aria-hidden="true"
-                className="pointer-events-none absolute right-0 top-0 h-12 w-[120px]"
-                style={{ imageRendering: 'pixelated' }}
-              />
-              <UsageBar />
+            <div className="flex flex-col gap-0.5 border-t border-border pt-2">
+              <UsageLineCompact />
+              <TayangCreditsCompact />
             </div>
           )}
         </div>

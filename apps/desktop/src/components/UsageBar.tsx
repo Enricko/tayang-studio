@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { i18n } from '@/i18n';
 import { AgentLogo } from '@/components/AgentLogo';
@@ -8,6 +9,8 @@ import { formatResetIn } from '@/lib/time';
 import { cn } from '@/lib/utils';
 import { useApp } from '@/state/app';
 import { useUsage } from '@/state/usage';
+import { useAuth } from '@/state/auth';
+import { TAYANG_USAGE_EVERY_MS, useTayangUsage } from '@/state/tayangUsage';
 import type { AgentUsage, Spend } from '@tayang/shared';
 
 export const pct = (n: number) => `${Math.round(n)}%`;
@@ -78,7 +81,12 @@ function useShownUsage() {
   return { agent, mine, text };
 }
 
-export function UsageBar() {
+/**
+ * The sidebar's agent usage on one line, like a status bar: logo, a small meter of the 5 hour
+ * window, and `18% used 1h 37m · 89% used 2d 7h` (cut short when narrow; the popover and the
+ * tooltip have all of it).
+ */
+export function UsageLineCompact() {
   const { t } = useTranslation();
   const { agent, mine, text } = useShownUsage();
 
@@ -87,17 +95,51 @@ export function UsageBar() {
       <button
         type="button"
         aria-label={t('usage.aria', { agent: AGENT_NAMES[agent] })}
-        className="relative flex w-full cursor-pointer flex-col gap-2 text-left"
+        title={text}
+        className="flex h-7 w-full min-w-0 cursor-pointer items-center gap-2 rounded-md px-2 text-left hover:bg-raised/50"
       >
-        <span className="flex items-center gap-2">
-          <AgentLogo id={agent} size={20} />
-          <span className="text-[13px] font-medium">{AGENT_NAMES[agent]}</span>
-        </span>
-        {/* An agent without plan limits (opencode) has nothing to fill a meter with. */}
-        {!mine?.spend && <UsageMeter percent={mine?.session?.usedPercent ?? 0} label={t('usage.fiveHour')} />}
-        <span className="font-mono text-[11px] leading-4 text-text-2">{text}</span>
+        <AgentLogo id={agent} size={14} />
+        {!mine?.spend && <UsageMeter percent={mine?.session?.usedPercent ?? 0} label={t('usage.fiveHour')} className="w-8 shrink-0" />}
+        <span className="min-w-0 truncate text-[11px] text-text-2">{text}</span>
       </button>
     </UsagePopover>
+  );
+}
+
+/**
+ * The Tayang account's AI credits and auto-posts left (gifts included), under the agent's usage;
+ * opens Settings › Usage. Nothing signed out, or before the first answer.
+ */
+export function TayangCreditsCompact() {
+  const { t } = useTranslation();
+  const signedIn = useAuth((s) => !!s.status?.signedIn);
+  const usage = useTayangUsage((s) => s.usage);
+  const navigate = useApp((s) => s.navigate);
+
+  useEffect(() => {
+    if (!signedIn) {
+      useTayangUsage.getState().clear();
+      return;
+    }
+    const load = () => void useTayangUsage.getState().load();
+    load();
+    const every = setInterval(load, TAYANG_USAGE_EVERY_MS);
+    return () => clearInterval(every);
+  }, [signedIn]);
+
+  if (!signedIn || !usage) return null;
+  const line = t('usage.creditsLine', { count: usage.credits.remaining, posts: usage.posts.remaining });
+  return (
+    <button
+      type="button"
+      aria-label={`${t('usage.credits')}: ${line}`}
+      title={t('usage.credits')}
+      onClick={() => navigate({ name: 'settings', tab: 'usage' })}
+      className="flex h-7 w-full min-w-0 cursor-pointer items-center gap-2 rounded-md px-2 text-left hover:bg-raised/50"
+    >
+      <Sparkles size={14} strokeWidth={1.75} aria-hidden="true" className="shrink-0 text-orange-light" />
+      <span className="min-w-0 truncate text-[11px] text-text-2">{line}</span>
+    </button>
   );
 }
 

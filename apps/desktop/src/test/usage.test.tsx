@@ -6,7 +6,7 @@ import type { AgentUsage } from '@tayang/shared';
 vi.mock('@/lib/ipc', () => ({ getAgentUsage: vi.fn() }));
 
 import { getAgentUsage } from '@/lib/ipc';
-import { UsageBar, usageLine } from '@/components/UsageBar';
+import { UsageLineCompact, usageLine } from '@/components/UsageBar';
 import { formatResetIn } from '@/lib/time';
 import { mergeUsage, stopUsagePolling, useUsage } from '@/state/usage';
 import { i18n } from '@/i18n';
@@ -83,7 +83,7 @@ describe('mergeUsage', () => {
   });
 });
 
-describe('UsageBar and popover', () => {
+describe('compact usage line and popover', () => {
   beforeEach(() => {
     stopUsagePolling();
     useUsage.setState({ usage: [], loaded: false, loading: false });
@@ -94,7 +94,7 @@ describe('UsageBar and popover', () => {
   afterEach(() => stopUsagePolling());
 
   it('shows the status line and opens the popover with one row per agent', async () => {
-    render(<UsageBar />);
+    render(<UsageLineCompact />);
     expect(await screen.findByText(/33% used .* · 48% used .* · 85% used Fable/)).toBeInTheDocument();
     const bar = screen.getByRole('progressbar', { name: '5 hour usage' });
     expect(bar).toHaveAttribute('aria-valuenow', '33');
@@ -118,7 +118,7 @@ describe('UsageBar and popover', () => {
   });
 
   it('goes to the Agents screen from usage details', async () => {
-    render(<UsageBar />);
+    render(<UsageLineCompact />);
     await userEvent.click(screen.getByRole('button', { name: /usage$/i }));
     await userEvent.click(await screen.findByRole('button', { name: /Usage details & history/ }));
     expect(useApp.getState().route).toEqual({ name: 'agents' });
@@ -127,7 +127,7 @@ describe('UsageBar and popover', () => {
   it('shows opencode without a meter, with today and the last 7 days in the popover', async () => {
     useApp.setState({ settings: { defaultAgent: 'opencode' } as never, route: { name: 'chat-new' } });
     vi.mocked(getAgentUsage).mockResolvedValue([opencode]);
-    render(<UsageBar />);
+    render(<UsageLineCompact />);
     expect(await screen.findByText('today $0.00 · 186.6K tokens')).toBeInTheDocument();
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: /usage$/i }));

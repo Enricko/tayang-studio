@@ -68,7 +68,7 @@ import { setUiLanguage } from '@/i18n';
 import { useApp } from '@/state/app';
 import { buildRecap, useChat } from '@/state/chat';
 import { useUsage } from '@/state/usage';
-import { UsageBar } from '@/components/UsageBar';
+import { UsageLineCompact } from '@/components/UsageBar';
 import { renderTiming } from '@/lib/renderCheck';
 import { useRender } from '@/state/render';
 
@@ -1303,7 +1303,7 @@ describe('Agent picker', () => {
     useUsage.setState({ usage: [], loaded: true, start: () => {} });
     render(
       <>
-        <UsageBar />
+        <UsageLineCompact />
         <ChatProject chatId="c1" />
       </>,
     );
