@@ -7,13 +7,13 @@ Tayang Studio is a free, open-source desktop app that helps Indonesian creators 
 macOS and Linux:
 
 ```
-curl -fsSL https://raw.githubusercontent.com/Maru-Yasa/tayang-studio/main/install.sh | sh
+curl -fsSL https://studio.tayang.app/install.sh | sh
 ```
 
 Windows (PowerShell):
 
 ```
-irm https://raw.githubusercontent.com/Maru-Yasa/tayang-studio/main/install.ps1 | iex
+irm https://studio.tayang.app/install.ps1 | iex
 ```
 
 Both install the latest release and open it. Installed copies update themselves.

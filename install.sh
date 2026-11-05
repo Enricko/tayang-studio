@@ -1,7 +1,7 @@
 #!/bin/sh
 # Installs Tayang Studio, the latest release, on macOS or Linux:
 #
-#   curl -fsSL https://raw.githubusercontent.com/Maru-Yasa/tayang-studio/main/install.sh | sh
+#   curl -fsSL https://studio.tayang.app/install.sh | sh
 #
 # On Windows, run install.ps1 in PowerShell instead; from Git Bash this script hands over to it.
 #
@@ -18,6 +18,8 @@ set -eu
 
 REPO="Maru-Yasa/tayang-studio"
 BASE="${TAYANG_DOWNLOAD_BASE:-https://github.com/$REPO/releases}"
+# studio.tayang.app serves install.sh and install.ps1 (copies of the ones in this repo).
+SITE="${TAYANG_SITE:-https://studio.tayang.app}"
 RAW="${TAYANG_RAW_BASE:-https://raw.githubusercontent.com/$REPO/main}"
 APP="Tayang Studio"
 # GitHub swaps the space in "Tayang Studio" for a dot in asset names.
@@ -197,7 +199,7 @@ EOF
 install_windows() {
   has powershell.exe || fail "on Windows, run install.ps1 in PowerShell"
   say "Handing over to PowerShell..."
-  exec powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "irm '$RAW/install.ps1' | iex"
+  exec powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "irm '$SITE/install.ps1' | iex"
 }
 
 main() {

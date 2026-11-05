@@ -1,6 +1,6 @@
 # Installs Tayang Studio, the latest release, on Windows. In PowerShell:
 #
-#   irm https://raw.githubusercontent.com/Maru-Yasa/tayang-studio/main/install.ps1 | iex
+#   irm https://studio.tayang.app/install.ps1 | iex
 #
 # Options (environment variables, set before running):
 #   $env:TAYANG_VERSION = '0.0.2'   install this version instead of the latest
