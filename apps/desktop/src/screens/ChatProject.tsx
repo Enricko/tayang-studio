@@ -231,7 +231,16 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
         )}
       </header>
       <ScheduleDialog open={scheduling} onOpenChange={setScheduling} project={project} onSaved={setProject} />
-      {project && <PostDialog open={posting} onOpenChange={setPosting} project={project} onPosted={setProject} />}
+      {project && (
+        <PostDialog
+          open={posting}
+          onOpenChange={setPosting}
+          project={project}
+          onPosted={setProject}
+          agentBusy={streaming}
+          onAskAgent={() => void send([{ type: 'text', text: t('post.askAgentPrompt') }])}
+        />
+      )}
       {runs && runs.render.length > 0 && <RenderCommandLine command={[...(runs.install?.length ? [runs.install] : []), runs.render].map(shellDisplay).join(' && ')} />}
       {renderError && (
         <p role="alert" className="m-0 border-b border-border px-6 py-2 text-xs text-orange-light">

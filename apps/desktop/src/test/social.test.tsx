@@ -15,7 +15,12 @@ vi.mock('@/lib/cloud', async (orig) => {
     socialPostStatus: vi.fn(),
   };
 });
-vi.mock('@/lib/ipc', () => ({ listProjects: vi.fn().mockResolvedValue([]), videoThumbnail: vi.fn().mockResolvedValue(null), assetUrl: (p: string) => p }));
+vi.mock('@/lib/ipc', () => ({
+  listProjects: vi.fn().mockResolvedValue([]),
+  videoThumbnail: vi.fn().mockResolvedValue(null),
+  assetUrl: (p: string) => p,
+  readProjectFile: vi.fn().mockRejectedValue('no file'),
+}));
 vi.mock('@/lib/auth', () => ({
   authStatus: vi.fn(async () => null),
   onAuthChanged: vi.fn(async () => () => {}),
@@ -31,7 +36,7 @@ import { SocialAccounts } from '@/components/SocialAccounts';
 import { PostDialog } from '@/components/PostDialog';
 import { Social } from '@/screens/Social';
 import { UsageTab } from '@/components/UsageTab';
-import { listProjects } from '@/lib/ipc';
+import { listProjects, readProjectFile } from '@/lib/ipc';
 import { useApp } from '@/state/app';
 import { useAuth } from '@/state/auth';
 
@@ -139,6 +144,45 @@ describe('SocialAccounts in Settings', () => {
 
 describe('PostDialog', () => {
   const open = (p: Project = project) => render(<PostDialog open onOpenChange={() => {}} project={p} onPosted={() => {}} />);
+  const draft = (o: Record<string, unknown>) => ({ kind: 'text', absPath: '/p/post.json', size: 1, text: JSON.stringify(o) }) as never;
+  // No post.json unless a test writes one.
+  beforeEach(() => {
+    vi.mocked(readProjectFile).mockRejectedValue('no file');
+  });
+
+  it("fills the title, description and time from the agent's post.json, and posts the title", async () => {
+    vi.mocked(readProjectFile).mockResolvedValue(
+      draft({ title: 'Lampu merah pertama di dunia', description: 'Meledak di London, 1868.', hashtags: ['sejarah', '#fakta'], scheduledAt: '2099-01-02T12:00:00.000Z' }),
+    );
+    vi.mocked(cloud.socialAccounts).mockResolvedValue([acct('sa_1', 'youtube', 'flagfight')]);
+    vi.mocked(cloud.socialPost).mockResolvedValue({ postId: 'sp_9', status: 'scheduled', postsCharged: 1, usage: { allowance: 90, used: 5, remaining: 85 } });
+    vi.mocked(cloud.socialPostStatus).mockResolvedValue({ postId: 'sp_9', status: 'scheduled', scheduledAt: null, results: [] });
+    open();
+    const dialog = await screen.findByRole('dialog');
+    expect(await within(dialog).findByDisplayValue('Lampu merah pertama di dunia')).toBeInTheDocument();
+    expect(within(dialog).getByLabelText('Description')).toHaveValue('Meledak di London, 1868.\n\n#sejarah #fakta');
+    expect(within(dialog).getByText('Written by your agent: check it before posting.')).toBeInTheDocument();
+    expect(within(dialog).getByRole('checkbox', { name: 'Schedule for later' })).toBeChecked();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Schedule' }));
+    expect(cloud.socialPost).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Lampu merah pertama di dunia', caption: 'Meledak di London, 1868.\n\n#sejarah #fakta', scheduledAt: '2099-01-02T12:00:00.000Z' }),
+    );
+  });
+
+  it('asks the agent to write it, then reads what it wrote when its turn ends', async () => {
+    vi.mocked(cloud.socialAccounts).mockResolvedValue([acct('sa_1', 'youtube', 'flagfight')]);
+    const ask = vi.fn();
+    const { rerender } = render(<PostDialog open onOpenChange={() => {}} project={project} onPosted={() => {}} onAskAgent={ask} />);
+    const dialog = await screen.findByRole('dialog');
+    await userEvent.click(await within(dialog).findByRole('button', { name: 'Write with AI' }));
+    expect(ask).toHaveBeenCalledOnce();
+    rerender(<PostDialog open onOpenChange={() => {}} project={project} onPosted={() => {}} onAskAgent={ask} agentBusy />);
+    expect(within(dialog).getByRole('status')).toHaveTextContent('Your agent is writing the title, description and time…');
+    expect(within(dialog).getByRole('button', { name: 'Write with AI' })).toBeDisabled();
+    vi.mocked(readProjectFile).mockResolvedValue(draft({ title: 'Judul dari agen', description: 'Deskripsi.' }));
+    rerender(<PostDialog open onOpenChange={() => {}} project={project} onPosted={() => {}} onAskAgent={ask} agentBusy={false} />);
+    expect(await within(dialog).findByDisplayValue('Judul dari agen')).toBeInTheDocument();
+  });
 
   it('posts the video to the picked accounts and shows how it went', async () => {
     vi.mocked(cloud.socialAccounts).mockResolvedValue([acct('sa_1', 'tiktok', 'oyen'), acct('sa_2', 'instagram', 'oyen.ig'), acct('sa_3', 'x', 'off', 'disconnected')]);

@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ExternalLink } from 'lucide-react';
+import { ExternalLink, Sparkles } from 'lucide-react';
 import type { CreatePostResponse, PostDetails, Project, SocialAccount } from '@tayang/shared';
 import { Button } from '@/components/Button';
 import { Spinner } from '@/components/Loading';
@@ -13,6 +13,7 @@ import { PlatformLogo } from '@/components/PlatformLogo';
 import { defaultSlot, localToIso } from '@/components/ScheduleDialog';
 import { cloudErrorCode, platformName, socialAccounts, socialPost, socialPostStatus, type CloudErrorCode } from '@/lib/cloud';
 import { listProjects } from '@/lib/ipc';
+import { captionOf, readPostDraft, TITLE_MAX, type PostDraft } from '@/lib/postDraft';
 import { useApp } from '@/state/app';
 import { track } from '@/lib/analytics';
 
@@ -32,18 +33,28 @@ export function PostDialog({
   onOpenChange,
   project,
   onPosted,
+  onAskAgent,
+  agentBusy = false,
 }: {
   open: boolean;
   onOpenChange(open: boolean): void;
   project: Project;
   onPosted(p: Project): void;
+  /** Asks the chat's agent to write post.json (title, description, hashtags, a time). */
+  onAskAgent?: () => void;
+  /** The chat's agent is working. */
+  agentBusy?: boolean;
 }) {
   const { t } = useTranslation();
   const explain = useCloudError();
   const navigate = useApp((s) => s.navigate);
   const [accounts, setAccounts] = useState<SocialAccount[] | null>(null);
   const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [title, setTitle] = useState(project.title);
   const [caption, setCaption] = useState(project.title);
+  // The fields came from the agent's post.json; `asked`: the user asked it to write one just now.
+  const [fromAgent, setFromAgent] = useState(false);
+  const [asked, setAsked] = useState(false);
   const [later, setLater] = useState(false);
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
@@ -56,7 +67,10 @@ export function PostDialog({
     if (!open) return;
     setError(null);
     setDetails(null);
+    setTitle(project.title);
     setCaption(project.title);
+    setFromAgent(false);
+    setAsked(false);
     const slot = defaultSlot(project.scheduledAt);
     setDate(dateValue(slot));
     setTime(timeValue(slot));
@@ -72,6 +86,7 @@ export function PostDialog({
         setPicked(new Set(usable.map((a) => a.id)));
       })
       .catch((e) => alive && (setAccounts([]), setError(cloudErrorCode(e))));
+    void readPostDraft(project.id).then((d) => alive && d && fill(d));
     // A video posted before: show how it went.
     if (project.socialPostId) {
       socialPostStatus(project.socialPostId)
@@ -83,6 +98,49 @@ export function PostDialog({
     };
   }, [open, project.id, project.title, project.scheduledAt, project.socialPostId]);
 
+  /** The agent's draft into the fields; the user reads and edits them before posting. */
+  function fill(d: PostDraft) {
+    if (d.title) setTitle(d.title);
+    setCaption(captionOf(d) || d.title);
+    if (d.scheduledAt) {
+      const when = new Date(d.scheduledAt);
+      setLater(true);
+      setDate(dateValue(when));
+      setTime(timeValue(when));
+    }
+    setFromAgent(true);
+  }
+
+  // The agent's turn for "write it with AI" ended: read what it wrote. It ends only after it started:
+  // right after the ask, the turn may not be running yet.
+  const started = useRef(false);
+  useEffect(() => {
+    if (asked && agentBusy) started.current = true;
+  }, [asked, agentBusy]);
+  useEffect(() => {
+    if (!open || !asked || agentBusy || !started.current) return;
+    started.current = false;
+    let alive = true;
+    void readPostDraft(project.id).then((d) => {
+      if (!alive) return;
+      setAsked(false);
+      if (d) fill(d);
+    });
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, asked, agentBusy, project.id]);
+
+  const askAgent = () => {
+    if (!onAskAgent || agentBusy) return;
+    started.current = false;
+    setAsked(true);
+    onAskAgent();
+    track('post draft asked');
+  };
+  const writing = asked && agentBusy;
+
   const at = later ? localToIso(date, time) : null;
   const canPost = phase.kind === 'form' && picked.size > 0 && caption.trim().length > 0 && (!later || !!at);
 
@@ -90,7 +148,7 @@ export function PostDialog({
     setError(null);
     setPhase({ kind: 'posting' });
     try {
-      const result = await socialPost({ projectId: project.id, caption: caption.trim(), accountIds: [...picked], scheduledAt: at, clientRequestId: requestId });
+      const result = await socialPost({ projectId: project.id, title: title.trim() || null, caption: caption.trim(), accountIds: [...picked], scheduledAt: at, clientRequestId: requestId });
       setPhase({ kind: 'done', result });
       track('video posted', {
         accounts: picked.size,
@@ -170,10 +228,37 @@ export function PostDialog({
                 </label>
               ))}
             </fieldset>
-            <label className="flex flex-col gap-1.5 text-[13px] text-text-2">
-              {t('post.caption')}
-              <Textarea value={caption} onChange={(e) => setCaption(e.target.value)} maxLength={2200} rows={3} />
-            </label>
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center gap-2">
+                <span className="mr-auto text-xs text-text-3">
+                  {writing ? (
+                    <span role="status" className="inline-flex items-center gap-2">
+                      <Spinner size={12} />
+                      {t('post.agentWriting')}
+                    </span>
+                  ) : fromAgent ? (
+                    t('post.fromAgent')
+                  ) : null}
+                </span>
+                {onAskAgent && (
+                  <Button variant="secondary" className="h-7 px-2.5 text-xs" disabled={agentBusy} onClick={askAgent}>
+                    <Sparkles size={13} aria-hidden="true" className="text-orange-light" />
+                    {t('post.writeWithAi')}
+                  </Button>
+                )}
+              </div>
+              <label className="flex flex-col gap-1.5 text-[13px] text-text-2">
+                <span className="flex justify-between">
+                  {t('post.titleField')}
+                  <span className="text-xs text-text-3 tabular-nums">{title.length}/{TITLE_MAX}</span>
+                </span>
+                <Input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={TITLE_MAX} disabled={writing} />
+              </label>
+              <label className="flex flex-col gap-1.5 text-[13px] text-text-2">
+                {t('post.caption')}
+                <Textarea value={caption} onChange={(e) => setCaption(e.target.value)} maxLength={2200} rows={4} disabled={writing} />
+              </label>
+            </div>
             <div className="flex flex-col gap-2">
               <label className="flex cursor-pointer items-center gap-3 text-[13px]">
                 <Checkbox checked={later} onCheckedChange={(v) => setLater(v === true)} />
