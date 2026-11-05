@@ -16,7 +16,8 @@ vi.mock('@/lib/ipc', () => ({
   createChat: vi.fn(),
 }));
 vi.mock('@/lib/events', () => ({
-  onQuestion: vi.fn(async () => () => {}), onAgentUpdate: vi.fn(async () => () => {}), onPermission: vi.fn(async () => () => {}) }));
+  onQuestion: vi.fn(async () => () => {}),
+  onAgentAction: vi.fn(async () => () => {}), onAgentUpdate: vi.fn(async () => () => {}), onPermission: vi.fn(async () => () => {}) }));
 
 import { listProjects, mediaLatestRender, mediaRender, setProjectStatus } from '@/lib/ipc';
 import { Preview } from '@/screens/preview/Preview';

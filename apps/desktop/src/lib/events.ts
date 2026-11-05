@@ -15,3 +15,14 @@ export function onPermission(cb: (req: PermissionRequest) => void): Promise<Unli
 export function onQuestion(cb: (q: AgentQuestion) => void): Promise<UnlistenFn> {
   return listen<AgentQuestion>('agent://question', (e) => cb(e.payload));
 }
+
+/** What an agent asked Tayang to do through its local endpoint: start a video, or schedule videos. */
+export interface AgentAction {
+  chatId: string;
+  name: 'pick_topic' | 'schedule_videos';
+  context: Record<string, unknown>;
+}
+
+export function onAgentAction(cb: (a: AgentAction) => void): Promise<UnlistenFn> {
+  return listen<AgentAction>('agent://action', (e) => cb(e.payload));
+}

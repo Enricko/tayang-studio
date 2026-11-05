@@ -25,6 +25,7 @@ vi.mock('@/lib/ipc', () => ({
 }));
 vi.mock('@/lib/events', () => ({
   onQuestion: vi.fn(async () => () => {}),
+  onAgentAction: vi.fn(async () => () => {}),
   onAgentUpdate: vi.fn(async (_cb: (e: { chatId: string; update: AgentUpdate }) => void) => () => {}),
   onPermission: vi.fn(async () => () => {}),
 }));

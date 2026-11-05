@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type { Autopilot, AutopilotSlot, MessagePart, Project, VideoKind } from '@tayang/shared';
-import { buildTopicIdeasPrompt } from '@tayang/skills';
+import { buildTopicIdeasPrompt, topicIdeaFromAction } from '@tayang/skills';
 import { Button } from '@/components/Button';
 import { ScheduleDialog } from '@/components/ScheduleDialog';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -180,6 +180,16 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
       /* cache is optional */
     }
   }, [chatId, streaming, messages, cacheKey]);
+
+  // The agent asked Tayang to start the picked idea (POST /video): once its turn is over, start it.
+  const pendingPick = useChat((s) => (chatId ? (s.actions[chatId] ?? []) : []).some((a) => a.name === 'pick_topic'));
+  useEffect(() => {
+    if (!pendingPick || !chatId || streaming) return;
+    const a = useChat.getState().takeAction(chatId, 'pick_topic');
+    const idea = a && topicIdeaFromAction(a.context);
+    if (idea) void makeIdea(idea);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingPick, streaming, chatId]);
 
   const makeIdea = async (idea: Idea) => {
     if (!settings || makingRef.current) return;

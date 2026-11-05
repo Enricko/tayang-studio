@@ -138,6 +138,16 @@ export function ChatThread({ chatId, draft, styleId: routeStyleId }: { chatId: s
     }
   };
 
+  // The agent asked Tayang to start a video (POST /video): once its turn is over, start it here.
+  const pendingPick = useChat((s) => (s.actions[chatId] ?? []).some((a) => a.name === 'pick_topic'));
+  useEffect(() => {
+    if (!pendingPick || streaming || busy) return;
+    const a = useChat.getState().takeAction(chatId, 'pick_topic');
+    const idea = a && topicIdeaFromAction(a.context);
+    if (idea) void pickIdea(idea);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingPick, streaming, busy, chatId]);
+
   const onA2uiAction = (a: A2uiAction) => {
     if (a.name !== 'pick_topic') return false;
     const idea = topicIdeaFromAction(a.context);

@@ -11,7 +11,8 @@ vi.mock('@/lib/ipc', () => ({
   assetUrl: (p: string) => p,
 }));
 vi.mock('@/lib/events', () => ({
-  onQuestion: vi.fn(async () => () => {}), onAgentUpdate: vi.fn(async () => () => {}), onPermission: vi.fn(async () => () => {}) }));
+  onQuestion: vi.fn(async () => () => {}),
+  onAgentAction: vi.fn(async () => () => {}), onAgentUpdate: vi.fn(async () => () => {}), onPermission: vi.fn(async () => () => {}) }));
 
 import * as ipc from '@/lib/ipc';
 import { ModelPicker } from '@/components/Composer';

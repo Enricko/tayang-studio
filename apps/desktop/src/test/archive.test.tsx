@@ -16,7 +16,8 @@ vi.mock('@/lib/ipc', () => ({
   getChat: vi.fn().mockResolvedValue(null),
 }));
 vi.mock('@/lib/events', () => ({
-  onQuestion: vi.fn(async () => () => {}), onAgentUpdate: vi.fn(async () => () => {}) }));
+  onQuestion: vi.fn(async () => () => {}),
+  onAgentAction: vi.fn(async () => () => {}), onAgentUpdate: vi.fn(async () => () => {}) }));
 
 import * as ipc from '@/lib/ipc';
 import { ArchiveSection } from '@/components/ArchiveSection';

@@ -33,9 +33,14 @@ vi.mock('@/lib/ipc', () => ({
   detectAgents: vi.fn().mockResolvedValue([]),
   assetUrl: (p: string) => p,
 }));
+const actionHandlers: ((a: AgentAction) => void)[] = [];
 const updateHandlers: ((e: { chatId: string; update: AgentUpdate }) => void)[] = [];
 vi.mock('@/lib/events', () => ({
   onQuestion: vi.fn(async () => () => {}),
+  onAgentAction: vi.fn(async (f: (a: AgentAction) => void) => {
+    actionHandlers.push(f);
+    return () => {};
+  }),
   onAgentUpdate: vi.fn(async (f: (e: { chatId: string; update: AgentUpdate }) => void) => {
     updateHandlers.push(f);
     return () => {};
@@ -54,6 +59,7 @@ import { Calendar } from '@/screens/Calendar';
 import { ChatRoute } from '@/screens/ChatRoute';
 import { useApp } from '@/state/app';
 import { useChat } from '@/state/chat';
+import type { AgentAction } from '@/lib/events';
 
 const settings: Settings = {
   workingFolder: '/w/Tayang',
@@ -134,6 +140,7 @@ async function askTopics(text: string) {
 beforeEach(() => {
   vi.clearAllMocks();
   updateHandlers.length = 0;
+  actionHandlers.length = 0;
   useChat.getState().reset();
   useApp.setState({ settings, route: { name: 'chat-new' } });
   vi.mocked(ipc.listProjects).mockResolvedValue([]);
@@ -379,6 +386,24 @@ describe('topic ideas in a new chat', () => {
     // The pick is handled by the screen, not forwarded to the agent as an answer.
     const sent = useChat.getState().messages['chat-1']!;
     expect(sent.some((m) => m.role === 'user' && m.parts.some((p) => p.type === 'a2ui-action'))).toBe(false);
+  });
+
+  it("starts the video the agent asked for with POST /video, once its turn is over", async () => {
+    render(<ChatRoute />);
+    await userEvent.click(screen.getByRole('button', { name: /From a topic/ }));
+    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
+    // Mid-turn: the agent picked with the user and asks Tayang to start it.
+    await act(async () => {
+      emit({ kind: 'text', text: 'Oke, saya mulai.' });
+      for (const f of actionHandlers) {
+        f({ chatId: 'chat-1', name: 'pick_topic', context: { title: 'Mengapa Selat Malaka penting', kind: 'data', lengthSec: 45, styleId: 'atlas-journey' } });
+      }
+    });
+    expect(ipc.createProject).not.toHaveBeenCalled();
+    await act(async () => emit({ kind: 'done', stopReason: 'end_turn' }));
+    await waitFor(() => expect(ipc.createProject).toHaveBeenCalled());
+    expect(vi.mocked(ipc.createProject).mock.calls[0]![0]).toMatchObject({ title: 'Mengapa Selat Malaka penting', kind: 'data', styleId: 'atlas-journey' });
+    expect(useChat.getState().actions['chat-1']).toEqual([]);
   });
 
   it('asks for the script with the skip line when the frame check is off', async () => {

@@ -17,7 +17,7 @@ import {
   updateChatAgent,
   upsertJob,
 } from '@/lib/ipc';
-import { onAgentUpdate, onPermission, onQuestion } from '@/lib/events';
+import { onAgentAction, onAgentUpdate, onPermission, onQuestion, type AgentAction } from '@/lib/events';
 import { extractA2ui } from '@/a2ui/parse';
 import { agentErrorText, AGENT_NAMES } from '@/lib/agents';
 import { i18n, uiLanguage } from '@/i18n';
@@ -66,6 +66,10 @@ interface ChatState {
   permissions: Record<string, PermissionRequest[]>;
   /** The agent's open questions per chat (ACP elicitation), oldest first. */
   questions: Record<string, AgentQuestion[]>;
+  /** What the agent asked Tayang to do (POST /video, /schedule), waiting for its turn to end. */
+  actions: Record<string, AgentAction[]>;
+  /** Takes the chat's oldest waiting action of this kind. */
+  takeAction(chatId: string, name: AgentAction['name']): AgentAction | undefined;
   attachments: Record<string, MessagePart[]>;
   /** Chats whose agent session was started in this app session. */
   started: Record<string, boolean>;
@@ -649,6 +653,7 @@ export const useChat = create<ChatState>((set, get) => {
     turnStartedAt: {},
     permissions: {},
     questions: {},
+    actions: {},
     attachments: {},
     started: {},
     auto: {},
@@ -807,6 +812,14 @@ export const useChat = create<ChatState>((set, get) => {
       await agentRespondPermission(req.requestId, optionId);
     },
 
+    takeAction(chatId, name) {
+      const list = get().actions[chatId] ?? [];
+      const i = list.findIndex((a) => a.name === name);
+      if (i < 0) return undefined;
+      set((s) => ({ actions: { ...s.actions, [chatId]: list.filter((_, j) => j !== i) } }));
+      return list[i];
+    },
+
     async respondQuestion(chatId, response, summary) {
       const [q, ...rest] = get().questions[chatId] ?? [];
       if (!q) return;
@@ -873,6 +886,10 @@ export const useChat = create<ChatState>((set, get) => {
       if (unlisten.length) return;
       unlisten = [
         onAgentUpdate(({ chatId, update }) => onUpdate(chatId, update)),
+        onAgentAction((a) => {
+          if (!tracked.has(a.chatId)) return;
+          set((s) => ({ actions: { ...s.actions, [a.chatId]: [...(s.actions[a.chatId] ?? []), a] } }));
+        }),
         onQuestion((q) => {
           if (!tracked.has(q.chatId)) return;
           writeJob(q.chatId, 'needs-you', stored('agents.waitingAnswer'));
@@ -909,7 +926,7 @@ export const useChat = create<ChatState>((set, get) => {
       resetProjectStatus();
       stopAllWatches();
       useRender.setState({ runs: {} });
-      set({ messages: {}, streaming: {}, turnStartedAt: {}, permissions: {}, questions: {}, attachments: {}, started: {}, auto: {}, pendingAuto: null, autoBusy: {}, rows: {}, drafts: {}, styles: [] });
+      set({ messages: {}, streaming: {}, turnStartedAt: {}, permissions: {}, questions: {}, actions: {}, attachments: {}, started: {}, auto: {}, pendingAuto: null, autoBusy: {}, rows: {}, drafts: {}, styles: [] });
     },
   };
 });

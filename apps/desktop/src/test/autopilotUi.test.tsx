@@ -20,6 +20,7 @@ vi.mock('@/lib/ipc', () => ({
 }));
 vi.mock('@/lib/events', () => ({
   onQuestion: vi.fn(async () => () => {}),
+  onAgentAction: vi.fn(async () => () => {}),
   onAgentUpdate: vi.fn(async () => () => {}),
   onPermission: vi.fn(async () => () => {}),
 }));

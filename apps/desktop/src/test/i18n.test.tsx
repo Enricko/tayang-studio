@@ -17,7 +17,8 @@ vi.mock('@/lib/ipc', () => ({
   checkTools: vi.fn().mockResolvedValue([]),
 }));
 vi.mock('@/lib/events', () => ({
-  onQuestion: vi.fn(async () => () => {}), onAgentUpdate: vi.fn(async () => () => {}), onPermission: vi.fn(async () => () => {}) }));
+  onQuestion: vi.fn(async () => () => {}),
+  onAgentAction: vi.fn(async () => () => {}), onAgentUpdate: vi.fn(async () => () => {}), onPermission: vi.fn(async () => () => {}) }));
 vi.mock('@tauri-apps/plugin-opener', () => ({ openUrl: vi.fn() }));
 
 import { en } from '@/i18n/en';

@@ -20,7 +20,8 @@ vi.mock('@/lib/ipc', () => ({
   renderCommand: vi.fn().mockResolvedValue(null),
 }));
 vi.mock('@/lib/events', () => ({
-  onQuestion: vi.fn(async () => () => {}), onAgentUpdate: vi.fn(), onPermission: vi.fn() }));
+  onQuestion: vi.fn(async () => () => {}),
+  onAgentAction: vi.fn(async () => () => {}), onAgentUpdate: vi.fn(), onPermission: vi.fn() }));
 vi.mock('@/state/autopilot', () => ({ startAutopilot: vi.fn(() => () => {}) }));
 vi.mock('@/lib/buildJobs', () => ({ settleLateRenders: vi.fn(), recheckDoneBuildJobs: vi.fn().mockResolvedValue(undefined) }));
 

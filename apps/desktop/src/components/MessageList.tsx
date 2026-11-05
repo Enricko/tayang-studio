@@ -9,6 +9,7 @@ import { ImageStrip, isImagePart, type ImagePart } from '@/components/AgentImage
 import { ActivityGroup, isHiddenTool, WorkingLine, type ActivityItem, type LiveTurn } from '@/components/Activity';
 import { localized } from '@/lib/stored';
 import { ScheduleConfirm } from '@/components/ScheduleConfirm';
+import { asAction } from '@/lib/agentActions';
 import { confirmSchedule, isScheduleRecord, prepareSchedule, SCHEDULE_ACTION, type PlannedItem } from '@/lib/scheduleVideos';
 import { useApp } from '@/state/app';
 import { useRender } from '@/state/render';
@@ -387,6 +388,14 @@ export function MessageList({
     },
     [chatId, checking, saving],
   );
+  // The agent asked Tayang to schedule videos (POST /schedule): once its turn is over, check and confirm here.
+  const pendingSchedule = useChat((s) => (chatId ? (s.actions[chatId] ?? []) : []).some((a) => a.name === 'schedule_videos'));
+  useEffect(() => {
+    if (!pendingSchedule || streaming || checking || saving || confirm) return;
+    const a = useChat.getState().takeAction(chatId, 'schedule_videos');
+    if (a) schedule(asAction(a));
+  }, [pendingSchedule, streaming, checking, saving, confirm, chatId, schedule]);
+
   const confirmNow = async () => {
     if (!confirm || saving) return;
     setSaving(true);
