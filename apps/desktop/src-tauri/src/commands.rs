@@ -1134,6 +1134,17 @@ pub fn wants_skills(chat_id: &str) -> bool {
     !(chat_id == "setup" || chat_id.starts_with("study-") || chat_id.starts_with("autopilot-"))
 }
 
+/// opencode logs a failed model call (a free model's usage limit) and then never answers the prompt:
+/// its log, for the session to watch. None for other agents.
+fn error_log(agent: AgentId) -> Option<PathBuf> {
+    if agent != AgentId::Opencode {
+        return None;
+    }
+    let home = crate::system::home_dir()?;
+    let db = crate::usage::opencode_db(&home, std::env::var("XDG_DATA_HOME").ok().as_deref());
+    Some(db.parent()?.join("log").join("opencode.log"))
+}
+
 /// Claude gets the plugin and the system prompt through `_meta` (so nothing is
 /// installed in the user's own `~/.claude`); every agent gets `TAYANG_STUDIO=1`.
 /// Without `skills` (internal sessions) there is no `_meta` at all.
@@ -1141,7 +1152,7 @@ fn session_options(agent: AgentId, plugin: Option<&Path>, skills: bool) -> crate
     let env = vec![("TAYANG_STUDIO".to_string(), "1".to_string())];
     let use_modes = agent == AgentId::Claude;
     if agent != AgentId::Claude || !skills {
-        return crate::acp::SessionOptions { meta: None, env, auto: false, use_modes, mode_timeout: None, model: None };
+        return crate::acp::SessionOptions { meta: None, env, auto: false, use_modes, mode_timeout: None, model: None, error_log: error_log(agent) };
     }
     let mut meta = serde_json::json!({ "systemPrompt": { "append": TAYANG_APPEND } });
     if let Some(path) = plugin {
@@ -1149,7 +1160,7 @@ fn session_options(agent: AgentId, plugin: Option<&Path>, skills: bool) -> crate
             "options": { "plugins": [{ "type": "local", "path": path.to_string_lossy() }] }
         });
     }
-    crate::acp::SessionOptions { meta: Some(meta), env, auto: false, use_modes, mode_timeout: None, model: None }
+    crate::acp::SessionOptions { meta: Some(meta), env, auto: false, use_modes, mode_timeout: None, model: None, error_log: error_log(agent) }
 }
 
 /// Starts the chat's agent. Resolves `true` when Claude started without the Tayang

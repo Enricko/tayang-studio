@@ -250,6 +250,10 @@ pub struct SessionOptions {
     pub mode_timeout: Option<Duration>,
     /// The model to switch to once the session is open, when the agent offers it.
     pub model: Option<String>,
+    /// A log the agent writes its model errors to (opencode). Some agents log a failed model call
+    /// and then never answer the prompt; while a turn runs, Tayang reads it and ends the turn with
+    /// the error.
+    pub error_log: Option<PathBuf>,
 }
 
 /// How auto mode was applied to a session.
@@ -531,6 +535,7 @@ struct SessionCore {
     tools: Mutex<HashMap<String, ToolState>>,
     prompting: AtomicBool,
     stopping: AtomicBool,
+    error_log: Option<PathBuf>,
 }
 
 impl SessionCore {
@@ -892,10 +897,24 @@ impl SessionCore {
 
     /// Runs one `session/prompt` turn and reports how it ended.
     async fn run_turn(&self, prompt: Vec<Value>) {
-        let res = self
-            .rpc
-            .request("session/prompt", json!({ "sessionId": self.session_id(), "prompt": prompt }))
-            .await;
+        let request = self.rpc.request("session/prompt", json!({ "sessionId": self.session_id(), "prompt": prompt }));
+        let res = match &self.error_log {
+            None => request.await,
+            Some(log) => {
+                let from = std::fs::metadata(log).map(|m| m.len()).unwrap_or(0);
+                tokio::select! {
+                    r = request => r,
+                    message = watch_error_log(log.clone(), from, self.session_id().to_string()) => {
+                        // The agent won't answer this turn: stop it, and say why.
+                        let _ = self.rpc.notify("session/cancel", json!({ "sessionId": self.session_id() }));
+                        self.permissions.cancel_session(self.uid);
+                        self.prompting.store(false, Ordering::SeqCst);
+                        self.emit(AgentUpdate::Error { message });
+                        return;
+                    }
+                }
+            }
+        };
         self.prompting.store(false, Ordering::SeqCst);
         let update = match res {
             Ok(v) => AgentUpdate::Done {
@@ -967,6 +986,55 @@ fn slice_lines(content: &str, line: Option<u64>, limit: Option<u64>) -> String {
 }
 
 /// The UI turns any message mentioning sign in into "how to sign in" copy.
+/// How often a running turn looks at the agent's error log.
+const ERROR_LOG_EVERY: Duration = Duration::from_secs(3);
+
+/// Resolves with the model error the agent logged for `session_id` after byte `from` of `log`;
+/// never resolves while there is none.
+async fn watch_error_log(log: PathBuf, from: u64, session_id: String) -> String {
+    loop {
+        tokio::time::sleep(ERROR_LOG_EVERY).await;
+        let tail = tokio::task::spawn_blocking({
+            let log = log.clone();
+            move || -> Option<String> {
+                use std::io::{Read, Seek, SeekFrom};
+                let mut f = std::fs::File::open(&log).ok()?;
+                f.seek(SeekFrom::Start(from)).ok()?;
+                let mut buf = Vec::new();
+                f.take(4 * 1024 * 1024).read_to_end(&mut buf).ok()?;
+                Some(String::from_utf8_lossy(&buf).into_owned())
+            }
+        })
+        .await
+        .ok()
+        .flatten();
+        if let Some(message) = tail.as_deref().and_then(|t| opencode_turn_error(t, &session_id)) {
+            return message;
+        }
+    }
+}
+
+/// The error that ended this session's turn in opencode's log: a `stream error` of its main agent
+/// (`small=false`; the title agent's failures don't stop the turn), as the words shown in the chat.
+pub fn opencode_turn_error(log: &str, session_id: &str) -> Option<String> {
+    let line = log.lines().find(|l| {
+        l.contains("level=ERROR")
+            && l.contains("message=\"stream error\"")
+            && l.contains(&format!("session.id={session_id} "))
+            && l.contains("small=false")
+    })?;
+    let raw = line.split("error.error=\"").nth(1).map(|r| r.split('"').next().unwrap_or(r)).unwrap_or("");
+    let detail = raw.split_once(": ").map(|(_, m)| m).unwrap_or(raw).trim();
+    if detail.contains("Free usage limit reached") {
+        return Some("opencode's free model has reached its usage limit. Pick another model in the model menu, or subscribe to OpenCode Go (opencode.ai/go)".into());
+    }
+    Some(if detail.is_empty() {
+        "The agent's model failed, so it stopped this turn. Try again, or pick another model".into()
+    } else {
+        format!("The agent's model failed: {detail}")
+    })
+}
+
 fn auth_message(e: &RpcError) -> String {
     format!("The agent needs you to sign in first ({})", e.message)
 }
@@ -1115,6 +1183,7 @@ impl AgentSession {
             tools: Mutex::new(HashMap::new()),
             prompting: AtomicBool::new(false),
             stopping: AtomicBool::new(false),
+            error_log: options.error_log.clone(),
         });
         tokio::spawn(write_loop(stdin, out_rx));
         tokio::spawn(drain_stderr(stderr, chat_id.to_string()));
@@ -1377,6 +1446,21 @@ impl AcpManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reads_the_turns_model_error_from_opencodes_log() {
+        let log = concat!(
+            "timestamp=1 level=INFO run=a message=evaluated permission=bash\n",
+            "timestamp=2 level=ERROR run=a message=\"stream error\" providerID=opencode modelID=big-pickle session.id=ses_other small=false agent=build error.error=\"AI_APICallError: boom\"\n",
+            "timestamp=3 level=ERROR run=a message=\"stream error\" providerID=opencode modelID=big-pickle session.id=ses_1 small=true agent=title error.error=\"AI_RetryError: x\"\n",
+        );
+        assert_eq!(opencode_turn_error(log, "ses_1"), None);
+        let limit = format!("{log}timestamp=4 level=ERROR run=a message=\"stream error\" providerID=opencode modelID=big-pickle session.id=ses_1 small=false agent=build mode=primary error.error=\"AI_APICallError: Free usage limit reached. Free models work in OpenCode (https://opencode.ai); subscribe\"\n");
+        assert!(opencode_turn_error(&limit, "ses_1").unwrap().contains("free model has reached its usage limit"));
+        let other = "level=ERROR message=\"stream error\" session.id=ses_2 small=false agent=build error.error=\"AI_APICallError: Overloaded\"";
+        assert_eq!(opencode_turn_error(other, "ses_2").unwrap(), "The agent's model failed: Overloaded");
+        assert_eq!(opencode_turn_error(other, "ses_22"), None);
+    }
 
     #[test]
     fn parses_requests_notifications_and_responses() {
