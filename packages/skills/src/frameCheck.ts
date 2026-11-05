@@ -29,7 +29,7 @@ export const stripFramesToken = (text: string): string => {
 
 /** Agents can't speak after their turn ends: long work must run inside the turn, where Tayang shows it. */
 export const FOREGROUND_RULE =
-  "Run installs, renders and pipelines in the foreground and wait for them to finish before you reply. Never start a long job in the background and end your turn: you can't message the user after your turn ends, and Tayang shows the user that you're still working while your turn runs. If a command needs more than a few minutes, say so first, then run it and wait.";
+  "Never end your turn by saying what you will do next (\"I'll render it again\"): do it in the same turn. End your turn only when the work is done, or when you need the user to answer or allow something. Run installs, renders and pipelines in the foreground and wait for them to finish before you reply. Never start a long job in the background and end your turn: you can't message the user after your turn ends, and Tayang shows the user that you're still working while your turn runs. If a command needs more than a few minutes, say so first, then run it and wait.";
 
 /**
  * AI images and voiceover through Tayang, paid with the user's credits ($TAYANG_AI_URL and
