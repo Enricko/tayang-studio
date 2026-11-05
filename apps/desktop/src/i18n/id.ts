@@ -677,6 +677,9 @@ export const id: Translations = {
     rowAria: 'Pemakaian {{label}}',
   },
   videos: {
+    columns: { video: 'Video', status: 'Status', length: 'Durasi', schedule: 'Jadwal', updated: 'Diubah' },
+    open: 'Buka {{title}}',
+    noMatch: 'Tidak ada video yang cocok',
     noPreview: 'Belum ada pratinjau',
     renderingNow: 'Sedang merender…',
     title: 'Video',

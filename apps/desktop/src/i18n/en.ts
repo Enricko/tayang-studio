@@ -683,6 +683,9 @@ export const en = {
     rowAria: '{{label}} usage',
   },
   videos: {
+    columns: { video: 'Video', status: 'Status', length: 'Length', schedule: 'Schedule', updated: 'Updated' },
+    open: 'Open {{title}}',
+    noMatch: 'No videos match',
     noPreview: 'No preview yet',
     renderingNow: 'Rendering…',
     title: 'Videos',

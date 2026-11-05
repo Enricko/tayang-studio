@@ -5,13 +5,13 @@ import type { Project, ProjectStatus } from '@tayang/shared';
 import { Button } from '@/components/Button';
 import { Oyen } from '@/components/Oyen';
 import { ScheduleDialog } from '@/components/ScheduleDialog';
-import { VideoPoster } from '@/components/VideoPoster';
+import { SmallPoster, useVideoThumb } from '@/components/VideoPoster';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { locale } from '@/i18n';
 import { listProjects } from '@/lib/ipc';
 import { openProjectChat } from '@/lib/openProject';
-import { ago } from '@/lib/time';
+import { ago, mmss } from '@/lib/time';
 import { cn } from '@/lib/utils';
 import { useApp } from '@/state/app';
 
@@ -97,42 +97,22 @@ export function Videos() {
           <Button onClick={() => navigate({ name: 'chat-new' })}>{t('videos.newChat')}</Button>
         </div>
       ) : (
-        <div className="grid gap-x-5 gap-y-6" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(176px, 1fr))' }}>
-          {shown.map((p) => {
-            return (
-              <div key={p.id} className="relative">
-              <button
-                type="button"
-                onClick={() => void openProjectChat(p).catch(() => {})}
-                className="flex w-full flex-col gap-3 bg-transparent p-0 text-left text-foreground"
-              >
-                <VideoPoster project={p} />
-                <div className="flex flex-col gap-1">
-                  <span className="text-sm leading-[1.3] font-medium">{p.title}</span>
-                  <div className="flex items-center gap-2 text-xs">
-                    <span aria-hidden="true" className={cn('size-1.5 shrink-0 rounded-full', DOT[p.status])} />
-                    <span className="text-text-2">{t(`videos.status.${p.status}`)}</span>
-                    <span className="text-text-3">· {p.format} · {ago(p.updatedAt)}</span>
-                  </div>
-                  {p.scheduledAt && !Number.isNaN(new Date(p.scheduledAt).getTime()) && (
-                    <span className="font-mono text-[11px] text-text-3">
-                      {new Intl.DateTimeFormat(locale(), { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(p.scheduledAt))}
-                    </span>
-                  )}
-                </div>
-              </button>
-              <button
-                type="button"
-                aria-label={t('schedule.actionFor', { title: p.title })}
-                title={t('schedule.action')}
-                onClick={() => setScheduleFor(p)}
-                className="absolute top-2 right-2 inline-flex size-8 items-center justify-center rounded-md bg-black/60 text-white hover:bg-black/80"
-              >
-                <CalendarClock size={16} strokeWidth={1.5} aria-hidden="true" />
-              </button>
-              </div>
-            );
-          })}
+        <div className="@container flex flex-col">
+          <div aria-hidden="true" className="flex items-center gap-4 border-b border-border px-3 pb-2 text-xs text-text-3">
+            <span className="w-10 shrink-0" />
+            <span className="min-w-0 flex-1">{t('videos.columns.video')}</span>
+            <span className="w-32 shrink-0">{t('videos.columns.status')}</span>
+            <span className="hidden w-14 shrink-0 @2xl:block">{t('videos.columns.length')}</span>
+            <span className="hidden w-40 shrink-0 @3xl:block">{t('videos.columns.schedule')}</span>
+            <span className="hidden w-24 shrink-0 text-right @xl:block">{t('videos.columns.updated')}</span>
+            <span className="w-8 shrink-0" />
+          </div>
+          <ul aria-label={t('videos.title')} className="m-0 flex list-none flex-col p-0">
+            {shown.map((p) => (
+              <VideoRow key={p.id} project={p} onSchedule={() => setScheduleFor(p)} />
+            ))}
+          </ul>
+          {shown.length === 0 && <p className="m-0 px-3 py-6 text-sm text-text-3">{t('videos.noMatch')}</p>}
         </div>
       )}
       <ScheduleDialog
@@ -142,5 +122,62 @@ export function Videos() {
         onSaved={(saved) => setProjects((l) => l && l.map((x) => (x.id === saved.id ? saved : x)))}
       />
     </div>
+  );
+}
+
+/**
+ * One video as a compact row: its picture, title and kind, status, length, schedule and when it last
+ * changed. The row opens the video's chat (where everything else is); the clock schedules it.
+ */
+function VideoRow({ project: p, onSchedule }: { project: Project; onSchedule(): void }) {
+  const { t } = useTranslation();
+  const thumb = useVideoThumb(p);
+  const at = p.scheduledAt && !Number.isNaN(new Date(p.scheduledAt).getTime()) ? new Date(p.scheduledAt) : null;
+  return (
+    <li className="group relative flex items-center gap-4 rounded-lg px-3 py-2 hover:bg-raised/50">
+      {/* The whole row opens the chat; the schedule button sits above it. */}
+      <button
+        type="button"
+        aria-label={t('videos.open', { title: p.title })}
+        onClick={() => void openProjectChat(p).catch(() => {})}
+        className="absolute inset-0 cursor-pointer rounded-lg border-0 bg-transparent p-0 focus-visible:outline-2 focus-visible:outline-ring"
+      />
+      <SmallPoster thumb={thumb} />
+      <div className="pointer-events-none flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="truncate text-sm font-medium">{p.title}</span>
+        <span className="truncate text-xs text-text-3">
+          {t(`kinds.${p.kind}`)} · {p.format}
+        </span>
+      </div>
+      <span className="pointer-events-none flex w-32 shrink-0 items-center gap-2 text-xs text-text-2">
+        <span aria-hidden="true" className={cn('size-1.5 shrink-0 rounded-full', thumb.rendering ? 'tayang-pulse bg-primary' : DOT[p.status])} />
+        {thumb.rendering ? t('videos.renderingNow') : t(`videos.status.${p.status}`)}
+      </span>
+      <span className="pointer-events-none hidden w-14 shrink-0 font-mono text-xs text-text-3 @2xl:block">
+        {thumb.durationSec ? mmss(thumb.durationSec) : '—'}
+      </span>
+      <span className="pointer-events-none hidden w-40 shrink-0 truncate text-xs @3xl:block">
+        {at ? (
+          <span className={p.postedAt ? 'text-text-3' : 'text-foreground'}>
+            {new Intl.DateTimeFormat(locale(), { dateStyle: 'medium', timeStyle: 'short' }).format(at)}
+          </span>
+        ) : (
+          <span className="text-text-3">—</span>
+        )}
+      </span>
+      <span className="pointer-events-none hidden w-24 shrink-0 text-right text-xs text-text-3 @xl:block">{ago(p.updatedAt)}</span>
+      <button
+        type="button"
+        aria-label={t('schedule.actionFor', { title: p.title })}
+        title={t('schedule.action')}
+        onClick={onSchedule}
+        className={cn(
+          'relative inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md border-0 bg-transparent text-text-3 hover:bg-raised hover:text-foreground',
+          !at && 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100',
+        )}
+      >
+        <CalendarClock size={16} strokeWidth={1.5} aria-hidden="true" />
+      </button>
+    </li>
   );
 }

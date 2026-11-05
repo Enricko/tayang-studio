@@ -98,21 +98,23 @@ describe('the Videos card poster', () => {
     vi.mocked(videoThumbnail).mockResolvedValue(null);
     vi.mocked(listProjects).mockResolvedValue([proj({ status: 'draft' })]);
     render(<Videos />);
-    const card = async () => (await screen.findByTestId('no-preview')).closest('button')!;
-    expect(within(await card()).getByText('Draft')).toBeInTheDocument();
+    const row = async () => (await screen.findByRole('button', { name: 'Open Jalur Rempah' })).closest('li')!;
+    expect(within(await row()).getByText('Draft')).toBeInTheDocument();
     vi.mocked(listProjects).mockResolvedValue([proj({ status: 'building' })]);
     act(() => useApp.getState().bumpProjects());
-    await waitFor(async () => expect(within(await card()).getByText('Building')).toBeInTheDocument());
+    await waitFor(async () => expect(within(await row()).getByText('Building')).toBeInTheDocument());
   });
 
-  it('the Videos screen uses it, with the title and meta below the card', async () => {
+  it('the Videos screen lists each video as a compact row: picture, title, status and length', async () => {
     vi.mocked(listProjects).mockResolvedValue([proj()]);
     vi.mocked(videoThumbnail).mockResolvedValue(thumb);
     render(<Videos />);
     expect(await screen.findByTestId('video-thumb')).toBeInTheDocument();
-    const card = screen.getByTestId('video-thumb').closest('button')!;
-    expect(within(card).getByText('Jalur Rempah')).toBeInTheDocument();
-    expect(within(card).getByText('Rendered')).toBeInTheDocument();
-    await waitFor(() => expect(screen.getAllByText('1:06')).toHaveLength(1));
+    const row = screen.getByTestId('video-thumb').closest('li')!;
+    expect(within(row).getByText('Jalur Rempah')).toBeInTheDocument();
+    expect(within(row).getByText('Rendered')).toBeInTheDocument();
+    await waitFor(() => expect(within(row).getByText('1:06')).toBeInTheDocument());
+    expect(within(row).getByRole('button', { name: 'Open Jalur Rempah' })).toBeInTheDocument();
+    expect(within(row).getByRole('button', { name: /Schedule/ })).toBeInTheDocument();
   });
 });
