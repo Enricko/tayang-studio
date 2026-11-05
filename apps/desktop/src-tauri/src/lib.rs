@@ -3,6 +3,7 @@ pub mod auth;
 pub mod billing;
 pub mod commands;
 pub mod db;
+pub mod files;
 pub mod media;
 pub mod projects;
 pub mod scheduler;
@@ -108,6 +109,9 @@ pub fn run() {
             commands::upsert_slot,
             commands::update_slot,
             commands::list_chats,
+            commands::project_files,
+            commands::find_project_files,
+            commands::read_project_file,
             commands::list_recent_chats,
             commands::list_archived_chats,
             commands::set_thread_archived,

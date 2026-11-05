@@ -196,12 +196,15 @@ describe('App sidebar resizing', () => {
   });
 
   it('on a project chat, leaves room for the preview at its min too', async () => {
-    window.innerWidth = 1000;
+    window.innerWidth = 1200;
     useLayout.getState().hydrate();
     const { handle } = await renderApp();
     act(() => useApp.getState().navigate({ name: 'chat', chatId: 'c1' }));
-    // 1000 − 420 chat − 300 preview min
+    // 1200 − 420 chat − 300 preview min − 200 file sidebar min
     expect(handle).toHaveAttribute('aria-valuemax', '280');
+    act(() => useLayout.getState().toggleFiles());
+    // Files closed: 1200 − 420 − 300 (capped at the sidebar max)
+    expect(handle).toHaveAttribute('aria-valuemax', '360');
   });
 
   it('keeps the chat 420 px wide in a narrow window', async () => {

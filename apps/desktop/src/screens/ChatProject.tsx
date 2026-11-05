@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { PanelRight } from 'lucide-react';
 import type { AgentId, Chat, MessagePart, Project } from '@tayang/shared';
 import { Button } from '@/components/Button';
 import { Composer } from '@/components/Composer';
@@ -7,6 +8,8 @@ import { MessageList } from '@/components/MessageList';
 import { PermissionCard } from '@/components/PermissionCard';
 import { ResizeHandle } from '@/components/ResizeHandle';
 import { Preview } from '@/screens/preview/Preview';
+import { FileTree } from '@/components/workspace/FileTree';
+import { Workspace } from '@/components/workspace/Workspace';
 import { ScheduleDialog } from '@/components/ScheduleDialog';
 import { ScrollToBottom } from '@/components/ScrollToBottom';
 import { TurnRail } from '@/components/TurnRail';
@@ -19,9 +22,11 @@ import { projectSendOptions } from '@/lib/openProject';
 import { useApp } from '@/state/app';
 import { headPermission, useChat, type SendOpts } from '@/state/chat';
 import { useUsage } from '@/state/usage';
-import { PREVIEW, useFittedLayout, useLayout } from '@/state/layout';
+import { FILES, PREVIEW, useFittedLayout, useLayout } from '@/state/layout';
+import { useProjectTabs, useWorkspace } from '@/state/workspace';
 import { setRenderArgv, useRender } from '@/state/render';
 import { advanceProject } from '@/lib/projectStatus';
+import { cn } from '@/lib/utils';
 
 const NO_MESSAGES: never[] = [];
 /** One argv as a shell-looking line: arguments with spaces or quotes are double-quoted. */
@@ -47,6 +52,8 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
   const projectsVersion = useApp((s) => s.projectsVersion);
   const seenVersion = useRef(projectsVersion);
   const styles = useStyles();
+  const filesOpen = useLayout((s) => s.filesOpen);
+  const tabs = useProjectTabs(project?.id ?? '');
 
   useEffect(() => {
     useChat.getState().listen();
@@ -180,6 +187,22 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
         >
           {rendering ? t('chat.rendering') : t('chat.render')}
         </Button>
+        {project && (
+          <button
+            type="button"
+            aria-pressed={filesOpen}
+            aria-controls="chat-files"
+            aria-label={filesOpen ? t('workspace.hideFiles') : t('workspace.showFiles')}
+            title={filesOpen ? t('workspace.hideFiles') : t('workspace.showFiles')}
+            onClick={() => useLayout.getState().toggleFiles()}
+            className={cn(
+              '-mr-2 flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-md hover:bg-raised',
+              filesOpen ? 'text-foreground' : 'text-text-3',
+            )}
+          >
+            <PanelRight size={18} strokeWidth={1.5} aria-hidden="true" />
+          </button>
+        )}
       </header>
       <ScheduleDialog open={scheduling} onOpenChange={setScheduling} project={project} onSaved={setProject} />
       {runs && runs.render.length > 0 && (
@@ -244,17 +267,44 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
             onReset={() => useLayout.getState().resetPreview()}
           />
           {project ? (
-            <Preview
+            <Workspace
               projectId={project.id}
-              chatId={chatId}
               reloadKey={reloadKey}
-              onRender={() => void renderVideo()}
-              rendering={rendering}
+              preview={
+                <Preview
+                  projectId={project.id}
+                  chatId={chatId}
+                  reloadKey={reloadKey}
+                  onRender={() => void renderVideo()}
+                  rendering={rendering}
+                />
+              }
             />
           ) : (
             <div data-testid="preview-slot" />
           )}
         </section>
+        {project && fitted.files > 0 && (
+          <aside id="chat-files" aria-label={t('workspace.files')} className="relative shrink-0 border-l border-border" style={{ width: fitted.files }}>
+            <ResizeHandle
+              label={t('layout.resizeFiles')}
+              side="left"
+              aria-controls="chat-files"
+              value={fitted.files}
+              min={FILES.min}
+              max={fitted.filesMax}
+              onResize={(w, live) => useLayout.getState().setFiles(Math.min(w, fitted.filesMax), live)}
+              onReset={() => useLayout.getState().resetFiles()}
+            />
+            <FileTree
+              projectId={project.id}
+              folderName={project.folder.split(/[\\/]/).filter(Boolean).pop() ?? project.title}
+              activePath={tabs.active}
+              reloadKey={reloadKey}
+              onOpen={(path) => useWorkspace.getState().open(project.id, path)}
+            />
+          </aside>
+        )}
       </div>
     </div>
   );

@@ -1,26 +1,28 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CHAT_MIN, PREVIEW, SIDEBAR, fitLayout, layoutKey, loadLayout, useLayout } from '@/state/layout';
+import { CHAT_MIN, FILES, PREVIEW, SIDEBAR, fitLayout, layoutKey, loadLayout, useLayout } from '@/state/layout';
 
 const KEY = layoutKey();
+/** The file sidebar's saved part when nothing about it was saved. */
+const F = { files: FILES.default, filesOpen: true };
 
 describe('layout persistence', () => {
   beforeEach(() => localStorage.clear());
   afterEach(() => vi.restoreAllMocks());
 
   it('starts from the defaults when nothing is saved', () => {
-    expect(loadLayout()).toEqual({ sidebar: SIDEBAR.default, collapsed: false, preview: PREVIEW.default });
+    expect(loadLayout()).toEqual({ sidebar: SIDEBAR.default, collapsed: false, preview: PREVIEW.default, ...F });
   });
 
   it('reads saved widths, clamped to their limits', () => {
     localStorage.setItem(KEY, JSON.stringify({ sidebar: 300, collapsed: true, preview: 9999 }));
-    expect(loadLayout()).toEqual({ sidebar: 300, collapsed: true, preview: PREVIEW.max });
+    expect(loadLayout()).toEqual({ sidebar: 300, collapsed: true, preview: PREVIEW.max, ...F });
   });
 
   it('ignores junk', () => {
     localStorage.setItem(KEY, '{not json');
-    expect(loadLayout()).toEqual({ sidebar: SIDEBAR.default, collapsed: false, preview: PREVIEW.default });
+    expect(loadLayout()).toEqual({ sidebar: SIDEBAR.default, collapsed: false, preview: PREVIEW.default, ...F });
     localStorage.setItem(KEY, JSON.stringify({ sidebar: 'wide', collapsed: 1 }));
-    expect(loadLayout()).toEqual({ sidebar: SIDEBAR.default, collapsed: false, preview: PREVIEW.default });
+    expect(loadLayout()).toEqual({ sidebar: SIDEBAR.default, collapsed: false, preview: PREVIEW.default, ...F });
   });
 
   it('writes every change', () => {
@@ -28,7 +30,7 @@ describe('layout persistence', () => {
     useLayout.getState().setSidebar(280);
     useLayout.getState().setPreview(500);
     useLayout.getState().setCollapsed(true);
-    expect(JSON.parse(localStorage.getItem(KEY)!)).toEqual({ sidebar: 280, collapsed: true, preview: 500 });
+    expect(JSON.parse(localStorage.getItem(KEY)!)).toEqual({ sidebar: 280, collapsed: true, preview: 500, ...F });
   });
 
   it('does not write while a drag is live, only its final width', () => {
@@ -41,7 +43,7 @@ describe('layout persistence', () => {
     expect(useLayout.getState()).toMatchObject({ sidebar: 250, collapsed: true, preview: 450 });
     useLayout.getState().setPreview(460);
     expect(setItem).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(localStorage.getItem(KEY)!)).toEqual({ sidebar: 250, collapsed: true, preview: 460 });
+    expect(JSON.parse(localStorage.getItem(KEY)!)).toEqual({ sidebar: 250, collapsed: true, preview: 460, ...F });
   });
 
   it('works when storage throws', () => {
@@ -51,10 +53,42 @@ describe('layout persistence', () => {
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
       throw new Error('denied');
     });
-    expect(loadLayout()).toEqual({ sidebar: SIDEBAR.default, collapsed: false, preview: PREVIEW.default });
+    expect(loadLayout()).toEqual({ sidebar: SIDEBAR.default, collapsed: false, preview: PREVIEW.default, ...F });
     useLayout.getState().hydrate();
     expect(() => useLayout.getState().setSidebar(300)).not.toThrow();
     expect(useLayout.getState().sidebar).toBe(300);
+  });
+});
+
+describe('the file sidebar', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useLayout.getState().hydrate();
+  });
+
+  it('is saved with its width and whether it is open, clamped', () => {
+    useLayout.getState().setFiles(9999);
+    useLayout.getState().toggleFiles();
+    expect(JSON.parse(localStorage.getItem(KEY)!)).toMatchObject({ files: FILES.max, filesOpen: false });
+    localStorage.setItem(KEY, JSON.stringify({ files: 10, filesOpen: 'yes' }));
+    expect(loadLayout()).toMatchObject({ files: FILES.min, filesOpen: true });
+  });
+
+  it('shows only next to the preview, and gives way after the preview but before the app sidebar', () => {
+    const base = { sidebar: 232, collapsed: false, preview: 380, files: 260, filesOpen: true };
+    expect(fitLayout({ ...base, windowWidth: 1600, previewOpen: false }).files).toBe(0);
+    const wide = fitLayout({ ...base, windowWidth: 1600, previewOpen: true });
+    expect(wide).toMatchObject({ sidebar: 232, preview: 380, files: 260 });
+    // 232 + 380 + 260 + 420 = 1292: 12px short, taken from the preview.
+    expect(fitLayout({ ...base, windowWidth: 1280, previewOpen: true })).toMatchObject({ preview: 368, files: 260, sidebar: 232 });
+    // Narrower: the preview hits its min, then the files give way, then the app sidebar.
+    const tight = fitLayout({ ...base, windowWidth: 1100, previewOpen: true });
+    expect(tight.preview).toBe(PREVIEW.min);
+    expect(tight.files).toBe(FILES.min);
+    // Every panel at its min: narrower than this the window can't fit them all.
+    expect(tight.sidebar).toBe(SIDEBAR.min);
+    // Closed, it takes nothing.
+    expect(fitLayout({ ...base, filesOpen: false, windowWidth: 1280, previewOpen: true })).toMatchObject({ files: 0, preview: 380 });
   });
 });
 

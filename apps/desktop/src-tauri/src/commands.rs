@@ -1323,6 +1323,29 @@ fn project_folder(state: &AppState, project_id: &str) -> CmdResult<PathBuf> {
         .ok_or_else(|| "That project no longer exists".to_string())
 }
 
+// ---- project files (the workspace) ----
+
+/// One folder of a project, `dir` relative to the project folder ("" is the top).
+#[tauri::command]
+pub async fn project_files(state: State<'_, AppState>, project_id: String, dir: String) -> CmdResult<Vec<crate::files::FileEntry>> {
+    let root = project_folder(&state, &project_id)?;
+    tauri::async_runtime::spawn_blocking(move || crate::files::list_dir(&root, &dir)).await.map_err(err)?
+}
+
+/// A project's files whose name contains `query`.
+#[tauri::command]
+pub async fn find_project_files(state: State<'_, AppState>, project_id: String, query: String) -> CmdResult<Vec<crate::files::FileEntry>> {
+    let root = project_folder(&state, &project_id)?;
+    tauri::async_runtime::spawn_blocking(move || crate::files::find(&root, &query)).await.map_err(err)?
+}
+
+/// One project file to show: its text, or what kind of file it is.
+#[tauri::command]
+pub async fn read_project_file(state: State<'_, AppState>, project_id: String, path: String) -> CmdResult<crate::files::FileContent> {
+    let root = project_folder(&state, &project_id)?;
+    tauri::async_runtime::spawn_blocking(move || crate::files::read(&root, &path)).await.map_err(err)?
+}
+
 fn path_string(p: &Path) -> String {
     p.to_string_lossy().into_owned()
 }

@@ -13,6 +13,9 @@ vi.mock('@/lib/ipc', () => ({
   mediaThumbnails: vi.fn().mockResolvedValue([]),
   mediaRender: vi.fn(),
   assetUrl: (p: string) => p,
+  projectFiles: vi.fn(async () => []),
+  findProjectFiles: vi.fn(async () => []),
+  readProjectFile: vi.fn(),
 }));
 vi.mock('@/lib/events', () => ({ onAgentUpdate: vi.fn(async () => () => {}), onPermission: vi.fn(async () => () => {}) }));
 
@@ -53,6 +56,8 @@ function drag(handle: HTMLElement, from: number, to: number) {
 describe('project chat preview panel', () => {
   beforeEach(() => {
     localStorage.clear();
+    // These are about the preview: the file sidebar (its own tests) is closed.
+    localStorage.setItem(layoutKey(), JSON.stringify({ filesOpen: false }));
     window.innerWidth = 1600;
     useLayout.getState().hydrate();
     vi.mocked(ipc.getChat).mockResolvedValue(chat);
@@ -113,5 +118,17 @@ describe('project chat preview panel', () => {
   it('has its width from the first paint', () => {
     render(<ChatProject chatId="c1" />);
     expect(screen.getByRole('region', { name: 'Preview' }).style.width).toBe(`${PREVIEW.default}px`);
+  });
+
+  it('shows the file sidebar next to the preview, and its button hides it and remembers', async () => {
+    localStorage.setItem(layoutKey(), JSON.stringify({}));
+    useLayout.getState().hydrate();
+    await renderChat();
+    expect(screen.getByRole('complementary', { name: 'Files' })).toBeInTheDocument();
+    expect(screen.getByRole('separator', { name: 'Resize files' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Hide files' }));
+    expect(screen.queryByRole('complementary', { name: 'Files' })).not.toBeInTheDocument();
+    expect(JSON.parse(localStorage.getItem(layoutKey())!)).toMatchObject({ filesOpen: false });
+    expect(screen.getByRole('button', { name: 'Show files' })).toHaveAttribute('aria-pressed', 'false');
   });
 });

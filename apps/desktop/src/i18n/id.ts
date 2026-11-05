@@ -39,6 +39,7 @@ export const id: Translations = {
   layout: {
     resizeSidebar: 'Ubah lebar sidebar',
     resizePreview: 'Ubah lebar pratinjau',
+    resizeFiles: 'Ubah lebar panel file',
   },
   onboarding: {
     step: 'Langkah {{step}} dari 3',
@@ -499,6 +500,24 @@ export const id: Translations = {
     openLinkTitle: 'Buka link ini',
     openLink: 'Buka link',
     value: 'Nilai',
+  },
+  workspace: {
+    files: 'File',
+    showFiles: 'Tampilkan file',
+    hideFiles: 'Sembunyikan file',
+    findFiles: 'Cari file',
+    refresh: 'Muat ulang',
+    noMatches: 'Tidak ada file yang cocok',
+    empty: 'Folder ini kosong',
+    loadFailed: 'Gagal membaca folder: {{message}}',
+    preview: 'Pratinjau',
+    tabs: 'Pratinjau dan file yang dibuka',
+    close: 'Tutup {{name}}',
+    showInFolder: 'Tampilkan di folder',
+    loading: 'Membuka…',
+    binary: 'File ini tidak bisa ditampilkan sebagai teks.',
+    tooLarge: 'File ini terlalu besar untuk ditampilkan di sini ({{size}}).',
+    readFailed: 'Gagal membuka file ini: {{message}}',
   },
   archive: {
     hint: 'Chat dan kartu selesai yang diarsipkan disimpan di sini supaya tidak mengganggu. Videomu tidak pernah ikut diarsipkan.',

@@ -161,3 +161,36 @@
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
+
+/* The workspace's code view: the app's mono font, line numbers in the gutter, Shiki's own background
+   off so the panel's shows through. Lines keep their spacing; long ones scroll sideways. */
+.code-view,
+.code-view pre {
+  margin: 0;
+  padding: 10px 0;
+  background: transparent !important;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.65;
+  tab-size: 2;
+}
+.code-view pre {
+  padding: 0;
+  outline: none;
+}
+.code-view code {
+  counter-reset: line;
+  display: block;
+  min-width: max-content;
+}
+.code-view .line::before {
+  counter-increment: line;
+  content: counter(line);
+  display: inline-block;
+  width: 3.25em;
+  margin-right: 1.25em;
+  padding-right: 0.5em;
+  text-align: right;
+  color: #4a4a4a;
+  user-select: none;
+}

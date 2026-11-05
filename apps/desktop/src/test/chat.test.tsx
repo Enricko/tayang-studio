@@ -5,6 +5,9 @@ import type { AgentUpdate, Chat, PermissionRequest, Project, Settings, Style } f
 
 vi.mock('@/lib/ipc', () => ({
   listProjects: vi.fn(),
+  projectFiles: vi.fn(async () => []),
+  findProjectFiles: vi.fn(async () => []),
+  readProjectFile: vi.fn(),
   createProject: vi.fn(),
   makeStyleSheets: vi.fn(async () => []),
   keepStyleRefs: vi.fn(async () => []),

@@ -174,3 +174,27 @@ export const assetUrl = (path: string): string => convertFileSrc(path);
 // ---- attachments ----
 export const attachFile = (chatId: string, sourcePath: string) =>
   invoke<Extract<MessagePart, { type: 'file' }>>('attach_file', { chatId, sourcePath });
+
+// ---- project files (the workspace) ----
+
+/** A file or folder in a project, `path` relative to the project folder with `/` between parts. */
+export interface ProjectFile {
+  name: string;
+  path: string;
+  dir: boolean;
+  size: number;
+  /** A dot file, or a dependency or build folder (or inside one). */
+  dim: boolean;
+}
+export type ProjectFileKind = 'text' | 'image' | 'video' | 'audio' | 'binary' | 'tooLarge';
+export interface ProjectFileContent {
+  kind: ProjectFileKind;
+  absPath: string;
+  size: number;
+  text: string | null;
+}
+/** One folder of a project ("" is the top), folders first. */
+export const projectFiles = (projectId: string, dir = '') => invoke<ProjectFile[]>('project_files', { projectId, dir });
+/** Files whose name contains `query`; dependency and dot folders are not searched. */
+export const findProjectFiles = (projectId: string, query: string) => invoke<ProjectFile[]>('find_project_files', { projectId, query });
+export const readProjectFile = (projectId: string, path: string) => invoke<ProjectFileContent>('read_project_file', { projectId, path });

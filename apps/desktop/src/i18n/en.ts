@@ -37,6 +37,7 @@ export const en = {
   layout: {
     resizeSidebar: 'Resize sidebar',
     resizePreview: 'Resize preview',
+    resizeFiles: 'Resize files',
   },
   onboarding: {
     step: 'Step {{step}} of 3',
@@ -505,6 +506,24 @@ export const en = {
     openLinkTitle: 'Open this link',
     openLink: 'Open link',
     value: 'Value',
+  },
+  workspace: {
+    files: 'Files',
+    showFiles: 'Show files',
+    hideFiles: 'Hide files',
+    findFiles: 'Find files',
+    refresh: 'Refresh',
+    noMatches: 'No files match',
+    empty: 'This folder is empty',
+    loadFailed: "Couldn't read the folder: {{message}}",
+    preview: 'Preview',
+    tabs: 'Preview and open files',
+    close: 'Close {{name}}',
+    showInFolder: 'Show in folder',
+    loading: 'Opening…',
+    binary: "This file can't be shown as text.",
+    tooLarge: 'This file is too large to show here ({{size}}).',
+    readFailed: "Couldn't open this file: {{message}}",
   },
   archive: {
     hint: 'Archived chats and finished cards are kept here, out of the way. Your videos are never in the archive.',
