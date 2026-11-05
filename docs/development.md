@@ -65,6 +65,25 @@ Run this on a packaged build (`pnpm --filter @tayang/desktop tauri build`) befor
 - [ ] Windows: build and install the Windows bundle, run onboarding (winget installs), start a chat and render one video.
 - [ ] Autopilot with the window hidden (packaged macOS build, by hand): turn on background mode and close the window. Make an autopilot whose next slot is 2 minutes ahead; confirm the slot starts and finishes on time while the window stays hidden. On a second slot, use Stop now from the Autopilot screen once. Use the tray's Pause all once and check every autopilot shows Paused. With the window hidden, confirm a review reminder and a post reminder arrive. If slots start late, a hidden webview is being throttled (App Nap): see the review's note on `NSAppSleepDisabled`.
 
+## CI and releases
+
+- `.github/workflows/ci.yml` runs on every push to `main` and every pull request: typecheck, the JS tests, clippy and the Rust tests on Linux, then builds the app for macOS (Apple silicon and Intel), Windows and Linux. The installers are kept as workflow artifacts for 7 days.
+- `.github/workflows/release.yml` runs on a `v*` tag. It builds every platform into a **draft** GitHub release with signed updater bundles and `latest.json`.
+
+To ship a version:
+
+1. `pnpm version:set 0.2.0` (writes the version into both `package.json` files, `tauri.conf.json`, `Cargo.toml` and `Cargo.lock`).
+2. Commit, then `git tag v0.2.0 && git push origin main v0.2.0`. The workflow fails early if the tag and the app version differ.
+3. Check the draft release, then publish it. Publishing is what ships the update.
+
+### Auto-update
+
+Release builds check `https://github.com/Maru-Yasa/tayang-studio/releases/latest/download/latest.json` 10 seconds after launch and every 6 hours. When a newer version is there, the sidebar offers it; the download is checked against the public key in `tauri.conf.json` and installed on restart. Dev builds never check. Drafts and pre-releases are never "latest", so they reach nobody until published. This only works while the repository is public: release downloads from a private repository need a login.
+
+The updater signing key is `~/.tauri/tayang-studio.key` on the maintainer's machine, with its password in `~/.tauri/tayang-studio.key.password`, and both are in the repository secrets (`TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`). Back them up somewhere safe. If the key is lost, installed copies can never update again, and everyone has to reinstall by hand.
+
+Installers are not code-signed yet. macOS shows them as from an unidentified developer (right-click › Open the first time), and Windows SmartScreen warns. On macOS an unsigned app also asks for the keychain password again after each update, because the keychain trusts one exact build. A Developer ID certificate and notarization fix both (add the `APPLE_*` secrets that tauri-action reads).
+
 ## Downgrades
 
 Chats saved by this version can store `thought` parts (the agent's reasoning) and images the agent made (`file` parts with `modifiedAt`). An older build can't read a `thought` part, so going back to it breaks those chats' message lists. Don't ship a downgrade path.
