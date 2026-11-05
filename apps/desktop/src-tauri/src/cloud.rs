@@ -34,6 +34,14 @@ pub enum CloudError {
     BadUrl,
     /// What came back is bigger than Tayang keeps.
     TooLarge,
+    /// Gift codes: no such code, its promo has ended, its uses are taken, this account or this
+    /// computer has this promo's gift already, or too many tries.
+    InvalidCode,
+    CodeExpired,
+    CodeUsed,
+    AlreadyRedeemed,
+    DeviceUsed,
+    RateLimited,
 }
 
 impl CloudError {
@@ -55,7 +63,14 @@ fn error_for(status: u16, body: &[u8]) -> CloudError {
         Some("in_progress") => CloudError::InProgress,
         Some("already_posted") => CloudError::AlreadyPosted,
         Some("invalid_request") => CloudError::Invalid,
+        Some("invalid_code") => CloudError::InvalidCode,
+        Some("code_expired") => CloudError::CodeExpired,
+        Some("code_used") => CloudError::CodeUsed,
+        Some("already_redeemed") => CloudError::AlreadyRedeemed,
+        Some("device_used") => CloudError::DeviceUsed,
+        Some("rate_limited") => CloudError::RateLimited,
         _ => match status {
+            429 => CloudError::RateLimited,
             401 => CloudError::SignedOut,
             402 => CloudError::QuotaExceeded,
             403 => CloudError::PlanRequired,
@@ -153,6 +168,21 @@ mod tests {
     use super::*;
     use crate::auth::http_client;
     use crate::auth::tests::fake;
+
+    #[test]
+    fn gift_code_refusals_become_their_codes() {
+        for (body, code) in [
+            (r#"{"error":"invalid_code"}"#, "invalid-code"),
+            (r#"{"error":"code_expired"}"#, "code-expired"),
+            (r#"{"error":"code_used"}"#, "code-used"),
+            (r#"{"error":"already_redeemed"}"#, "already-redeemed"),
+            (r#"{"error":"device_used"}"#, "device-used"),
+            (r#"{"error":"rate_limited"}"#, "rate-limited"),
+        ] {
+            assert_eq!(error_for(409, body.as_bytes()).code(), code);
+        }
+        assert_eq!(error_for(429, b"").code(), "rate-limited");
+    }
 
     #[tokio::test]
     async fn api_errors_become_codes() {

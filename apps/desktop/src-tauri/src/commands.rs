@@ -866,6 +866,19 @@ pub async fn cloud_usage(state: State<'_, AppState>, auth: State<'_, Arc<Auth>>)
     after_cloud(&auth, &base, "usage", crate::cloud::get(auth.client(), &base, &token, "/v1/usage").await)
 }
 
+/// Redeems a gift code for this account. The API also gets this computer's hashed id (see
+/// `device`), since a promo gives one gift per computer. Answers `{ gift }`.
+#[tauri::command]
+pub async fn redeem_gift_code(state: State<'_, AppState>, auth: State<'_, Arc<Auth>>, code: String) -> CmdResult<serde_json::Value> {
+    let auth = auth.inner().clone();
+    let (base, token) = cloud_token(&state, &auth).await?;
+    let install_id = state.db.ensure_install_id(&state.home).unwrap_or_default();
+    // ioreg / reg run as processes: off the async runtime.
+    let device_id = tokio::task::spawn_blocking(move || crate::device::device_id(&install_id)).await.map_err(err)?;
+    let body = serde_json::json!({ "code": code.trim(), "deviceId": device_id });
+    after_cloud(&auth, &base, "redeem", crate::cloud::send(auth.client(), reqwest::Method::POST, &base, &token, "/v1/promos/redeem", Some(&body)).await)
+}
+
 /// The social accounts connected to this Tayang account.
 #[tauri::command]
 pub async fn social_accounts(state: State<'_, AppState>, auth: State<'_, Arc<Auth>>) -> CmdResult<serde_json::Value> {

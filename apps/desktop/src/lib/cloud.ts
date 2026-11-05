@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { CreatePostResponse, PostDetails, SocialAccount, SocialPlatform, UsageResponse } from '@tayang/shared';
+import type { CreatePostResponse, PostDetails, RedeemResponse, SocialAccount, SocialPlatform, UsageResponse } from '@tayang/shared';
 
 /** What a cloud call can fail with: the kebab-case `CloudError` from Rust, or `other`. */
 export type CloudErrorCode =
@@ -16,11 +16,18 @@ export type CloudErrorCode =
   | 'server'
   | 'bad-url'
   | 'too-large'
+  | 'invalid-code'
+  | 'code-expired'
+  | 'code-used'
+  | 'already-redeemed'
+  | 'device-used'
+  | 'rate-limited'
   | 'other';
 
 const CODES = new Set<CloudErrorCode>([
   'signed-out', 'plan-required', 'quota-exceeded', 'unavailable', 'provider', 'not-found', 'in-progress',
   'already-posted', 'invalid', 'network', 'server', 'bad-url', 'too-large',
+  'invalid-code', 'code-expired', 'code-used', 'already-redeemed', 'device-used', 'rate-limited',
 ]);
 
 /** `cloud:plan-required` → `plan-required`; anything else is `other`. */
@@ -30,6 +37,8 @@ export function cloudErrorCode(e: unknown): CloudErrorCode {
 }
 
 export const cloudUsage = () => invoke<UsageResponse>('cloud_usage');
+/** Redeems a gift code for the signed-in account; Rust adds this computer's hashed id. */
+export const redeemGiftCode = (code: string) => invoke<RedeemResponse>('redeem_gift_code', { code });
 export const socialAccounts = () => invoke<{ accounts: SocialAccount[] }>('social_accounts').then((r) => r.accounts ?? []);
 /** Opens the platform's sign-in page in the browser. */
 export const socialConnect = (platform: SocialPlatform) => invoke<void>('social_connect', { platform });

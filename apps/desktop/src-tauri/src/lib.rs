@@ -5,6 +5,7 @@ pub mod billing;
 pub mod cloud;
 pub mod commands;
 pub mod db;
+pub mod device;
 pub mod files;
 pub mod media;
 pub mod projects;
@@ -125,6 +126,7 @@ pub fn run() {
             commands::social_disconnect,
             commands::social_post,
             commands::social_post_status,
+            commands::redeem_gift_code,
             commands::list_recent_chats,
             commands::list_archived_chats,
             commands::set_thread_archived,

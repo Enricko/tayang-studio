@@ -1,4 +1,5 @@
 import type { PlanId } from './billing';
+import type { Gift } from './promo';
 import { CREDIT_COSTS } from './billing';
 
 // AI credits (fal image and voice) and auto-posts (PostForMe), metered per cycle.
@@ -58,6 +59,8 @@ export interface UsageResponse {
   cycleEnd: string;
   credits: UsageMeter;
   posts: UsageMeter;
+  /** Gifts still running; their credits and posts are in the meters above too. */
+  gifts?: Gift[];
 }
 
 /** POST /v1/ai/image body. */
