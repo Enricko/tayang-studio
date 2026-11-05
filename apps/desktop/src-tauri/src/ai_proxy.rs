@@ -27,6 +27,8 @@ const VOICE_MAX_BYTES: u64 = 60 * 1024 * 1024;
 pub enum AiJob {
     Image { prompt: String, aspect: Option<String>, count: u32, out: PathBuf },
     Voice { text: String, language: Option<String>, voice: Option<String>, out: PathBuf },
+    /// `GET /usage`: the credits and auto-posts left, so the agent knows before it plans.
+    Usage,
 }
 
 /// Does the work for a checked request: calls the API and saves into `folder`. Injected so the
@@ -153,15 +155,20 @@ async fn serve(mut s: tokio::net::TcpStream, proxy: &AiProxy, folder_for: &(dyn 
     let Some(chat) = req.token.as_deref().and_then(|t| proxy.chat_for(t)) else {
         return respond(&mut s, 401, &fail("unauthorized", "Use the TAYANG_AI_TOKEN this session was given")).await;
     };
-    if req.method != "POST" {
-        return respond(&mut s, 405, &fail("invalid", "Use POST")).await;
+    let usage = req.path.split('?').next().unwrap_or("").trim_end_matches('/') == "/usage";
+    if req.method != if usage { "GET" } else { "POST" } {
+        return respond(&mut s, 405, &fail("invalid", if usage { "Use GET" } else { "Use POST" })).await;
     }
     let Some(folder) = folder_for(&chat) else {
         return respond(&mut s, 404, &fail("not-found", "This chat has no folder to save into")).await;
     };
-    let body: Value = match serde_json::from_slice(&req.body) {
-        Ok(v @ Value::Object(_)) => v,
-        _ => return respond(&mut s, 400, &fail("invalid", "The body must be a JSON object")).await,
+    let body: Value = if usage {
+        json!({})
+    } else {
+        match serde_json::from_slice(&req.body) {
+            Ok(v @ Value::Object(_)) => v,
+            _ => return respond(&mut s, 400, &fail("invalid", "The body must be a JSON object")).await,
+        }
     };
     let job = match parse_job(&req.path, &body) {
         Ok(j) => j,
@@ -194,6 +201,7 @@ fn out_path(v: Option<&Value>, default_stem: &str, exts: &[&str]) -> Result<Path
 pub fn parse_job(path: &str, b: &Value) -> Result<AiJob, String> {
     let text = |k: &str| b.get(k).and_then(Value::as_str).map(str::to_string);
     match path.split('?').next().unwrap_or("").trim_end_matches('/') {
+        "/usage" => Ok(AiJob::Usage),
         "/image" => {
             let prompt = text("prompt").filter(|p| !p.trim().is_empty()).ok_or("prompt is required")?;
             let count = match b.get("count") {
@@ -220,6 +228,25 @@ pub fn nth_path(out: &Path, i: usize) -> PathBuf {
     out.with_file_name(format!("{stem}-{}.{ext}", i + 1))
 }
 
+/// What the agent needs from `/v1/usage`: credits and auto-posts left (gifts included), and what
+/// they buy, in one small object.
+pub fn usage_summary(u: &Value) -> Value {
+    let left = |m: &str| u.pointer(&format!("/{m}/remaining")).and_then(Value::as_i64).unwrap_or(0);
+    let credits = left("credits");
+    json!({
+        "signedIn": true,
+        "credits": credits,
+        "posts": left("posts"),
+        "imagesAffordable": credits,
+        "voiceMinutesAffordable": credits / 7,
+        "message": if credits > 0 {
+            "Use Tayang's /image and /voice for AI pictures and every voice-over"
+        } else {
+            "No AI credits left: make videos without AI images or voice"
+        },
+    })
+}
+
 /// Runs a job against the Tayang API with `token` and saves the results into `folder`.
 pub async fn run_job(client: &reqwest::Client, base: &str, token: &str, job: AiJob, folder: &Path) -> Result<Value, (u16, Value)> {
     use crate::cloud::{download, send, CloudError};
@@ -241,6 +268,18 @@ pub async fn run_job(client: &reqwest::Client, base: &str, token: &str, job: AiJ
         };
         (status, fail(&e.code(), message))
     };
+    if let AiJob::Usage = job {
+        return match crate::cloud::get(client, base, token, "/v1/usage").await {
+            Ok(u) => Ok(usage_summary(&u)),
+            Err(CloudError::SignedOut) => Ok(json!({
+                "signedIn": false,
+                "credits": 0,
+                "posts": 0,
+                "message": "The user isn't signed in to Tayang: there are no AI credits, so make videos without AI images or voice",
+            })),
+            Err(e) => Err(refused(e)),
+        };
+    }
     let request_id = uuid::Uuid::new_v4().simple().to_string();
     let (path, body, outs, max): (&str, Value, Vec<PathBuf>, u64) = match &job {
         AiJob::Image { prompt, aspect, count, out } => {
@@ -260,6 +299,7 @@ pub async fn run_job(client: &reqwest::Client, base: &str, token: &str, job: AiJ
             }
             ("/v1/ai/voice", b, vec![out.clone()], VOICE_MAX_BYTES)
         }
+        AiJob::Usage => unreachable!("answered above"),
     };
     let answer = send(client, reqwest::Method::POST, base, token, path, Some(&body)).await.map_err(refused)?;
     let urls: Vec<String> = match &job {
@@ -269,6 +309,7 @@ pub async fn run_job(client: &reqwest::Client, base: &str, token: &str, job: AiJ
             .map(|a| a.iter().filter_map(|i| i.get("url").and_then(Value::as_str).map(str::to_string)).collect())
             .unwrap_or_default(),
         AiJob::Voice { .. } => answer.get("audioUrl").and_then(Value::as_str).map(|u| vec![u.to_string()]).unwrap_or_default(),
+        AiJob::Usage => Vec::new(),
     };
     if urls.is_empty() {
         return Err(refused(CloudError::Provider));
@@ -310,9 +351,13 @@ mod tests {
     }
 
     async fn post(port: u16, path: &str, token: Option<&str>, body: &str) -> (u16, Value) {
+        request(port, "POST", path, token, body).await
+    }
+
+    async fn request(port: u16, method: &str, path: &str, token: Option<&str>, body: &str) -> (u16, Value) {
         let mut s = tokio::net::TcpStream::connect(("127.0.0.1", port)).await.unwrap();
         let auth = token.map(|t| format!("Authorization: Bearer {t}\r\n")).unwrap_or_default();
-        let req = format!("POST {path} HTTP/1.1\r\nHost: x\r\n{auth}Content-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}", body.len());
+        let req = format!("{method} {path} HTTP/1.1\r\nHost: x\r\n{auth}Content-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}", body.len());
         s.write_all(req.as_bytes()).await.unwrap();
         let mut out = String::new();
         s.read_to_string(&mut out).await.unwrap();
@@ -346,5 +391,22 @@ mod tests {
         let again = proxy.session_env("c1")[1].1.clone();
         assert_eq!(post(proxy.port, "/image", Some(&token), r#"{"prompt":"x"}"#).await.0, 401);
         assert_eq!(post(proxy.port, "/voice", Some(&again), r#"{"text":"halo"}"#).await.0, 200);
+
+        // Usage is a GET with no body; the jobs stay POST.
+        assert_eq!(request(proxy.port, "GET", "/usage", Some(&again), "").await.0, 200);
+        assert_eq!(seen.lock().unwrap().last().unwrap().0, AiJob::Usage);
+        assert_eq!(post(proxy.port, "/usage", Some(&again), "{}").await.0, 405);
+        assert_eq!(request(proxy.port, "GET", "/image", Some(&again), "").await.0, 405);
+        assert_eq!(request(proxy.port, "GET", "/usage", None, "").await.0, 401);
+    }
+
+    #[test]
+    fn usage_says_what_the_credits_buy() {
+        let u = json!({ "credits": { "allowance": 30, "used": 2, "remaining": 28 }, "posts": { "allowance": 5, "used": 0, "remaining": 5 } });
+        let s = usage_summary(&u);
+        assert_eq!((s["signedIn"].as_bool(), s["credits"].as_i64(), s["posts"].as_i64()), (Some(true), Some(28), Some(5)));
+        assert_eq!((s["imagesAffordable"].as_i64(), s["voiceMinutesAffordable"].as_i64()), (Some(28), Some(4)));
+        let none = usage_summary(&json!({ "credits": { "remaining": 0 }, "posts": { "remaining": 0 } }));
+        assert!(none["message"].as_str().unwrap().contains("without AI"));
     }
 }
