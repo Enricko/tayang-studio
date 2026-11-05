@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ChevronLeft, ChevronRight, MapPin, Pause, Play, SquarePlus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Pause, Play, SquarePlus } from 'lucide-react';
 import { hasFramesChecked } from '@tayang/skills';
 import { formatTimecode, frameAt, secAt } from '@tayang/shared';
-import type { MediaInfo, Mark } from '@tayang/shared';
+import type { MediaInfo } from '@tayang/shared';
 import { Button } from '@/components/Button';
 import { Oyen } from '@/components/Oyen';
 import { cn } from '@/lib/utils';
@@ -77,11 +77,8 @@ export function Preview({
   const [playing, setPlaying] = useState(false);
   const [rendering, setRendering] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [marking, setMarking] = useState(false);
-  const [marks, setMarks] = useState<Mark[]>([]);
   const [sending, setSending] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const boxRef = useRef<HTMLDivElement>(null);
 
   // The stage's content size, measured: the frame box is sized from it in px on every platform.
   const [stage, setStage] = useState<{ width: number; height: number } | null>(null);
@@ -126,11 +123,6 @@ export function Preview({
     if (wasRendering.current && !run) load().catch((e) => setError(String(e?.message ?? e)));
     wasRendering.current = !!run;
   }, [run, load]);
-
-  // Marks belong to the frame they were placed on: a new frame (seek, step, playback) drops them.
-  useEffect(() => {
-    setMarks([]);
-  }, [frame, videoPath]);
 
   const render = async () => {
     if (onRender) return onRender();
@@ -181,25 +173,13 @@ export function Preview({
     else v.pause();
   };
 
-  const onBoxClick = (e: React.MouseEvent) => {
-    if (!marking) return;
-    const r = boxRef.current!.getBoundingClientRect();
-    if (r.width <= 0 || r.height <= 0) return;
-    const x = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
-    const y = Math.min(1, Math.max(0, (e.clientY - r.top) / r.height));
-    setMarks((m) => [...m, { x, y }]);
-    setMarking(false);
-  };
-
   const sendFrame = async () => {
     setSending(true);
     setError(null);
     try {
       const timeSec = secAt(frame, fps);
       const imagePath = await mediaExtractFrame(projectId, timeSec);
-      useChat.getState().attach(chatId, { type: 'frame', projectId, frame, timeSec, imagePath, marks });
-      setMarks([]);
-      setMarking(false);
+      useChat.getState().attach(chatId, { type: 'frame', projectId, frame, timeSec, imagePath, marks: [] });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -241,15 +221,12 @@ export function Preview({
         className="flex min-h-40 flex-1 items-center justify-center px-4 pt-4"
       >
         <div
-          ref={boxRef}
           data-testid="preview-frame"
-          onClick={onBoxClick}
           className={cn(
             'relative max-h-full max-w-full overflow-hidden rounded-xl border border-border bg-black',
             !box && 'h-full',
-            marking && 'cursor-crosshair',
           )}
-          // Measured: exactly the video's rect, so marks map onto the picture. Until then, CSS keeps the shape.
+          // Measured: exactly the video's rect. Until then, CSS keeps the shape.
           style={box ? { width: box.width, height: box.height } : { aspectRatio: String(aspect) }}
         >
           <video
@@ -257,29 +234,10 @@ export function Preview({
             src={assetUrl(videoPath)}
             className="h-full w-full object-contain"
             playsInline
-            onPlay={() => {
-              setPlaying(true);
-              setMarks([]);
-              setMarking(false);
-            }}
+            onPlay={() => setPlaying(true)}
             onPause={() => setPlaying(false)}
             onTimeUpdate={(e) => setFrame(clamp(frameAt(e.currentTarget.currentTime, fps)))}
           />
-          {marks.map((m, i) => (
-            <div
-              key={i}
-              data-testid={`mark-${i + 1}`}
-              className="absolute flex h-6 w-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-md bg-primary font-mono text-xs text-primary-foreground"
-              style={{ left: `${m.x * 100}%`, top: `${m.y * 100}%` }}
-            >
-              {i + 1}
-            </div>
-          ))}
-          {marking && (
-            <span className="pointer-events-none absolute inset-x-0 bottom-3 mx-auto w-fit rounded-full bg-ink/80 px-3 py-1 text-xs text-foreground backdrop-blur-sm">
-              {t('preview.markHint')}
-            </span>
-          )}
           {checked && (
             <span
               data-testid="frames-checked"
@@ -341,7 +299,7 @@ export function Preview({
 
         <Scrubber durationSec={durationSec} fps={fps} frame={frame} thumbnails={thumbs} onSeek={seek} scenes={scenes} />
 
-        <div className="grid grid-cols-2 gap-2">
+        <div className="flex">
           <Button
             variant="secondary"
             aria-label={t('preview.sendFrame')}
@@ -353,37 +311,7 @@ export function Preview({
             <span className="hidden @min-[380px]:inline">{t('preview.sendFrame')}</span>
             <span className="@min-[380px]:hidden">{t('preview.sendFrameShort')}</span>
           </Button>
-          <Button
-            variant="ghost"
-            aria-label={t('preview.markSpot')}
-            aria-pressed={marking}
-            onClick={() => {
-              // A mark belongs to one still frame: playing would clear it.
-              if (!marking) videoRef.current?.pause();
-              setMarking((m) => !m);
-            }}
-            className={cn(
-              'h-8 w-full min-w-0 gap-1.5 whitespace-nowrap px-2 text-[13px]',
-              marking && 'bg-primary/15 text-orange-light ring-1 ring-primary/60 hover:bg-primary/20',
-            )}
-          >
-            <MapPin size={16} strokeWidth={1.5} aria-hidden="true" />
-            <span className="hidden @min-[380px]:inline">{t('preview.markSpot')}</span>
-            <span className="@min-[380px]:hidden">{t('preview.markSpotShort')}</span>
-          </Button>
         </div>
-        {marks.length > 0 && (
-          <p role="status" className="m-0 flex items-center gap-2 text-xs text-text-2">
-            {t('preview.marked', { count: marks.length })}
-            <button
-              type="button"
-              onClick={() => setMarks([])}
-              className="cursor-pointer rounded-sm px-1 text-text-3 underline-offset-2 hover:text-foreground hover:underline"
-            >
-              {t('preview.clearMarks')}
-            </button>
-          </p>
-        )}
         {error && (
           <p role="alert" className="m-0 text-xs text-orange-light">
             {error}

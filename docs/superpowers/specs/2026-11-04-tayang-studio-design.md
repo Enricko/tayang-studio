@@ -138,7 +138,7 @@ The right panel of a video project chat is a **preview, not an editor**:
 - A 9:16 player with play and step one frame back or forward.
 - **A custom frame scrubber.** A strip of frame thumbnails with a draggable handle. A tooltip shows the timecode and scene, and scene names sit under the strip. Unbuilt scenes are hatched and show sleepy Oyen when the playhead is on them. Keys: ← → step one frame, Shift + ← → step one second.
 - **Send frame to chat.** Renders the exact frame to a PNG and attaches it to the next message as an image. It goes with the timecode, the frame number, the scene id and any spot the user marked on it.
-- **Mark a spot.** The user clicks on the frame to drop a numbered pin, which is sent with the frame.
+- ~~**Mark a spot.**~~ Removed on 2026-11-05: the user found it unclear and didn't need it. A sent frame carries no marks; older messages with marks still show their count.
 - **Rendering banner.** While the agent's render command or Tayang's own Render runs, a slim banner reads "Rendering video… 1m 20s" and the preview reloads the new render when it ends.
 
 How the conversation reads (as built):

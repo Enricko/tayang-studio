@@ -138,17 +138,13 @@ describe('Preview layout', () => {
     expect(chip.className).toMatch(/@min-\[320px\]:inline-flex/);
   });
 
-  it('lines up the two actions, with short labels when narrow', async () => {
+  it('has one Send frame action and no marking, with a short label when narrow', async () => {
     render(<Preview projectId="p1" chatId="c1" />);
     await screen.findByRole('slider');
     const send = screen.getByRole('button', { name: 'Send frame to chat' });
-    const mark = screen.getByRole('button', { name: 'Mark a spot' });
-    expect(send.parentElement).toBe(mark.parentElement);
-    expect(send.parentElement!.className).toMatch(/grid-cols-2/);
-    for (const b of [send, mark]) {
-      expect(b.className).toMatch(/h-8/);
-      expect(b.className).toMatch(/whitespace-nowrap/);
-    }
+    expect(screen.queryByRole('button', { name: 'Mark a spot' })).toBeNull();
+    expect(send.className).toMatch(/h-8/);
+    expect(send.className).toMatch(/whitespace-nowrap/);
     expect(within(send).getByText('Send frame')).toHaveClass('@min-[380px]:hidden');
     expect(within(send).getByText('Send frame to chat')).toHaveClass('hidden');
   });
@@ -205,13 +201,6 @@ describe('Preview layout', () => {
       measure(600, 480);
       expect(box.style.width).toBe(`${(480 * 9) / 16}px`);
       expect(box.style.height).toBe('480px');
-      // a mark at the box's middle is the picture's middle
-      box.getBoundingClientRect = () =>
-        ({ left: 0, top: 0, width: 270, height: 480, right: 270, bottom: 480, x: 0, y: 0, toJSON() {} }) as DOMRect;
-      await userEvent.click(screen.getByRole('button', { name: 'Mark a spot' }));
-      fireEvent.click(box, { clientX: 135, clientY: 240 });
-      expect(screen.getByTestId('mark-1').style.left).toBe('50%');
-      expect(screen.getByTestId('mark-1').style.top).toBe('50%');
     } finally {
       vi.unstubAllGlobals();
     }
@@ -263,60 +252,13 @@ describe('Preview', () => {
     await waitFor(() => expect(useChat.getState().attachments['c1']?.[0]).toMatchObject({ type: 'frame', frame: 330, timeSec: 11 }));
   });
 
-  it('records a numbered mark after Mark a spot', async () => {
-    const { container } = render(<Preview projectId="p1" chatId="c1" />);
-    await screen.findByRole('slider');
-    await userEvent.click(screen.getByRole('button', { name: 'Mark a spot' }));
-    const box = screen.getByTestId('preview-frame');
-    box.getBoundingClientRect = () =>
-      ({ left: 0, top: 0, width: 200, height: 400, right: 200, bottom: 400, x: 0, y: 0, toJSON() {} }) as DOMRect;
-    expect(screen.getByText('Click the picture to mark a spot')).toBeInTheDocument();
-    fireEvent.click(box, { clientX: 100, clientY: 100 });
-    expect(screen.getByTestId('mark-1')).toHaveTextContent('1');
-    expect(screen.queryByText('Click the picture to mark a spot')).toBeNull();
-    expect(screen.getByText(/1 spot marked: Send frame to chat sends it/)).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Send frame to chat' }));
-    await waitFor(() =>
-      expect(useChat.getState().attachments['c1']?.[0]).toMatchObject({ marks: [{ x: 0.5, y: 0.25 }] }),
-    );
-    expect(container.querySelector('[data-testid="mark-1"]')).toBeNull();
-  });
-
-  it('clears the marks with Clear', async () => {
+  it('sends the frame to the chat, without marks', async () => {
     render(<Preview projectId="p1" chatId="c1" />);
     await screen.findByRole('slider');
-    await userEvent.click(screen.getByRole('button', { name: 'Mark a spot' }));
-    const box = screen.getByTestId('preview-frame');
-    box.getBoundingClientRect = () =>
-      ({ left: 0, top: 0, width: 200, height: 400, right: 200, bottom: 400, x: 0, y: 0, toJSON() {} }) as DOMRect;
-    fireEvent.click(box, { clientX: 50, clientY: 50 });
-    await userEvent.click(screen.getByRole('button', { name: 'Clear' }));
+    fireEvent.click(screen.getByTestId('preview-frame'));
+    await userEvent.click(screen.getByRole('button', { name: 'Send frame to chat' }));
+    await waitFor(() => expect(useChat.getState().attachments['c1']?.[0]).toMatchObject({ type: 'frame', marks: [] }));
     expect(screen.queryByTestId('mark-1')).toBeNull();
-    expect(screen.queryByText(/spot marked/)).toBeNull();
-  });
-
-  it('drops marks when the frame changes or playback starts', async () => {
-    const { container } = render(<Preview projectId="p1" chatId="c1" />);
-    await screen.findByRole('slider');
-    const box = screen.getByTestId('preview-frame');
-    box.getBoundingClientRect = () =>
-      ({ left: 0, top: 0, width: 200, height: 400, right: 200, bottom: 400, x: 0, y: 0, toJSON() {} }) as DOMRect;
-    const mark = async () => {
-      await userEvent.click(screen.getByRole('button', { name: 'Mark a spot' }));
-      fireEvent.click(box, { clientX: 100, clientY: 100 });
-      expect(screen.getByTestId('mark-1')).toBeInTheDocument();
-    };
-    await mark();
-    await userEvent.click(screen.getByRole('button', { name: 'Next frame' }));
-    expect(screen.queryByTestId('mark-1')).toBeNull();
-    await mark();
-    fireEvent.play(container.querySelector('video')!);
-    expect(screen.queryByTestId('mark-1')).toBeNull();
-    await mark();
-    const video = container.querySelector('video')!;
-    video.currentTime = 5;
-    fireEvent.timeUpdate(video);
-    await waitFor(() => expect(screen.queryByTestId('mark-1')).toBeNull());
   });
 
   it('shows the empty state and renders on demand', async () => {
