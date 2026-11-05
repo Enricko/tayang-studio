@@ -2,7 +2,29 @@
 
 Tayang Studio is a free, open-source desktop app that helps Indonesian creators make motion videos without writing prompts. It picks topics, writes scripts and handles the prompting, while the user's own AI agent (Claude Code, opencode, Gemini CLI, Codex or any ACP agent) does the building.
 
-## Run it
+## Install
+
+macOS and Linux:
+
+```
+curl -fsSL https://raw.githubusercontent.com/Maru-Yasa/tayang-studio/main/install.sh | sh
+```
+
+Windows (PowerShell):
+
+```
+irm https://raw.githubusercontent.com/Maru-Yasa/tayang-studio/main/install.ps1 | iex
+```
+
+Both install the latest release and open it. Installed copies update themselves.
+
+- **macOS:** the app goes into /Applications (or ~/Applications if /Applications isn't writable).
+- **Linux (x86_64):** the `.deb` with apt, the `.rpm` with dnf, yum or zypper, or the AppImage in ~/.local/share/tayang-studio when there is no sudo. The AppImage needs FUSE 2.
+- **Windows:** installs for your user only, so no admin is needed.
+
+Options: `TAYANG_VERSION=0.0.2` installs that version. `TAYANG_INSTALL_DIR` sets the macOS folder. `TAYANG_LINUX_PACKAGE=deb|rpm|appimage` picks the Linux package. `TAYANG_NO_LAUNCH=1` skips opening the app. Or download an installer from [Releases](https://github.com/Maru-Yasa/tayang-studio/releases).
+
+## Run it from source
 
 ```
 pnpm install
