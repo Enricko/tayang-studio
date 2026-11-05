@@ -42,6 +42,37 @@ describe('extractA2ui', () => {
     expect(r.pending).toBe(false);
   });
 
+  // Smaller models (opencode's free ones) get the JSON slightly wrong; a card should still show.
+  it('reads messages pretty-printed over several lines, one after another', () => {
+    const block = `${JSON.stringify(create, null, 2)}\n\n${JSON.stringify(comps([]), null, 2)}`;
+    const r = extractA2ui(`Pick:\n\`\`\`a2ui\n${block}\n\`\`\``);
+    expect(r.invalid).toBe(0);
+    expect(r.blocks).toEqual([[create, comps([])]]);
+  });
+
+  it('repairs a quote left unescaped inside a string, and a trailing comma', () => {
+    const text =
+      '{"version":"v0.9","createSurface":{"surfaceId":"s1","catalogId":"basic",}}\n' +
+      '{"version":"v0.9","updateComponents":{"surfaceId":"s1","components":[{"id":"t","component":"Text","text":"Gaya "Cartoon 3D what-if" 30 hari"}]}}';
+    const r = extractA2ui('```a2ui\n' + text + '\n```');
+    expect(r.invalid).toBe(0);
+    expect(r.blocks[0]).toEqual([create, comps([{ id: 't', component: 'Text', text: 'Gaya "Cartoon 3D what-if" 30 hari' }])]);
+  });
+
+  it('repairs a line break written inside a string', () => {
+    const r = extractA2ui('```a2ui\n{"version":"v0.9","createSurface":{"surfaceId":"s1",\n"catalogId":"basic"}}\n{"version":"v0.9","updateComponents":{"surfaceId":"s1","components":[{"id":"t","component":"Text","text":"satu\ndua"}]}}\n```');
+    expect(r.invalid).toBe(0);
+    expect(r.blocks[0]).toEqual([create, comps([{ id: 't', component: 'Text', text: 'satu\ndua' }])]);
+  });
+
+  it('never turns text that is not A2UI into a card', () => {
+    for (const body of ['{nope', 'just some words', '{"title":"no version"}', '[1, 2]']) {
+      const r = extractA2ui('```a2ui\n' + body + '\n```');
+      expect(r.blocks).toEqual([]);
+      expect(r.invalid).toBe(1);
+    }
+  });
+
   it('marks an unclosed fence as pending and hides it', () => {
     const r = extractA2ui('Options:\n```a2ui\n{"version":"v0.9","crea');
     expect(r.pending).toBe(true);
