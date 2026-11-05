@@ -5,7 +5,7 @@
 
 use crate::projects;
 use crate::types::{
-    AgentUpdate, ModelChoice, PermissionOption, PermissionOptionKind, PermissionRequest, ToolCallStatus,
+    AgentQuestion, AgentUpdate, ModelChoice, PermissionOption, PermissionOptionKind, PermissionRequest, ToolCallStatus,
 };
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
@@ -38,6 +38,9 @@ pub type Result<T> = std::result::Result<T, AcpError>;
 pub trait AcpSink: Send + Sync {
     fn update(&self, chat_id: &str, u: AgentUpdate);
     fn permission(&self, req: PermissionRequest);
+    /// The agent asks the user something (`elicitation/create`). A sink that can't show it
+    /// leaves it unanswered until the turn ends, which answers `cancel`.
+    fn question(&self, _q: AgentQuestion) {}
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -471,10 +474,17 @@ struct PendingPermission {
     answer: oneshot::Sender<Option<String>>,
 }
 
-/// Permission requests waiting for the user, keyed by request id.
+struct PendingQuestion {
+    session_uid: u64,
+    /// The `elicitation/create` result: `{action: accept, content}`, `{action: decline}` or `{action: cancel}`.
+    answer: oneshot::Sender<Value>,
+}
+
+/// Permission requests and questions waiting for the user, keyed by request id.
 #[derive(Default)]
 struct Permissions {
     pending: Mutex<HashMap<String, PendingPermission>>,
+    questions: Mutex<HashMap<String, PendingQuestion>>,
 }
 
 impl Permissions {
@@ -497,8 +507,33 @@ impl Permissions {
 
     /// Answers every open request of one session with `cancelled`.
     fn cancel_session(&self, session_uid: u64) {
-        // Dropping the senders resolves the waiting tasks with `cancelled`.
+        // Dropping the senders resolves the waiting tasks with `cancelled` / `cancel`.
         self.pending.lock().unwrap().retain(|_, p| p.session_uid != session_uid);
+        self.questions.lock().unwrap().retain(|_, q| q.session_uid != session_uid);
+    }
+
+    /// Answers a question: `accept` (with `content`, an object of field values), `decline` or `cancel`.
+    fn answer_question(&self, request_id: &str, response: Value) -> Result<()> {
+        let action = response.get("action").and_then(Value::as_str).unwrap_or_default();
+        let answer = match action {
+            "accept" => {
+                let content = response.get("content").cloned().unwrap_or_else(|| json!({}));
+                if !content.is_object() {
+                    return Err(AcpError("An answer's content must be an object".into()));
+                }
+                json!({ "action": "accept", "content": content })
+            }
+            "decline" | "cancel" => json!({ "action": action }),
+            other => return Err(AcpError(format!("Unknown answer action: {other}"))),
+        };
+        let entry = self
+            .questions
+            .lock()
+            .unwrap()
+            .remove(request_id)
+            .ok_or_else(|| AcpError("This question is no longer open".into()))?;
+        let _ = entry.answer.send(answer);
+        Ok(())
     }
 }
 
@@ -557,6 +592,7 @@ impl SessionCore {
     fn on_request(self: &Arc<Self>, id: Value, method: &str, params: Value) {
         match method {
             "session/request_permission" => self.on_permission(id, &params),
+            "elicitation/create" => self.on_elicitation(id, &params),
             "fs/read_text_file" => self.rpc.respond(id, self.read_text_file(&params)),
             "fs/write_text_file" => self.rpc.respond(id, self.write_text_file(&params)),
             _ => self.rpc.respond(
@@ -644,6 +680,34 @@ impl SessionCore {
             title,
             options,
         });
+    }
+
+    /// A question for the user (`elicitation/create`). Only form mode is shown; a URL elicitation
+    /// (sign in somewhere) is declined. Unanswered when the turn ends: `cancel`.
+    fn on_elicitation(self: &Arc<Self>, id: Value, params: &Value) {
+        let form = params.get("mode").and_then(Value::as_str).unwrap_or("form") == "form";
+        let schema = params.get("requestedSchema").cloned().unwrap_or(Value::Null);
+        if !form || !schema.get("properties").is_some_and(Value::is_object) {
+            self.rpc.respond(id, Ok(json!({ "action": "decline" })));
+            return;
+        }
+        let message = params.get("message").and_then(Value::as_str).unwrap_or_default().to_string();
+        let request_id = uuid::Uuid::new_v4().to_string();
+        let (tx, rx) = oneshot::channel();
+        self.permissions
+            .questions
+            .lock()
+            .unwrap()
+            .insert(request_id.clone(), PendingQuestion { session_uid: self.uid, answer: tx });
+        if self.rpc.is_closed() {
+            self.permissions.cancel_session(self.uid);
+        }
+        let core = self.clone();
+        tokio::spawn(async move {
+            let answer = rx.await.unwrap_or_else(|_| json!({ "action": "cancel" }));
+            core.rpc.respond(id, Ok(answer));
+        });
+        self.sink.question(AgentQuestion { chat_id: self.chat_id.clone(), request_id, message, schema });
     }
 
     fn on_session_update(&self, params: &Value) {
@@ -742,6 +806,9 @@ impl SessionCore {
                     "clientCapabilities": {
                         "fs": { "readTextFile": true, "writeTextFile": true },
                         "terminal": false,
+                        // Questions with options (Claude's AskUserQuestion, opencode's question tool)
+                        // come as `elicitation/create` forms that Tayang draws.
+                        "elicitation": { "form": {} },
                     },
                     "clientInfo": {
                         "name": "tayang-studio",
@@ -1406,6 +1473,11 @@ impl AcpManager {
 
     /// Answers a permission request: `Some(option_id)` selects that option,
     /// `None` answers `cancelled`.
+    /// Answers an agent's question (see `on_elicitation`).
+    pub fn respond_question(&self, request_id: &str, response: Value) -> Result<()> {
+        self.permissions.answer_question(request_id, response)
+    }
+
     pub fn respond_permission(&self, request_id: &str, option_id: Option<String>) -> Result<()> {
         self.permissions.answer(request_id, option_id)
     }

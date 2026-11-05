@@ -15,6 +15,8 @@
 //   ask        -> tool_call + session/request_permission (allow-once / reject-once) for
 //                 "ls -la"; reports "ran" when allowed, otherwise "denied"
 //   ask-reject-only -> same request with only a reject-once option; reports "ran" / "denied"
+//   question   -> elicitation/create (a single choice "Topic" and a free-text "Note") when the client
+//                 offers form elicitation; reports "answer <JSON result>", or "no-elicitation"
 //   mode       -> reports "mode <current mode id>"
 //   whoami     -> reports "whoami <JSON {meta, env}>": the session/new `_meta` and TAYANG_STUDIO
 //   any prompt with an image block -> text "image <mimeType> <data>"
@@ -38,6 +40,7 @@ const pending = new Map();
 let sessionId = null;
 let sessionCwd = null;
 let sessionMeta = null;
+let clientCaps = {};
 let cancelWaiter = null;
 let cancelled = false;
 let currentMode = "default";
@@ -143,6 +146,27 @@ async function runPrompt(params) {
       text(outcome?.outcome === "selected" && outcome.optionId === "allow" ? "ran" : "denied");
       return "end_turn";
     }
+    case "question": {
+      if (!clientCaps.elicitation?.form) {
+        text("no-elicitation");
+        return "end_turn";
+      }
+      const res = await request("elicitation/create", {
+        mode: "form",
+        sessionId,
+        message: "Which topic?",
+        requestedSchema: {
+          type: "object",
+          properties: {
+            topic: { type: "string", title: "Topic", oneOf: [{ const: "a", title: "Rainbows" }, { const: "b", title: "Volcanoes" }] },
+            note: { type: "string", title: "Note" },
+          },
+          required: ["topic"],
+        },
+      });
+      text(`answer ${JSON.stringify(res.result ?? res.error)}`);
+      return "end_turn";
+    }
     case "mode":
       text(`mode ${currentMode}`);
       return "end_turn";
@@ -202,6 +226,7 @@ function handle(msg) {
     case "initialize": {
       if (process.argv.includes("--hang")) return;
       const caps = params?.clientCapabilities ?? {};
+      clientCaps = caps;
       const ok =
         params?.protocolVersion === 1 &&
         caps.fs?.readTextFile === true &&

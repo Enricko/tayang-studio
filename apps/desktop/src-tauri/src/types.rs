@@ -534,6 +534,18 @@ pub struct PermissionRequest {
     pub options: Vec<PermissionOption>,
 }
 
+/// A question the agent asks the user through ACP (`elicitation/create`, form mode): a message
+/// and the JSON Schema of the answer (`properties` with `oneOf` options, multi-select arrays,
+/// free text). The UI draws it as a card; the answer goes back with `agent_respond_question`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentQuestion {
+    pub chat_id: String,
+    pub request_id: String,
+    pub message: String,
+    pub schema: serde_json::Value,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MediaInfo {

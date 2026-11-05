@@ -5,12 +5,13 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use tayang_studio_lib::acp::{AcpManager, AcpSink, AutoMethod, PromptPart, SessionOptions};
-use tayang_studio_lib::types::{AgentUpdate, PermissionOptionKind, PermissionRequest, ToolCallStatus};
+use tayang_studio_lib::types::{AgentQuestion, AgentUpdate, PermissionOptionKind, PermissionRequest, ToolCallStatus};
 
 #[derive(Default)]
 struct RecordingSink {
     updates: Mutex<Vec<(String, AgentUpdate)>>,
     permissions: Mutex<Vec<PermissionRequest>>,
+    questions: Mutex<Vec<AgentQuestion>>,
 }
 
 impl AcpSink for RecordingSink {
@@ -19,6 +20,9 @@ impl AcpSink for RecordingSink {
     }
     fn permission(&self, req: PermissionRequest) {
         self.permissions.lock().unwrap().push(req);
+    }
+    fn question(&self, q: AgentQuestion) {
+        self.questions.lock().unwrap().push(q);
     }
 }
 
@@ -54,6 +58,11 @@ impl RecordingSink {
                 .any(|u| matches!(u, AgentUpdate::Done { .. } | AgentUpdate::Error { .. }))
         })
         .await;
+    }
+
+    async fn wait_question(&self) -> AgentQuestion {
+        self.wait_for("question", Duration::from_secs(10), |s| !s.questions.lock().unwrap().is_empty()).await;
+        self.questions.lock().unwrap()[0].clone()
     }
 
     async fn wait_permission(&self) -> PermissionRequest {
@@ -137,6 +146,46 @@ async fn thoughts_and_tool_statuses_are_mapped() {
             done("end_turn"),
         ]
     );
+    manager.stop("c1").await.unwrap();
+}
+
+#[tokio::test]
+async fn a_question_reaches_the_user_and_their_answer_the_agent() {
+    let ws = workspace();
+    let (manager, sink) = started("c1", &ws).await;
+    manager.prompt("c1", vec![PromptPart::Text("question".into())]).await.unwrap();
+    let q = sink.wait_question().await;
+    assert_eq!((q.chat_id.as_str(), q.message.as_str()), ("c1", "Which topic?"));
+    assert_eq!(q.schema["properties"]["topic"]["oneOf"][1]["title"], "Volcanoes");
+    assert!(sink.texts().is_empty());
+    manager
+        .respond_question(&q.request_id, serde_json::json!({ "action": "accept", "content": { "topic": "b", "note": "short" } }))
+        .unwrap();
+    sink.wait_finished().await;
+    assert_eq!(sink.texts(), vec![r#"answer {"action":"accept","content":{"note":"short","topic":"b"}}"#.to_string()]);
+    // Answered once only, and bad answers are refused.
+    assert!(manager.respond_question(&q.request_id, serde_json::json!({ "action": "decline" })).is_err());
+    manager.stop("c1").await.unwrap();
+}
+
+#[tokio::test]
+async fn a_declined_question_and_one_left_open_by_a_stop() {
+    let ws = workspace();
+    let (manager, sink) = started("c1", &ws).await;
+    manager.prompt("c1", vec![PromptPart::Text("question".into())]).await.unwrap();
+    let q = sink.wait_question().await;
+    assert!(manager.respond_question(&q.request_id, serde_json::json!({ "action": "maybe" })).is_err());
+    manager.respond_question(&q.request_id, serde_json::json!({ "action": "decline" })).unwrap();
+    sink.wait_finished().await;
+    assert_eq!(sink.texts(), vec![r#"answer {"action":"decline"}"#.to_string()]);
+
+    sink.updates.lock().unwrap().clear();
+    sink.questions.lock().unwrap().clear();
+    manager.prompt("c1", vec![PromptPart::Text("question".into())]).await.unwrap();
+    sink.wait_question().await;
+    manager.cancel("c1").await.unwrap();
+    sink.wait_finished().await;
+    assert_eq!(sink.texts(), vec![r#"answer {"action":"cancel"}"#.to_string()]);
     manager.stop("c1").await.unwrap();
 }
 

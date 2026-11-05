@@ -157,6 +157,7 @@ pub fn run() {
             commands::agent_cancel,
             commands::agent_stop,
             commands::agent_respond_permission,
+            commands::agent_respond_question,
             commands::media_latest_render,
             commands::latest_render_info,
             commands::newest_video_info,

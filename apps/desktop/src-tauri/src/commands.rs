@@ -1034,6 +1034,10 @@ impl AcpSink for TauriSink {
     fn permission(&self, req: PermissionRequest) {
         let _ = self.0.emit("agent://permission", req);
     }
+
+    fn question(&self, q: crate::types::AgentQuestion) {
+        let _ = self.0.emit("agent://question", q);
+    }
 }
 
 /// A chat id that is safe to use as a single folder name.
@@ -1577,6 +1581,13 @@ pub async fn agent_cancel(state: State<'_, AppState>, chat_id: String) -> CmdRes
 pub async fn agent_stop(state: State<'_, AppState>, chat_id: String) -> CmdResult<()> {
     let _ = state.acp.stop(&chat_id).await;
     Ok(())
+}
+
+/// The user's answer to an agent's question: `{action: "accept", content}`, `{action: "decline"}`
+/// or `{action: "cancel"}`.
+#[tauri::command]
+pub fn agent_respond_question(state: State<'_, AppState>, request_id: String, response: serde_json::Value) -> CmdResult<()> {
+    state.acp.respond_question(&request_id, response).map_err(err)
 }
 
 #[tauri::command]
