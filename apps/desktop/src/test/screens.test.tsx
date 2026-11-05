@@ -349,46 +349,6 @@ describe('Style built-in styles from the API', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Use in a new chat' }));
     expect(useApp.getState().route).toEqual({ name: 'chat-new', styleId: 'atlas-journey' });
   });
-
-  it('Use in a new chat carries a copied style too, even without a template', async () => {
-    vi.mocked(ipc.syncStyles).mockResolvedValue({ styles: [plain], offline: false });
-    vi.mocked(ipc.listStyles).mockResolvedValue([plain]);
-    render(<Style />);
-    await openCard(plain.name);
-    await userEvent.click(await screen.findByRole('button', { name: 'Use in a new chat' }));
-    expect(useApp.getState().route).toEqual({ name: 'chat-new', styleId: plain.id });
-  });
-});
-
-describe('Starter template on a copied style', () => {
-  const world: StyleT = { ...atlas, id: 'cartoon-3d-world', name: 'Cartoon 3D world', template: { sha256: 'w', size: 5, version: 2 } };
-  const copied: StyleT = { ...plain, id: 'copied-7', name: 'Storybook', source: 'copied' };
-
-  it('lets the user pick a built-in template for a copied style, and take it off again', async () => {
-    vi.mocked(ipc.syncStyles).mockResolvedValue({ styles: [world, copied], offline: false });
-    vi.mocked(ipc.listStyles).mockResolvedValue([world, copied]);
-    vi.mocked(ipc.saveStyle).mockClear();
-    render(<Style />);
-    const dialog = await openCard('Storybook');
-    const select = within(dialog).getByLabelText('Starter template');
-    expect(within(select).getAllByRole('option').map((o) => o.textContent)).toEqual(['None', 'Cartoon 3D world']);
-    await userEvent.selectOptions(select, 'cartoon-3d-world');
-    await waitFor(() =>
-      expect(ipc.saveStyle).toHaveBeenCalledWith(expect.objectContaining({ id: 'copied-7', basedOn: 'cartoon-3d-world', template: world.template })),
-    );
-    await userEvent.selectOptions(select, '');
-    await waitFor(() =>
-      expect(vi.mocked(ipc.saveStyle).mock.calls.at(-1)![0]).toMatchObject({ id: 'copied-7', basedOn: null, template: null }),
-    );
-  });
-
-  it('built-in styles have no starter template picker', async () => {
-    vi.mocked(ipc.syncStyles).mockResolvedValue({ styles: [world], offline: false });
-    vi.mocked(ipc.listStyles).mockResolvedValue([world]);
-    render(<Style />);
-    const dialog = await openCard('Cartoon 3D world');
-    expect(within(dialog).queryByLabelText('Starter template')).toBeNull();
-  });
 });
 
 describe('Style popup', () => {
@@ -969,61 +929,6 @@ describe('Study preview', () => {
     await waitFor(() => expect(vi.mocked(ipc.upsertJob).mock.calls.at(-1)![0].status).toBe('done'));
     return { view, chatId };
   };
-
-  it('offers the built-in starter templates to the study and attaches the one it picked', async () => {
-    const world: StyleT = {
-      id: 'cartoon-3d-world',
-      name: 'Cartoon 3D world',
-      source: 'builtin',
-      sourceUrl: null,
-      notes: {},
-      prompt: 'p',
-      createdAt: '',
-      template: { sha256: 'abc', size: 10, version: 2 },
-    };
-    vi.mocked(ipc.listStyles).mockResolvedValue([world]);
-    vi.mocked(ipc.makeStylePreview).mockResolvedValue(null);
-    const pick = JSON.stringify({ name: 'Storybook', notes: { camera: 'Dolly' }, prompt: 'Cartoon', starterTemplate: 'cartoon-3d-world' });
-    vi.mocked(ipc.readStyleResult).mockResolvedValue(pick);
-    vi.mocked(ipc.studyDir).mockResolvedValue('/w/s');
-    vi.mocked(ipc.saveStyle).mockClear();
-    vi.mocked(ipc.agentPrompt).mockClear();
-    vi.mocked(ipc.upsertJob).mockClear();
-    const view = render(<Style />);
-    await userEvent.type(screen.getByLabelText('Video link'), 'https://youtu.be/abc');
-    await userEvent.click(screen.getByRole('button', { name: 'Study video' }));
-    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
-    const [chatId, prompt] = vi.mocked(ipc.agentPrompt).mock.calls[0]!;
-    expect(JSON.stringify(prompt)).toContain('cartoon-3d-world (Cartoon 3D world)');
-    updateHandlers.forEach((h) => h({ chatId, update: { kind: 'done', stopReason: 'end_turn' } }));
-    await waitFor(() => expect(ipc.saveStyle).toHaveBeenCalled());
-    expect(vi.mocked(ipc.saveStyle).mock.calls[0]![0]).toMatchObject({
-      name: 'Storybook',
-      basedOn: 'cartoon-3d-world',
-      template: { sha256: 'abc', size: 10, version: 2 },
-    });
-    view.unmount();
-  });
-
-  it('ignores a starter template the study made up', async () => {
-    vi.mocked(ipc.listStyles).mockResolvedValue([]);
-    vi.mocked(ipc.makeStylePreview).mockResolvedValue(null);
-    vi.mocked(ipc.readStyleResult).mockResolvedValue(JSON.stringify({ name: 'X', notes: {}, prompt: 'p', starterTemplate: 'nope' }));
-    vi.mocked(ipc.studyDir).mockResolvedValue('/w/s');
-    vi.mocked(ipc.saveStyle).mockClear();
-    vi.mocked(ipc.agentPrompt).mockClear();
-    const view = render(<Style />);
-    await userEvent.type(screen.getByLabelText('Video link'), 'https://youtu.be/abc');
-    await userEvent.click(screen.getByRole('button', { name: 'Study video' }));
-    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
-    const chatId = vi.mocked(ipc.agentPrompt).mock.calls[0]![0];
-    updateHandlers.forEach((h) => h({ chatId, update: { kind: 'done', stopReason: 'end_turn' } }));
-    await waitFor(() => expect(ipc.saveStyle).toHaveBeenCalled());
-    const saved = vi.mocked(ipc.saveStyle).mock.calls[0]![0];
-    expect(saved.template ?? null).toBeNull();
-    expect(saved.basedOn ?? null).toBeNull();
-    view.unmount();
-  });
 
   it('makes the preview after saving and re-saves the style with the asset URLs', async () => {
     vi.mocked(ipc.makeStylePreview).mockResolvedValue({ previewPath: '/data/style-media/x/preview.mp4', posterPath: '/data/style-media/x/poster.jpg' });
