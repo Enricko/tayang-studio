@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentInfo, AgentUpdate, Job, PermissionRequest, Project, Settings, Style as StyleT } from '@tayang/shared';
 
 vi.mock('@/lib/ipc', () => ({
+  apiUrlOverride: vi.fn().mockResolvedValue(null),
   listArchivedChats: vi.fn().mockResolvedValue([]),
   setThreadArchived: vi.fn().mockResolvedValue(undefined),
   purgeArchive: vi.fn().mockResolvedValue({ chats: 0, cards: 0 }),
@@ -1858,6 +1859,16 @@ describe('Settings', () => {
     expect(screen.getByText(/which features you use .* Never your chats, prompts, files or videos\./)).toBeInTheDocument();
     await userEvent.click(sw);
     await waitFor(() => expect(ipc.updateSettings).toHaveBeenCalledWith({ shareInstallStats: false }));
+  });
+
+  it('says when TAYANG_API_URL overrides the API address, shows that address and locks the field', async () => {
+    vi.mocked(ipc.apiUrlOverride).mockResolvedValueOnce('http://localhost:8787/api');
+    openSettingsTab('account');
+    render(<SettingsScreen />);
+    expect(await screen.findByText(/started with TAYANG_API_URL, so it uses http:\/\/localhost:8787\/api/)).toBeInTheDocument();
+    const field = screen.getByLabelText('API address');
+    expect(field).toHaveValue('http://localhost:8787/api');
+    expect(field).toBeDisabled();
   });
 
   it('edits the API address and explains what it is for', async () => {

@@ -118,6 +118,7 @@ pub fn run() {
             commands::read_project_file,
             commands::set_agent_model,
             commands::agent_models,
+            commands::api_url_override,
             commands::cloud_usage,
             commands::social_accounts,
             commands::social_connect,

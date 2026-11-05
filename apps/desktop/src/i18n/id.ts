@@ -245,6 +245,7 @@ export const id: Translations = {
     planText: 'Paket Tayang menambah voiceover, render cloud, gaya premium, dan posting otomatis ke akun sosialmu.',
     shareStats: 'Bagikan statistik pemakaian anonim',
     shareStatsHint: 'Mengirim ID pemasangan acak, sistem dan versi aplikasimu, serta fitur yang kamu pakai (video dirender, posting, gaya disalin) supaya kami tahu apa yang perlu diperbaiki. Tidak pernah chat, prompt, file, atau videomu.',
+    apiOverridden: 'Tayang ini dijalankan dengan TAYANG_API_URL, jadi memakai {{url}} dan isian ini diabaikan. Jalankan tanpa TAYANG_API_URL untuk memakai alamat ini.',
     apiAddress: 'Alamat API',
     apiHint: 'Dipakai untuk gaya bawaan, masuk akun, dan statistik pemasangan',
     apiDefault: 'Kosongkan untuk memakai {{url}}',

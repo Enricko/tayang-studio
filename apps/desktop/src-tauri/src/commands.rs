@@ -727,6 +727,12 @@ pub fn auth_manager(app: &AppHandle, data_dir: &Path) -> Result<Arc<Auth>, Strin
     )
 }
 
+/// `TAYANG_API_URL` when it is set: it wins over the API address in Settings (a dev setup).
+#[tauri::command]
+pub fn api_url_override() -> Option<String> {
+    std::env::var("TAYANG_API_URL").ok().map(|v| v.trim().to_string()).filter(|v| !v.is_empty())
+}
+
 fn api_base(state: &AppState) -> String {
     crate::styles_sync::effective_api_url(&state.db.get_settings(&state.home))
 }

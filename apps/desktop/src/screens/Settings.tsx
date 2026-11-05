@@ -15,7 +15,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AGENT_NAMES } from '@/lib/agents';
-import { detectAgents, getSettings, getSystemInfo, pickFolder, updateSettings } from '@/lib/ipc';
+import { apiUrlOverride, detectAgents, getSettings, getSystemInfo, pickFolder, updateSettings } from '@/lib/ipc';
 
 /** What Rust says when background mode can't make its tray (and turned it back off). */
 const TRAY_UNAVAILABLE = 'tray-unavailable';
@@ -149,6 +149,14 @@ function startTab(asked: string | undefined): SettingsTab {
 
 export function Settings() {
   const { t } = useTranslation();
+  // TAYANG_API_URL (a dev setup) wins over the address saved here: say so instead of showing a value that isn't used.
+  const [apiOverride, setApiOverride] = useState<string | null>(null);
+  useEffect(() => {
+    Promise.resolve()
+      .then(() => apiUrlOverride())
+      .then((v) => setApiOverride(v ?? null))
+      .catch(() => setApiOverride(null));
+  }, []);
   const settings = useApp((s) => s.settings);
   const askedTab = useApp((s) => (s.route.name === 'settings' ? s.route.tab : undefined));
   const [tab, setTab] = useState<SettingsTab>(() => startTab(askedTab));
@@ -564,11 +572,17 @@ export function Settings() {
                 </label>
                 <span className="text-xs text-text-3">{t('settings.apiHint')}</span>
                 <span className="text-xs text-text-3">{t('settings.apiDefault', { url: DEFAULT_SETTINGS.apiUrl })}</span>
+                {apiOverride && (
+                  <span role="note" className="text-xs text-orange-light">
+                    {t('settings.apiOverridden', { url: apiOverride })}
+                  </span>
+                )}
               </div>
               <Input
                 id="api-url"
-                key={settings.apiUrl}
-                defaultValue={settings.apiUrl}
+                key={apiOverride ?? settings.apiUrl}
+                defaultValue={apiOverride ?? settings.apiUrl}
+                disabled={!!apiOverride}
                 placeholder={DEFAULT_SETTINGS.apiUrl}
                 spellCheck={false}
                 className="h-8 w-[260px] bg-background font-mono text-xs"
