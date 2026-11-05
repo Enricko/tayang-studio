@@ -25,6 +25,8 @@ vi.mock('@/lib/ipc', () => ({
   readStyleResult: vi.fn(),
   studyDir: vi.fn(),
   makeStylePreview: vi.fn(),
+  keepStyleRefs: vi.fn(async () => []),
+  copyStyleRefs: vi.fn(async () => 0),
   removeStudyDir: vi.fn().mockResolvedValue(undefined),
   assetUrl: vi.fn((p: string) => `asset://localhost/${p}`),
   listJobs: vi.fn(),
@@ -357,6 +359,44 @@ describe('Style built-in styles from the API', () => {
     await openCard(plain.name);
     await userEvent.click(await screen.findByRole('button', { name: 'Use in a new chat' }));
     expect(useApp.getState().route).toEqual({ name: 'chat-new', styleId: plain.id });
+  });
+});
+
+describe('Copied style recipe in the popup', () => {
+  const recipe: StyleT = {
+    ...plain,
+    id: 'copied-r',
+    name: 'Storybook',
+    source: 'copied',
+    sourceUrl: 'https://youtu.be/abc',
+    engine: 'remotion',
+    build: 'three.js world inside Remotion',
+    palette: ['#5BC8F5', '#F2C14E'],
+    references: ['/d/style-refs/copied-r/ref-1.jpg', '/d/style-refs/copied-r/ref-2.jpg'],
+  };
+
+  it('shows the engine, the build recipe, the palette and the reference frames', async () => {
+    vi.mocked(ipc.syncStyles).mockResolvedValue({ styles: [recipe], offline: false });
+    vi.mocked(ipc.listStyles).mockResolvedValue([recipe]);
+    render(<Style />);
+    const dialog = await openCard('Storybook');
+    expect(within(dialog).getByText('three.js world inside Remotion')).toBeInTheDocument();
+    expect(within(dialog).getByText('Remotion')).toBeInTheDocument();
+    expect(within(dialog).getByLabelText('#5BC8F5')).toBeInTheDocument();
+    const refs = within(dialog).getAllByRole('img', { name: /Reference frame/ });
+    expect(refs).toHaveLength(2);
+    expect(refs[0]).toHaveAttribute('src', 'asset://localhost//d/style-refs/copied-r/ref-1.jpg');
+  });
+
+  it('Study again re-runs the study on the source link and keeps the same style', async () => {
+    vi.mocked(ipc.syncStyles).mockResolvedValue({ styles: [recipe], offline: false });
+    vi.mocked(ipc.listStyles).mockResolvedValue([recipe]);
+    const start = vi.spyOn(useStudy.getState(), 'start').mockResolvedValue();
+    render(<Style />);
+    const dialog = await openCard('Storybook');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Study again' }));
+    expect(start).toHaveBeenCalledWith('https://youtu.be/abc', expect.any(String), undefined, 'copied-r');
+    start.mockRestore();
   });
 });
 
@@ -938,6 +978,54 @@ describe('Study preview', () => {
     await waitFor(() => expect(vi.mocked(ipc.upsertJob).mock.calls.at(-1)![0].status).toBe('done'));
     return { view, chatId };
   };
+
+  it('keeps the study\'s reference frames and saves the recipe with the style', async () => {
+    vi.mocked(ipc.makeStylePreview).mockResolvedValue(null);
+    vi.mocked(ipc.keepStyleRefs).mockResolvedValue(['/data/style-refs/x/ref-1.jpg', '/data/style-refs/x/ref-2.jpg']);
+    vi.mocked(ipc.readStyleResult).mockResolvedValue(
+      JSON.stringify({ name: 'Storybook', notes: { camera: 'Dolly' }, prompt: 'p', engine: 'remotion', build: 'three.js', palette: ['#112233'] }),
+    );
+    vi.mocked(ipc.studyDir).mockResolvedValue('/w/s');
+    vi.mocked(ipc.saveStyle).mockClear();
+    vi.mocked(ipc.agentPrompt).mockClear();
+    vi.mocked(ipc.upsertJob).mockClear();
+    const view = render(<Style />);
+    await userEvent.type(screen.getByLabelText('Video link'), 'https://youtu.be/abc');
+    await userEvent.click(screen.getByRole('button', { name: 'Study video' }));
+    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
+    const chatId = vi.mocked(ipc.agentPrompt).mock.calls[0]![0];
+    updateHandlers.forEach((h) => h({ chatId, update: { kind: 'done', stopReason: 'end_turn' } }));
+    await waitFor(() => expect(vi.mocked(ipc.upsertJob).mock.calls.at(-1)![0].status).toBe('done'));
+    const studyId = useStudy.getState().studyId!;
+    expect(ipc.keepStyleRefs).toHaveBeenCalledWith(studyId, `copied-${studyId}`);
+    expect(vi.mocked(ipc.saveStyle).mock.calls.at(-1)![0]).toMatchObject({
+      engine: 'remotion',
+      build: 'three.js',
+      palette: ['#112233'],
+      references: ['/data/style-refs/x/ref-1.jpg', '/data/style-refs/x/ref-2.jpg'],
+    });
+    view.unmount();
+    useStudy.getState().dismiss();
+    vi.mocked(ipc.keepStyleRefs).mockResolvedValue([]);
+  });
+
+  it('a study run again saves over the same style id and keeps its creation date', async () => {
+    vi.mocked(ipc.makeStylePreview).mockResolvedValue(null);
+    vi.mocked(ipc.readStyleResult).mockResolvedValue(good);
+    vi.mocked(ipc.studyDir).mockResolvedValue('/w/s');
+    vi.mocked(ipc.listStyles).mockResolvedValue([{ ...plain, id: 'copied-old', source: 'copied', createdAt: '2026-11-01T00:00:00Z' }]);
+    vi.mocked(ipc.saveStyle).mockClear();
+    vi.mocked(ipc.agentPrompt).mockClear();
+    vi.mocked(ipc.upsertJob).mockClear();
+    await useStudy.getState().start('https://youtu.be/abc', 'claude', undefined, 'copied-old');
+    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
+    const chatId = vi.mocked(ipc.agentPrompt).mock.calls[0]![0];
+    updateHandlers.forEach((h) => h({ chatId, update: { kind: 'done', stopReason: 'end_turn' } }));
+    await waitFor(() => expect(ipc.saveStyle).toHaveBeenCalled());
+    expect(vi.mocked(ipc.saveStyle).mock.calls[0]![0]).toMatchObject({ id: 'copied-old', createdAt: '2026-11-01T00:00:00Z' });
+    await waitFor(() => expect(vi.mocked(ipc.upsertJob).mock.calls.at(-1)![0].status).toBe('done'));
+    useStudy.getState().dismiss();
+  });
 
   it('makes the preview after saving and re-saves the style with the asset URLs', async () => {
     vi.mocked(ipc.makeStylePreview).mockResolvedValue({ previewPath: '/data/style-media/x/preview.mp4', posterPath: '/data/style-media/x/poster.jpg' });

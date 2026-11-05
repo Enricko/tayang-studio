@@ -1,7 +1,7 @@
 import type { Chat, MessagePart, NewProject, Project, Settings, Style, VideoKind } from '@tayang/shared';
 import { buildProjectBrief, SKIP_FRAME_CHECK, splitTopicJson, topicIdeaFromAction } from '@tayang/skills';
 import { extractA2ui } from '@/a2ui/parse';
-import { createChat, createProject, installStyleTemplate, listStyles, syncStyles, writeBrief } from '@/lib/ipc';
+import { copyStyleRefs, createChat, createProject, installStyleTemplate, listStyles, syncStyles, writeBrief } from '@/lib/ipc';
 import { advanceProject } from '@/lib/projectStatus';
 import { i18n } from '@/i18n';
 import { stored } from '@/lib/stored';
@@ -136,6 +136,8 @@ export async function createTopicProject(idea: TopicIdea, opts: TopicProjectOpts
   useApp.getState().bumpProjects();
   const chat = await createChat(project.id, agent, idea.title);
   const say = (text: string) => appendSystem(chat.id, text);
+  // The look's reference frames go into the project (style-refs/), where the brief points the agent.
+  if (style?.references?.length) await copyStyleRefs(style.id, project.id).catch(() => 0);
   if (styleProblem) await say(stored('chat.templateProblem', { problem: styleProblem }));
   if (unknownStyle) await say(stored('chat.styleUnknown', { id: unknownStyle }));
   if (style?.template) {

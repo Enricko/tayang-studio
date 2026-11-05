@@ -529,11 +529,11 @@ pub fn delete_style(app: AppHandle, state: State<'_, AppState>, id: String) -> C
     Ok(())
 }
 
-/// Where copied styles keep their preview clip and poster, and where the video cards' thumbnails are
-/// cached; the webview may read both.
+/// Where copied styles keep their preview clip, poster and reference frames, and where the video cards'
+/// thumbnails are cached; the webview may read them.
 pub fn allow_style_media(app: &AppHandle) {
     if let Ok(data) = app.path().app_data_dir() {
-        for dir in [data.join("style-media"), data.join("thumbs")] {
+        for dir in [data.join("style-media"), data.join("style-refs"), data.join("thumbs")] {
             let _ = std::fs::create_dir_all(&dir);
             let _ = app.asset_protocol_scope().allow_directory(&dir, true);
         }
@@ -556,6 +556,26 @@ pub async fn make_style_preview(
     tauri::async_runtime::spawn_blocking(move || media::make_style_preview(&tools, &study, &out))
         .await
         .map_err(err)?
+}
+
+/// Keeps a finished study's reference frames as the style's own (`<app data>/style-refs/<style>`).
+/// Returns their paths; none when the study left no refs.
+#[tauri::command]
+pub fn keep_style_refs(app: AppHandle, state: State<'_, AppState>, study_id: String, style_id: String) -> CmdResult<Vec<String>> {
+    let study = study_path(&state.working_for_study(&study_id), &study_id)?;
+    let data = app.path().app_data_dir().map_err(err)?;
+    let out = media::style_refs_dir(&data, &style_id).ok_or("That style id isn't valid")?;
+    Ok(media::keep_style_refs(&study, &out)?.into_iter().map(|p| p.to_string_lossy().into_owned()).collect())
+}
+
+/// Copies a style's reference frames into the project's `style-refs/` folder, where the brief points the
+/// agent. Returns how many were copied.
+#[tauri::command]
+pub fn copy_style_refs(app: AppHandle, state: State<'_, AppState>, style_id: String, project_id: String) -> CmdResult<u32> {
+    let data = app.path().app_data_dir().map_err(err)?;
+    let refs = media::style_refs_dir(&data, &style_id).ok_or("That style id isn't valid")?;
+    let folder = project_folder(&state, &project_id)?;
+    Ok(media::copy_style_refs(&refs, &folder)? as u32)
 }
 
 /// `<working>/.tayang/style-study/<id>`, rejected if it would leave the working folder.

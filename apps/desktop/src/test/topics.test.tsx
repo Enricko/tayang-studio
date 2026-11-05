@@ -12,6 +12,8 @@ vi.mock('@/lib/ipc', () => ({
   updateSlot: vi.fn(),
   listProjects: vi.fn(),
   createProject: vi.fn(),
+  keepStyleRefs: vi.fn(async () => []),
+  copyStyleRefs: vi.fn(async () => 0),
   createChat: vi.fn(),
   listStyles: vi.fn(),
   syncStyles: vi.fn().mockResolvedValue({ styles: [], offline: false }),
@@ -252,6 +254,21 @@ describe('createTopicProject', () => {
     expect(ipc.addMessage).toHaveBeenCalledWith('chat-1', 'system', [
       { type: 'text', text: expect.stringContaining('made-up') },
     ]);
+  });
+
+  it('copies the style\'s reference frames into the new project', async () => {
+    const copied = { ...atlas, id: 'copied-3', template: null, references: ['/d/style-refs/copied-3/ref-1.jpg'] };
+    vi.mocked(ipc.listStyles).mockResolvedValue([copied]);
+    vi.mocked(ipc.createProject).mockResolvedValue({ id: 'p9', title: idea.title } as never);
+    await createTopicProject(idea, { settings, agent: 'claude', styleId: 'copied-3' });
+    expect(ipc.copyStyleRefs).toHaveBeenCalledWith('copied-3', 'p9');
+  });
+
+  it('does not copy anything for a style without reference frames', async () => {
+    vi.mocked(ipc.copyStyleRefs).mockClear();
+    vi.mocked(ipc.listStyles).mockResolvedValue([atlas]);
+    await createTopicProject(idea, { settings, agent: 'claude', styleId: atlas.id });
+    expect(ipc.copyStyleRefs).not.toHaveBeenCalled();
   });
 
   it('startTopic still opens the chat and asks for the script', async () => {

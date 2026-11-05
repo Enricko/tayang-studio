@@ -578,6 +578,83 @@ pub fn remove_style_media(data_dir: &Path, style_id: &str) {
     if let Some(dir) = style_media_dir(data_dir, style_id) {
         let _ = std::fs::remove_dir_all(dir);
     }
+    if let Some(dir) = style_refs_dir(data_dir, style_id) {
+        let _ = std::fs::remove_dir_all(dir);
+    }
+}
+
+/// `<data_dir>/style-refs/<style_id>`, None for an id that is not a plain folder name.
+pub fn style_refs_dir(data_dir: &Path, style_id: &str) -> Option<PathBuf> {
+    valid_style_id(style_id).then(|| data_dir.join("style-refs").join(style_id))
+}
+
+const MAX_REFS: usize = 8;
+const MAX_REF_BYTES: u64 = 3 * 1024 * 1024;
+
+/// Reference frames in `dir`: real `.jpg`/`.jpeg`/`.png` files (never a symlink), at most 3 MB each,
+/// sorted by name, at most eight.
+fn ref_images(dir: &Path) -> Vec<PathBuf> {
+    let Ok(rd) = std::fs::read_dir(dir) else { return Vec::new() };
+    let mut out: Vec<PathBuf> = rd
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().map(|t| t.is_file()).unwrap_or(false))
+        .filter(|e| e.metadata().map(|m| m.len() > 0 && m.len() <= MAX_REF_BYTES).unwrap_or(false))
+        .map(|e| e.path())
+        .filter(|p| {
+            let ext = p.extension().and_then(|x| x.to_str()).unwrap_or("").to_ascii_lowercase();
+            matches!(ext.as_str(), "jpg" | "jpeg" | "png")
+        })
+        .collect();
+    out.sort();
+    out.truncate(MAX_REFS);
+    out
+}
+
+/// Keeps a finished study's reference frames (`<study>/refs`) as the style's own, replacing any it had.
+/// Returns the kept files; none when the study left no refs (the old ones are kept then).
+pub fn keep_style_refs(study_dir: &Path, out_dir: &Path) -> Result<Vec<PathBuf>> {
+    let src = study_dir.join("refs");
+    if std::fs::symlink_metadata(&src).map(|m| !m.is_dir()).unwrap_or(true) {
+        return Ok(Vec::new());
+    }
+    let files = ref_images(&src);
+    if files.is_empty() {
+        return Ok(Vec::new());
+    }
+    let _ = std::fs::remove_dir_all(out_dir);
+    std::fs::create_dir_all(out_dir).map_err(|e| format!("Can't keep the reference frames: {e}"))?;
+    let mut kept = Vec::new();
+    for f in files {
+        let Some(name) = f.file_name() else { continue };
+        let to = out_dir.join(name);
+        std::fs::copy(&f, &to).map_err(|e| format!("Can't keep the reference frames: {e}"))?;
+        kept.push(to);
+    }
+    Ok(kept)
+}
+
+/// Copies a style's reference frames into `<project>/style-refs/`, where the brief points the agent.
+/// Returns how many were copied; a style without refs copies none.
+pub fn copy_style_refs(refs_dir: &Path, project_folder: &Path) -> Result<usize> {
+    if std::fs::symlink_metadata(refs_dir).map(|m| !m.is_dir()).unwrap_or(true) {
+        return Ok(0);
+    }
+    let files = ref_images(refs_dir);
+    if files.is_empty() {
+        return Ok(0);
+    }
+    let dest = project_folder.join("style-refs");
+    if std::fs::symlink_metadata(&dest).map(|m| m.file_type().is_symlink()).unwrap_or(false) {
+        return Err("The project's style-refs folder is a link".to_string());
+    }
+    std::fs::create_dir_all(&dest).map_err(|e| format!("Can't copy the reference frames: {e}"))?;
+    let mut n = 0;
+    for f in files {
+        let Some(name) = f.file_name() else { continue };
+        std::fs::copy(&f, dest.join(name)).map_err(|e| format!("Can't copy the reference frames: {e}"))?;
+        n += 1;
+    }
+    Ok(n)
 }
 
 /// The study's downloaded `source.*` files: real files only (a symlink could point anywhere).
@@ -1910,4 +1987,37 @@ mod tests {
             assert!(render_plan(tmp.path(), 1).unwrap().is_some(), "{ok}");
         }
     }
+
+    #[test]
+    fn keeps_a_studys_reference_frames_and_copies_them_into_a_project() {
+        let tmp = tempfile::tempdir().unwrap();
+        let study = tmp.path().join("study");
+        std::fs::create_dir_all(study.join("refs")).unwrap();
+        for n in ["ref-2.jpg", "ref-1.jpg", "notes.txt", "empty.jpg"] {
+            let bytes: &[u8] = if n == "empty.jpg" { b"" } else { b"jpg" };
+            std::fs::write(study.join("refs").join(n), bytes).unwrap();
+        }
+        #[cfg(unix)]
+        std::os::unix::fs::symlink("/etc/hosts", study.join("refs").join("ref-9.jpg")).unwrap();
+        let out = style_refs_dir(tmp.path(), "copied-1").unwrap();
+        let kept = keep_style_refs(&study, &out).unwrap();
+        let names: Vec<_> = kept.iter().map(|p| p.file_name().unwrap().to_string_lossy().into_owned()).collect();
+        assert_eq!(names, vec!["ref-1.jpg", "ref-2.jpg"]);
+
+        let project = tmp.path().join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        assert_eq!(copy_style_refs(&out, &project).unwrap(), 2);
+        assert!(project.join("style-refs/ref-1.jpg").is_file());
+        assert!(!project.join("style-refs/ref-9.jpg").exists());
+
+        // A study without refs keeps the old ones; a style without refs copies none.
+        assert!(keep_style_refs(&tmp.path().join("nothing"), &out).unwrap().is_empty());
+        assert!(out.join("ref-1.jpg").is_file());
+        assert_eq!(copy_style_refs(&tmp.path().join("none"), &project).unwrap(), 0);
+
+        remove_style_media(tmp.path(), "copied-1");
+        assert!(!out.exists());
+        assert!(style_refs_dir(tmp.path(), "../x").is_none());
+    }
+
 }

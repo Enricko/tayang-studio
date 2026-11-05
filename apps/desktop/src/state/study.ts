@@ -9,6 +9,8 @@ import {
   agentStop,
   assetUrl,
   deleteJob,
+  listStyles,
+  keepStyleRefs,
   makeStylePreview,
   readStyleResult,
   saveStyle,
@@ -40,7 +42,8 @@ interface StudyState {
   /** Bumped when a style was saved so the library reloads. */
   savedVersion: number;
   /** `replaceJobId`: a failed study's job, deleted once this study's own job is written. */
-  start(url: string, agent: AgentId, replaceJobId?: string): Promise<void>;
+  /** `restyleId`: study the link again and save the result over that copied style (same id and date). */
+  start(url: string, agent: AgentId, replaceJobId?: string, restyleId?: string): Promise<void>;
   /** Allow once only. Null cancels the study. */
   respond(optionId: string | null): Promise<void>;
   /** Stop a running study; its job ends failed "Cancelled". */
@@ -62,6 +65,8 @@ export const useStudy = create<StudyState>((set, get) => {
 
   /** A failed study's job that this one replaces: deleted once this study's own job is written. */
   let staleJobId: string | null = null;
+  /** The copied style a running study re-learns, or null for a new one. */
+  let restyle: string | null = null;
 
   const dropStaleJob = async () => {
     const old = staleJobId;
@@ -148,20 +153,37 @@ export const useStudy = create<StudyState>((set, get) => {
       const parsed = raw ? parseStyleResult(raw, url) : null;
       if (!mine()) return;
       if (!parsed) return fail(i18n.t('agents.studyUnreadable'), stored('agents.studyUnreadable'));
-      const style = { ...parsed, id: `copied-${studyId}`, createdAt: new Date().toISOString() };
+      // Studied again: the same style, its id and date kept, everything else from this study.
+      const before = restyle ? await listStyles().then((all) => all.find((x) => x.id === restyle)).catch(() => undefined) : undefined;
+      if (!mine()) return;
+      const style = {
+        ...parsed,
+        id: before?.id ?? `copied-${studyId}`,
+        createdAt: before?.createdAt ?? new Date().toISOString(),
+        ...(before ? { previewUrl: before.previewUrl ?? null, previewVideoUrl: before.previewVideoUrl ?? null, references: before.references ?? [] } : {}),
+      };
       await saveStyle(style);
-      // A short silent preview from the downloaded video. Never fails the study.
+      // A short silent preview from the downloaded video, and the reference frames the study picked.
+      // Neither fails the study.
+      let made: Awaited<ReturnType<typeof makeStylePreview>> = null;
+      let references: string[] = [];
       try {
-        const made = await makeStylePreview(studyId, style.id);
-        if (made) {
-          await saveStyle({
-            ...style,
-            previewUrl: assetUrl(made.posterPath),
-            previewVideoUrl: made.previewPath ? assetUrl(made.previewPath) : null,
-          });
-        }
+        made = await makeStylePreview(studyId, style.id);
       } catch {
         /* the style is saved without a preview */
+      }
+      try {
+        references = await keepStyleRefs(studyId, style.id);
+      } catch {
+        /* the style is saved without reference frames */
+      }
+      if (made || references.length) {
+        await saveStyle({
+          ...style,
+          ...(made ? { previewUrl: assetUrl(made.posterPath), previewVideoUrl: made.previewPath ? assetUrl(made.previewPath) : null } : {}),
+          // No new frames (an older agent, or none picked): keep the ones the style had.
+          references: references.length ? references : (style.references ?? []),
+        });
       }
       await cleanUp(studyId);
       if (!mine()) return;
@@ -206,12 +228,13 @@ export const useStudy = create<StudyState>((set, get) => {
     error: null,
     savedVersion: 0,
 
-    async start(url, agentId, replaceJobId) {
+    async start(url, agentId, replaceJobId, restyleId) {
       if (get().phase === 'running' || get().phase === 'finishing') return;
       agent = agentId;
       const studyId = newId();
       set({ phase: 'running', url, studyId, toolCalls: 0, ranLog: [], request: null, queue: [], error: null });
       staleJobId = replaceJobId ?? null;
+      restyle = restyleId ?? null;
       listen();
       /** Cancelled (or replaced) while a step was pending: nothing may be left running or on disk. */
       const gone = () => get().studyId !== studyId || get().phase !== 'running';

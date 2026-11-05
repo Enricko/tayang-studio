@@ -329,6 +329,15 @@ pub struct Style {
     pub template: Option<StyleTemplate>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub version: Option<u32>,
+    /// Copied styles: how to build the look (engine technique, characters, rig, captions).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub build: Option<String>,
+    /// Copied styles: the main colours as #RRGGBB.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub palette: Vec<String>,
+    /// Copied styles: reference frames on this computer (absolute paths under style-refs/<id>).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub references: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

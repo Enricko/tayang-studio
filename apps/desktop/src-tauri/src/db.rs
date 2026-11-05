@@ -624,6 +624,9 @@ impl Db {
             ("template", "TEXT"),
             ("version", "INTEGER"),
             ("based_on", "TEXT"),
+            ("build", "TEXT"),
+            ("palette", "TEXT"),
+            ("refs", "TEXT"),
         ] {
             if !have.iter().any(|c| c == col) {
                 conn.execute_batch(&format!("ALTER TABLE styles ADD COLUMN {col} {ty}"))?;
@@ -735,7 +738,7 @@ impl Db {
         let conn = self.conn();
         let mut stmt = conn.prepare(
             "SELECT id, name, source, source_url AS sourceUrl, notes, prompt, created_at AS createdAt, \
-             engine, preview_url AS previewUrl, preview_video_url AS previewVideoUrl, template, version, based_on AS basedOn FROM styles \
+             engine, preview_url AS previewUrl, preview_video_url AS previewVideoUrl, template, version, based_on AS basedOn, build, palette, refs AS \"references\" FROM styles \
              ORDER BY CASE source WHEN 'builtin' THEN 0 ELSE 1 END, \
              CASE source WHEN 'builtin' THEN rowid END, created_at, rowid",
         )?;
@@ -754,6 +757,11 @@ impl Db {
             v["notes"] = notes;
             if let Some(t) = v["template"].as_str().map(str::to_string) {
                 v["template"] = serde_json::from_str(&t)?;
+            }
+            // JSON arrays in TEXT columns; empty or unreadable means none.
+            for key in ["palette", "references"] {
+                let list = v[key].as_str().and_then(|t| serde_json::from_str::<Value>(t).ok()).unwrap_or(Value::Array(vec![]));
+                v[key] = list;
             }
             out.push(serde_json::from_value(v)?);
         }
@@ -777,12 +785,13 @@ impl Db {
         };
         conn.execute(
             "INSERT INTO styles (id, name, source, source_url, notes, prompt, created_at, engine, preview_url, \
-             preview_video_url, template, version, based_on) \
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13) ON CONFLICT(id) DO UPDATE SET name=excluded.name, \
+             preview_video_url, template, version, based_on, build, palette, refs) \
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16) ON CONFLICT(id) DO UPDATE SET name=excluded.name, \
              source=excluded.source, source_url=excluded.source_url, notes=excluded.notes, \
              prompt=excluded.prompt, created_at=excluded.created_at, engine=excluded.engine, \
              preview_url=excluded.preview_url, preview_video_url=excluded.preview_video_url, \
-             template=excluded.template, version=excluded.version, based_on=excluded.based_on",
+             template=excluded.template, version=excluded.version, based_on=excluded.based_on, \
+             build=excluded.build, palette=excluded.palette, refs=excluded.refs",
             rusqlite::params![
                 s.id,
                 s.name,
@@ -796,7 +805,10 @@ impl Db {
                 s.preview_video_url,
                 template,
                 s.version,
-                s.based_on
+                s.based_on,
+                s.build,
+                serde_json::to_string(&s.palette)?,
+                serde_json::to_string(&s.references)?
             ],
         )?;
         Ok(())
@@ -1371,7 +1383,28 @@ mod tests {
             template: template
                 .then(|| StyleTemplate { sha256: "ab".repeat(32), size: 10, version: 2 }),
             version: Some(2),
+            build: None,
+            palette: vec![],
+            references: vec![],
         }
+    }
+
+    #[test]
+    fn a_copied_style_keeps_its_recipe_palette_and_references() {
+        let db = db();
+        let copied = Style {
+            source: StyleSource::Copied,
+            source_url: Some("https://youtu.be/x".into()),
+            template: None,
+            preview_url: None,
+            preview_video_url: None,
+            build: Some("three.js in Remotion".into()),
+            palette: vec!["#5BC8F5".into(), "#F2C14E".into()],
+            references: vec!["/d/style-refs/copied-1/ref-1.jpg".into()],
+            ..builtin("copied-1", false)
+        };
+        db.save_style(&copied).unwrap();
+        assert_eq!(db.get_style("copied-1").unwrap(), Some(copied));
     }
 
     #[test]

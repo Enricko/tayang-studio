@@ -13,7 +13,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { i18n } from '@/i18n';
 import { localized } from '@/lib/stored';
 import { posterOf, youtubeThumbnail } from '@/lib/styleInfo';
-import { deleteStyle, listStyles, saveStyle, syncStyles } from '@/lib/ipc';
+import { assetUrl, deleteStyle, listStyles, saveStyle, syncStyles } from '@/lib/ipc';
 import { cn } from '@/lib/utils';
 import { useApp } from '@/state/app';
 import { useStudy } from '@/state/study';
@@ -317,8 +317,11 @@ function Detail({
   onDirty,
   onClone,
   onEditStarted,
+  onRestudy,
 }: {
   style: StyleT;
+  /** A study of this style's source started again: the popup closes so the study box shows its progress. */
+  onRestudy(): void;
   startInEdit: boolean;
   onChanged(): void;
   onDeleted(id: string): void;
@@ -334,6 +337,7 @@ function Detail({
   const [prompt, setPrompt] = useState(style.prompt);
   const [error, setError] = useState<string | null>(null);
   const builtin = style.source === 'builtin';
+  const studyBusy = useStudy((s) => s.phase === 'running' || s.phase === 'finishing');
 
   const reset = () => {
     setName(style.name);
@@ -453,6 +457,46 @@ function Detail({
             </dl>
           )
         )}
+        {!editing && style.build && (
+          <div className="flex gap-3 text-[13px] leading-normal">
+            <span className="w-[76px] shrink-0 text-text-3">{t('style.build')}</span>
+            <span className="m-0 text-[#D9D9D9]">{style.build}</span>
+          </div>
+        )}
+        {!editing && !!style.palette?.length && (
+          <div className="flex items-center gap-3 text-[13px]">
+            <span className="w-[76px] shrink-0 text-text-3">{t('style.palette')}</span>
+            <span className="flex flex-wrap gap-1.5">
+              {style.palette.map((c) => (
+                <span
+                  key={c}
+                  role="img"
+                  aria-label={c}
+                  title={c}
+                  className="size-5 rounded-sm border border-border"
+                  style={{ background: c }}
+                />
+              ))}
+            </span>
+          </div>
+        )}
+        {!editing && !!style.references?.length && (
+          <div className="flex flex-col gap-2">
+            <span className="text-xs text-text-3">{t('style.references')}</span>
+            <div className="grid grid-cols-3 gap-1.5">
+              {style.references.map((r, i) => (
+                <img
+                  key={r}
+                  src={assetUrl(r)}
+                  alt={t('style.referenceAlt', { n: i + 1 })}
+                  loading="lazy"
+                  decoding="async"
+                  className="aspect-[9/16] w-full rounded-sm border border-border bg-black object-cover"
+                />
+              ))}
+            </div>
+          </div>
+        )}
         <div className="flex flex-col gap-2">
           <label htmlFor="style-prompt" className="text-xs text-text-3">
             {t('style.promptLabel')}
@@ -518,6 +562,21 @@ function Detail({
               ) : (
                 <Button variant="ghost" className="h-9 px-3 text-[13px]" onClick={() => setEditing(true)}>
                   {t('style.edit')}
+                </Button>
+              )}
+              {style.source === 'copied' && style.sourceUrl && (
+                <Button
+                  variant="ghost"
+                  className="h-9 px-3 text-[13px]"
+                  title={t('style.studyAgainHint')}
+                  disabled={studyBusy}
+                  onClick={() => {
+                    const agent = useApp.getState().settings?.defaultAgent ?? 'claude';
+                    void useStudy.getState().start(style.sourceUrl!, agent, undefined, style.id);
+                    onRestudy();
+                  }}
+                >
+                  {t('style.studyAgain')}
                 </Button>
               )}
               {!builtin && (
@@ -744,6 +803,7 @@ export function Style() {
               onChanged={() => setVersion((v) => v + 1)}
               onDirty={setDirty}
               onEditStarted={() => setEditNew(null)}
+              onRestudy={() => setSel(null)}
               onClone={async (clone) => {
                 await saveStyle(clone);
                 setStored((prev) => (prev.some((x) => x.id === clone.id) ? prev : [...prev, clone]));

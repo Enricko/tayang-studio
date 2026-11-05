@@ -366,6 +366,9 @@ mod tests {
                 version: v,
             }),
             version: Some(1),
+            build: None,
+            palette: vec![],
+            references: vec![],
         }
     }
 

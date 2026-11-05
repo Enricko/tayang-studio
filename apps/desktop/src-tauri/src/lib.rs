@@ -117,6 +117,8 @@ pub fn run() {
             commands::study_dir,
             commands::remove_study_dir,
             commands::make_style_preview,
+            commands::keep_style_refs,
+            commands::copy_style_refs,
             commands::list_jobs,
             commands::upsert_job,
             commands::delete_job,
