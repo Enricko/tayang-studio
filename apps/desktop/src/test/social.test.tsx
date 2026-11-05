@@ -116,13 +116,18 @@ describe('SocialAccounts in Settings', () => {
     expect(await screen.findByText(/Finish connecting TikTok in your browser/)).toBeInTheDocument();
   });
 
-  it('a plan without auto-posts points to the plans', async () => {
+  it('a plan without auto-posts can still connect, and points to the plans for posting', async () => {
     vi.mocked(cloud.cloudUsage).mockResolvedValue(usage(0, 0));
-    vi.mocked(cloud.socialAccounts).mockResolvedValue([]);
+    vi.mocked(cloud.socialAccounts).mockResolvedValue([acct('sa_1', 'tiktok', 'oyen')]);
+    vi.mocked(cloud.socialConnect).mockResolvedValue();
     render(<SocialAccounts />);
-    await userEvent.click(await screen.findByRole('button', { name: 'See plans' }));
+    expect(await screen.findByText('You can connect accounts now. Posting to them comes with a Tayang plan.')).toBeInTheDocument();
+    expect(screen.getByText('@oyen')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Connect account' }));
+    await userEvent.click(within(await screen.findByRole('menu')).getByRole('menuitem', { name: 'Instagram' }));
+    expect(cloud.socialConnect).toHaveBeenCalledWith('instagram');
+    await userEvent.click(screen.getByRole('button', { name: 'See plans' }));
     expect(useApp.getState().route).toEqual({ name: 'plans', from: 'settings' });
-    expect(screen.queryByRole('button', { name: 'Connect account' })).not.toBeInTheDocument();
   });
 
   it('is not shown signed out', () => {

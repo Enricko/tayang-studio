@@ -560,7 +560,7 @@ export const id: Translations = {
     accounts: 'Akun sosial',
     connect: 'Hubungkan akun',
     noAccounts: 'Belum ada akun. Hubungkan satu untuk posting video dari Tayang.',
-    needsPlan: 'Posting ke akun sosial tersedia dengan paket Tayang.',
+    needsPlan: 'Akun bisa dihubungkan sekarang. Posting ke akun sosial tersedia dengan paket Tayang.',
     seePlans: 'Lihat paket',
     reconnect: 'Hubungkan ulang',
     disconnect: 'Putuskan',

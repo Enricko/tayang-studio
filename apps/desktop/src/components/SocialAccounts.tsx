@@ -104,33 +104,33 @@ export function SocialAccounts() {
         >
           <RefreshCw size={14} aria-hidden="true" />
         </button>
-        {!noPosts && (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="secondary" className="h-8 px-3 text-[13px]">
-                <Plus size={14} aria-hidden="true" />
-                {t('cloud.connect')}
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-52 border-hairline bg-card">
-              {SOCIAL_PLATFORMS.map((p) => (
-                <DropdownMenuItem key={p} onSelect={() => void connect(p)} className="h-9 gap-2.5 text-[13px]">
-                  <PlatformLogo platform={p} size={18} />
-                  {platformName(p)}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="secondary" className="h-8 px-3 text-[13px]">
+              <Plus size={14} aria-hidden="true" />
+              {t('cloud.connect')}
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-52 border-hairline bg-card">
+            {SOCIAL_PLATFORMS.map((p) => (
+              <DropdownMenuItem key={p} onSelect={() => void connect(p)} className="h-9 gap-2.5 text-[13px]">
+                <PlatformLogo platform={p} size={18} />
+                {platformName(p)}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
-      {noPosts ? (
+      {/* Connecting is free; posting needs a plan, so a free account learns that here, not on Post. */}
+      {noPosts && (
         <div className="flex flex-wrap items-center gap-3">
           <span className="text-xs text-text-3">{t('cloud.needsPlan')}</span>
-          <Button variant="secondary" className="h-8 px-3 text-[13px]" onClick={() => navigate({ name: 'plans', from: 'settings' })}>
+          <Button variant="ghost" className="h-7 px-2 text-[13px]" onClick={() => navigate({ name: 'plans', from: 'settings' })}>
             {t('cloud.seePlans')}
           </Button>
         </div>
-      ) : accounts && accounts.length === 0 ? (
+      )}
+      {accounts && accounts.length === 0 ? (
         <span className="text-xs text-text-3">{t('cloud.noAccounts')}</span>
       ) : (
         <ul className="m-0 flex list-none flex-col p-0">

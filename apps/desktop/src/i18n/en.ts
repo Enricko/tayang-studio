@@ -566,7 +566,7 @@ export const en = {
     accounts: 'Social accounts',
     connect: 'Connect account',
     noAccounts: 'No accounts yet. Connect one to post videos from Tayang.',
-    needsPlan: 'Posting to social accounts comes with a Tayang plan.',
+    needsPlan: 'You can connect accounts now. Posting to them comes with a Tayang plan.',
     seePlans: 'See plans',
     reconnect: 'Reconnect',
     disconnect: 'Disconnect',
