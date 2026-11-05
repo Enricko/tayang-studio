@@ -45,6 +45,10 @@ export const AI_ASSETS_RULE =
 export const RENDERS_RULE =
   "When the video is finished, make sure the final mp4 is in the project's renders/ folder (copy it there if your pipeline writes it elsewhere). Tayang's preview and status read it from there.";
 
+/** What to post with the video: Tayang's Post dialog reads post.json and the user reviews it. */
+export const POST_RULE =
+  `When a video is finished, and whenever the user asks for a post, write post.json in the project folder: {"title": "<up to 100 characters, a hook in the video's language>", "description": "<1 to 3 short lines in the video's language, no hashtags>", "hashtags": ["<3 to 5, without #>"], "scheduledAt": "<ISO 8601 with the user's UTC offset: the next good slot (11:00-13:00 or 19:00-21:00 local time) at least an hour from now; check the time with date>"}. Tayang's Post dialog fills its fields from it, and the user reviews it there. Never post yourself.`;
+
 /** Folder in a project where Tayang puts the style's reference frames. */
 export const STYLE_REFS_DIR = 'style-refs';
 

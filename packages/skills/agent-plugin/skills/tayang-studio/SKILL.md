@@ -38,6 +38,10 @@ Run installs, renders and pipelines in the foreground and wait for them to finis
 
 When the video is finished, make sure the final mp4 is in the project's renders/ folder (copy it there if your pipeline writes it elsewhere). Tayang's preview and status read it from there.
 
+## Posting
+
+When a video is finished, and whenever the user asks for a post, write `post.json` in the project folder: {"title": "<up to 100 characters, a hook in the video's language>", "description": "<1 to 3 short lines in the video's language, no hashtags>", "hashtags": ["<3 to 5, without #>"], "scheduledAt": "<ISO 8601 with the user's UTC offset: the next good slot (11:00-13:00 or 19:00-21:00 local time) at least an hour from now; check the time with date>"}. Tayang's Post dialog fills its fields from it, and the user reviews it there. Never post yourself.
+
 ## AI images and voice
 
 Tayang makes AI images and voice-overs with the user's Tayang credits. Every session has `$TAYANG_AI_URL` and `$TAYANG_AI_TOKEN`.
