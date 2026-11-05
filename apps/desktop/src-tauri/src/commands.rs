@@ -676,10 +676,18 @@ impl AccountCache for AppAccountCache {
 }
 
 /// The app's sign-in state: tokens in the OS keychain, `<app_data>/auth.json` only when it fails.
+///
+/// Dev builds keep the token in `<app_data>/auth-dev.json` (0600) and never touch the keychain: macOS
+/// ties "Always Allow" to the binary's code signature, and every rebuild of an ad-hoc signed dev binary
+/// is a new signature, so the keychain would ask for the login password after every restart.
 pub fn auth_manager(app: &AppHandle, data_dir: &Path) -> Result<Arc<Auth>, String> {
-    let store = SecureStore::new(KeyringStore, FileStore::new(data_dir.join("auth.json")));
+    let store: Arc<dyn crate::auth::TokenStore> = if cfg!(debug_assertions) {
+        Arc::new(FileStore::new(data_dir.join("auth-dev.json")))
+    } else {
+        Arc::new(SecureStore::new(KeyringStore, FileStore::new(data_dir.join("auth.json"))))
+    };
     Auth::new(
-        Arc::new(store),
+        store,
         Arc::new(AppAccountCache(app.clone())),
         Arc::new(TauriAuthSink(app.clone())),
         std::time::Duration::from_secs(1),
