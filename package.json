@@ -10,8 +10,7 @@
   "scripts": {
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
-    "dev:desktop": "pnpm --filter @tayang/desktop tauri dev",
-    "dev:api": "pnpm --filter @tayang/api dev"
+    "dev:desktop": "pnpm --filter @tayang/desktop tauri dev"
   },
   "devDependencies": {
     "typescript": "^5",

@@ -9,7 +9,7 @@ pnpm install
 pnpm dev:desktop
 ```
 
-Requires Node 22+, pnpm and Rust. See [docs/development.md](docs/development.md) for the full setup, API deployment and where data lives.
+Requires Node 22+, pnpm and Rust. See [docs/development.md](docs/development.md) for the full setup, the API and where data lives.
 
 On Linux the app runs on WebKitGTK 2.40 or later. On older versions it still works, but the preview panel always shows its narrow layout (short button labels, no frame chip, no key hints), because those layouts use CSS container queries.
 
@@ -18,8 +18,7 @@ On Linux the app runs on WebKitGTK 2.40 or later. On older versions it still wor
 ```
 tayang-desktop/
 ├── apps/
-│   ├── desktop/   @tayang/desktop  Tauri + React desktop app
-│   └── api/       @tayang/api      Hono API (optional, online features)
+│   └── desktop/   @tayang/desktop  Tauri + React desktop app
 ├── packages/
 │   ├── shared/    @tayang/shared   Types and schemas shared across apps
 │   └── skills/    @tayang/skills   Agent skills bundled with Tayang
@@ -36,7 +35,6 @@ tayang-desktop/
 | `pnpm test` | `pnpm -r test` | Run tests in every workspace package |
 | `pnpm typecheck` | `pnpm -r typecheck` | Type-check every workspace package |
 | `pnpm dev:desktop` | `pnpm --filter @tayang/desktop tauri dev` | Run the desktop app in dev mode |
-| `pnpm dev:api` | `pnpm --filter @tayang/api dev` | Run the API in dev mode |
 
 ## How it works
 
@@ -44,7 +42,7 @@ tayang-desktop/
 - Installs go through the agent too. Tayang shows you every command your agent asks to run, and nothing it asks about runs until you allow it, unless you turn on Auto mode for chats, you are copying a style from a video (a style study always runs in auto mode), or an autopilot is making a video (autopilots always run in auto mode). Installs always ask. An agent whose own settings already allow a command won't ask, so check your agent's permission settings (see `docs/development.md`).
 - You pick a working folder. Projects live there and keep their folder if you change it later. Agent sessions work in the working folder or in a project's own folder.
 - App data is stored in a local SQLite database, so the desktop app keeps its data on this computer and doesn't need the API (your agent still needs its own internet connection).
-- The API is optional and only adds the online features.
+- The Tayang API (studio.tayang.app/api, closed source) is optional and only adds the online features: sign-in, paid plans, built-in styles and install stats.
 
 ## Privacy
 
@@ -60,7 +58,7 @@ To show your Claude usage, Tayang reads the login Claude Code already stores on 
 
 The Style screen loads YouTube thumbnails from i.ytimg.com for styles copied from YouTube, and built-in style previews from the Tayang API at studio.tayang.app/api. A style copied from a video keeps a short silent preview clip and a poster frame on this computer; the video itself is deleted after the study.
 
-For the owner: set the secret with `wrangler secret put ADMIN_TOKEN`, then `GET https://studio.tayang.app/api/v1/stats` with `Authorization: Bearer <ADMIN_TOKEN>` returns the counts. `pnpm --filter @tayang/api stats -- --remote` prints the same table straight from D1 (use `--local` for the dev database). Set `TAYANG_API_URL` when starting the desktop app to point it at another API (a base with the path, e.g. `http://localhost:8787/api`); it is used as given instead of the saved API URL and never stored.
+Set `TAYANG_API_URL` when starting the desktop app to point it at another API (a base with the path, e.g. `http://localhost:8787/api`); it is used as given instead of the saved API URL and never stored.
 
 ## Credits
 
