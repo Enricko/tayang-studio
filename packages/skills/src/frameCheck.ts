@@ -35,10 +35,29 @@ export const FOREGROUND_RULE =
 export const RENDERS_RULE =
   "When the video is finished, make sure the final mp4 is in the project's renders/ folder (copy it there if your pipeline writes it elsewhere). Tayang's preview and status read it from there.";
 
-export const FRAME_CHECK_PROMPT = [
-  'Check the frames before you report this video as done.',
-  '1. Render a still of every scene with `npx hyperframes`.',
-  '2. Look at each still for overlapping elements, text that is cut off or outside the safe area, and timing that does not match the voice or captions.',
-  '3. Fix every problem you find, then render and look at the affected stills again.',
-  `4. When all stills are clean, write ${FRAMES_CHECKED_TOKEN} exactly as shown, whatever language you reply in, then a one-line summary of what you fixed.`,
-].join('\n');
+/** Folder in a project where Tayang puts the style's reference frames. */
+export const STYLE_REFS_DIR = 'style-refs';
+
+/** The quality loop for the project's engine; with references, every still is held against them too. */
+export function frameCheckPrompt(opts: { engine?: 'hyperframes' | 'remotion'; references?: boolean } = {}): string {
+  const still =
+    opts.engine === 'remotion'
+      ? '1. Render a still of every scene with `npx remotion still` (one frame per scene).'
+      : '1. Render a still of every scene with `npx hyperframes`.';
+  return [
+    'Check the frames before you report this video as done.',
+    still,
+    '2. Look at each still for overlapping elements, text that is cut off or outside the safe area, and timing that does not match the voice or captions.',
+    ...(opts.references
+      ? [
+          `   Compare each still with the reference frames in ${STYLE_REFS_DIR}/: the same rendering technique, character design, palette, lighting, camera framing and caption style. Anything that looks different is a problem to fix.`,
+        ]
+      : []),
+    '3. Fix every problem you find, then render and look at the affected stills again.',
+    `4. When all stills are clean, write ${FRAMES_CHECKED_TOKEN} exactly as shown, whatever language you reply in, then a one-line summary of what you fixed.`,
+  ].join('\n');
+}
+
+/** The default (HyperFrames, no references) quality loop. */
+export const FRAME_CHECK_PROMPT = frameCheckPrompt();
+

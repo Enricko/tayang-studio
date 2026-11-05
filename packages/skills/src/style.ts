@@ -149,17 +149,30 @@ export function buildStudyStylePrompt(url: string, outDir: string): string {
   const sep = outDir.includes('\\') && !outDir.includes('/') ? '\\' : '/';
   const base = outDir.replace(/[\\/]+$/, '');
   const stylePath = `${base}${sep}style.json`;
+  const refsDir = `${base}${sep}refs`;
   const sourceTemplate = `${base}${sep}source.%(ext)s`;
   return [
-    `Study the visual style of this video: ${url}`,
+    `Study the visual style of this video so another agent can recreate the look faithfully: ${url}`,
     `1. Download it with \`yt-dlp\` into the folder \`"${outDir}"\`: \`yt-dlp -f "bv*[height<=1080]+ba/b[height<=1080]/b" -o "${sourceTemplate}" <the link>\`.`,
     '2. With ffmpeg, sample about 48 frames: use scene detection plus a regular interval, so you cover cuts and steady moments.',
-    '3. Look at the frames and describe the camera, pacing, type, color, captions and transitions.',
-    `4. Write \`"${stylePath}"\` as: { "name": string, "notes": { "camera": string, "pacing": string, "type": string, "color": string, "captions": string, "transitions": string }, "prompt": string }.`,
-    '   "name" is a short style name. "prompt" is a few short lines of direct instructions another agent can follow to recreate the look with HyperFrames.',
-    '5. Delete the frames. Leave source.* in place; Tayang makes a short preview from it and then deletes it.',
-    'Copy the look, never the footage: no text, logos, music or clips from the source in the prompt.',
+    '3. Look at the frames closely and describe the camera, pacing, type, color, captions and transitions.',
+    `4. Pick the 6 frames that best show the look (characters, environment, lighting, captions, a transition) and save them as \`"${refsDir}"\` ref-1.jpg … ref-6.jpg, 540 px wide, JPEG.`,
+    `5. Write \`"${stylePath}"\` as: { "name": string, "notes": { "camera": string, "pacing": string, "type": string, "color": string, "captions": string, "transitions": string }, "prompt": string, "engine": "remotion" | "hyperframes", "build": string, "palette": string[] }.`,
+    '   - "name": a short style name. "prompt": a few short lines of direct instructions for the look.',
+    '   - "engine": "remotion" when the look needs a real 3D world, 3D or 2.5D characters, depth, lighting or a moving 3D camera (build it with Remotion plus three.js via @remotion/three); "hyperframes" when it is flat 2D motion graphics, kinetic type or illustration.',
+    '   - "build": a concrete technical recipe a developer can follow to rebuild this look with that engine: how the world and characters are made (geometry, materials, toon or flat shading, outlines), lighting, the camera rig and its moves (lens, speed), how captions are drawn (font style, size as % of frame height, stroke, position) and how transitions are done. Be specific; this is what decides whether the copy looks right.',
+    '   - "palette": 5 to 8 of the main colours as #RRGGBB, measured from the frames.',
+    '6. Delete the sampled frames (keep the refs folder). Leave source.* in place; Tayang makes a short preview from it and then deletes it.',
+    'Copy the look, never the footage: no text, logos, characters\' names, music or clips from the source in the prompt or the recipe. The reference frames are only for comparing the look.',
   ].join('\n');
+}
+
+/** `#abc` / `#AABBCC` as `#AABBCC`; anything else is dropped. */
+function hex(c: string): string[] {
+  const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(c.trim());
+  if (!m) return [];
+  const h = m[1]!.length === 3 ? [...m[1]!].map((x) => x + x).join('') : m[1]!;
+  return [`#${h.toUpperCase()}`];
 }
 
 export function parseStyleResult(json: string, url: string): Omit<Style, 'id' | 'createdAt'> | null {
@@ -175,7 +188,10 @@ export function parseStyleResult(json: string, url: string): Omit<Style, 'id' | 
       const v = (o.notes as Record<string, unknown>)[a];
       if (typeof v === 'string' && v.trim()) notes[a] = v;
     }
-    return { name: o.name, source: 'copied', sourceUrl: url, notes, prompt: o.prompt };
+    const engine = o.engine === 'remotion' || o.engine === 'hyperframes' ? o.engine : undefined;
+    const build = typeof o.build === 'string' && o.build.trim() ? o.build.trim() : null;
+    const palette = Array.isArray(o.palette) ? o.palette.flatMap((c) => (typeof c === 'string' ? hex(c) : [])).slice(0, 8) : [];
+    return { name: o.name, source: 'copied', sourceUrl: url, notes, prompt: o.prompt, ...(engine ? { engine } : {}), build, palette };
   } catch {
     return null;
   }

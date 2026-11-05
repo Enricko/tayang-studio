@@ -175,6 +175,12 @@ export interface Style {
   version?: number;
   /** Id of the built-in style this one was cloned from (its template is downloaded under that id). */
   basedOn?: string | null;
+  /** Copied styles: how to build the look (rendering technique, characters, rig, captions), from the study. */
+  build?: string | null;
+  /** Copied styles: the look's main colours as #RRGGBB, from the study's frames. */
+  palette?: string[];
+  /** Copied styles: reference frames on this computer (absolute paths in the style's media folder). */
+  references?: string[];
 }
 
 export type JobKind = 'build' | 'render' | 'install' | 'study-style' | 'script';
