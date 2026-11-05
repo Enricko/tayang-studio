@@ -233,11 +233,13 @@ export function Agents() {
                 {col.key === 'done' && cards.length > 0 && (
                   <Button
                     variant="ghost"
-                    className="ml-auto h-7 px-2 text-xs"
+                    size="icon"
+                    aria-label={t('agents.archiveAll')}
+                    title={t('agents.archiveAll')}
+                    className="ml-auto size-7 px-0 text-text-3 hover:text-foreground"
                     onClick={() => archive(cards.map((c) => c.id))}
                   >
-                    <Archive size={13} aria-hidden="true" />
-                    {t('agents.archiveAll')}
+                    <Archive size={14} aria-hidden="true" />
                   </Button>
                 )}
               </div>
