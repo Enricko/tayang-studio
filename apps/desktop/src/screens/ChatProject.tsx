@@ -29,6 +29,8 @@ import { advanceProject } from '@/lib/projectStatus';
 import { cn } from '@/lib/utils';
 
 const NO_MESSAGES: never[] = [];
+/** How often the file sidebar reads its folders again while the agent works. */
+const TREE_REFRESH_MS = 4000;
 /** One argv as a shell-looking line: arguments with spaces or quotes are double-quoted. */
 const shellDisplay = (argv: string[]) =>
   argv.map((a) => (/[\s"']/.test(a) ? `"${a.replace(/(["\\])/g, '\\$1')}"` : a)).join(' ');
@@ -126,6 +128,14 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
     if (wasStreaming.current && !streaming && messages.at(-1)?.role !== 'system') setReloadKey((k) => k + 1);
     wasStreaming.current = streaming;
   }, [streaming, messages]);
+
+  // While the agent works the file sidebar follows its edits: read the open folders again every few seconds.
+  const [treeKey, setTreeKey] = useState(0);
+  useEffect(() => {
+    if (!streaming || !filesOpen) return;
+    const timer = setInterval(() => setTreeKey((k) => k + 1), TREE_REFRESH_MS);
+    return () => clearInterval(timer);
+  }, [streaming, filesOpen]);
 
   /** What every send from this screen carries: the composer's and an answered A2UI surface's alike. */
   const sendOptions = (prompt: MessagePart[]): SendOpts => projectSendOptions(project, agent, prompt);
@@ -300,7 +310,7 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
               projectId={project.id}
               folderName={project.folder.split(/[\\/]/).filter(Boolean).pop() ?? project.title}
               activePath={tabs.active}
-              reloadKey={reloadKey}
+              reloadKey={reloadKey + treeKey}
               onOpen={(path) => useWorkspace.getState().open(project.id, path)}
             />
           </aside>
