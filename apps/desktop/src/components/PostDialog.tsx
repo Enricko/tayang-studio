@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { ExternalLink } from 'lucide-react';
 import type { CreatePostResponse, PostDetails, Project, SocialAccount } from '@tayang/shared';
 import { Button } from '@/components/Button';
+import { Spinner } from '@/components/Loading';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -139,7 +140,10 @@ export function PostDialog({
             <span className="block pt-1 text-xs text-text-3">{t('post.postsLeft', { count: phase.result.usage.remaining })}</span>
           </p>
         ) : accounts === null ? (
-          <p className="m-0 text-xs text-text-3">{t('post.loading')}</p>
+          <p role="status" className="m-0 flex items-center gap-2 text-xs text-text-3">
+            <Spinner size={12} />
+            {t('post.loading')}
+          </p>
         ) : accounts.length === 0 && !error ? (
           <div className="flex flex-col items-start gap-3">
             <p className="m-0 text-sm text-text-2">{t('post.noAccounts')}</p>
@@ -237,6 +241,7 @@ export function PostDialog({
                 {t('post.cancel')}
               </Button>
               <Button disabled={!canPost} onClick={() => void post()}>
+                {phase.kind === 'posting' && <Spinner className="text-current" />}
                 {phase.kind === 'posting' ? t('post.posting') : later ? t('post.schedule') : t('post.postNow')}
               </Button>
             </>

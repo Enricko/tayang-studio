@@ -6,6 +6,7 @@ import { Button } from '@/components/Button';
 import { Oyen } from '@/components/Oyen';
 import { SignInDialog } from '@/components/Account';
 import { SocialAccounts } from '@/components/SocialAccounts';
+import { Skeleton, Spinner } from '@/components/Loading';
 import { SmallPoster, useVideoThumb } from '@/components/VideoPoster';
 import { locale } from '@/i18n';
 import { socialPostStatus } from '@/lib/cloud';
@@ -75,7 +76,19 @@ export function Social() {
           </section>
           <section className="flex flex-col gap-3">
             <h2 className="m-0 text-base font-medium">{t('social.posts')}</h2>
-            {posted && posted.length === 0 ? (
+            {posted === null ? (
+              <div role="status" aria-label={t('social.loadingPosts')} className="flex flex-col gap-2">
+                {[0, 1, 2].map((i) => (
+                  <div key={i} className="flex items-center gap-4 px-3 py-2">
+                    <Skeleton className="h-14 w-8" />
+                    <div className="flex flex-1 flex-col gap-1.5">
+                      <Skeleton className="h-3.5 w-64 max-w-full" />
+                      <Skeleton className="h-3 w-32" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : posted.length === 0 ? (
               <p className="m-0 text-sm text-text-3">{t('social.noPosts')}</p>
             ) : (
               <ul aria-label={t('social.posts')} className="m-0 flex list-none flex-col p-0">
@@ -96,12 +109,13 @@ function PostRow({ project: p }: { project: Project }) {
   const { t } = useTranslation();
   const thumb = useVideoThumb(p);
   const [details, setDetails] = useState<PostDetails | null>(null);
+  const [unknown, setUnknown] = useState(false);
   useEffect(() => {
     if (!p.socialPostId) return;
     let alive = true;
     socialPostStatus(p.socialPostId)
       .then((d) => alive && setDetails(d))
-      .catch(() => {});
+      .catch(() => alive && setUnknown(true));
     return () => {
       alive = false;
     };
@@ -128,7 +142,13 @@ function PostRow({ project: p }: { project: Project }) {
       </div>
       <span className="pointer-events-none flex shrink-0 items-center gap-3 text-xs">
         {!details ? (
-          <span className="text-text-3">…</span>
+          unknown ? (
+            <span className="text-text-3">{t('social.statusUnknown')}</span>
+          ) : (
+            <span role="status" aria-label={t('social.checkingStatus')}>
+              <Spinner size={12} />
+            </span>
+          )
         ) : scheduled || details.status === 'processing' ? (
           <span className="text-text-2">{scheduled ? t('social.waiting') : t('social.processing')}</span>
         ) : (

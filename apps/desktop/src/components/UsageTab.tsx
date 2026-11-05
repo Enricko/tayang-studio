@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { RefreshCw } from 'lucide-react';
 import { Button } from '@/components/Button';
+import { Skeleton } from '@/components/Loading';
 import { UsageMeter } from '@/components/UsageBar';
 import { AgentBlock } from '@/components/UsagePopover';
 import { useCloudError } from '@/components/SocialAccounts';
@@ -24,6 +25,8 @@ export function UsageTab({ onAccount }: { onAccount(): void }) {
   const refreshAgents = useUsage((s) => s.refresh);
   const usage = useTayangUsage((s) => (signedIn ? s.usage : null));
   const error = useTayangUsage((s) => s.error);
+  const loadingTayang = useTayangUsage((s) => s.loading);
+  const loadingAgents = useUsage((s) => s.loading);
   const load = useTayangUsage((s) => s.load);
   const amount = useGiftAmount();
   const navigate = useApp((s) => s.navigate);
@@ -50,9 +53,10 @@ export function UsageTab({ onAccount }: { onAccount(): void }) {
               aria-label={t('cloud.refresh')}
               title={t('cloud.refresh')}
               onClick={() => void load()}
-              className="ml-auto flex size-7 cursor-pointer items-center justify-center rounded-sm text-text-3 hover:bg-raised hover:text-foreground"
+              disabled={loadingTayang}
+              className="ml-auto flex size-7 cursor-pointer items-center justify-center rounded-sm text-text-3 hover:bg-raised hover:text-foreground disabled:cursor-default"
             >
-              <RefreshCw size={14} aria-hidden="true" />
+              <RefreshCw size={14} aria-hidden="true" className={loadingTayang ? 'animate-spin motion-reduce:animate-none' : undefined} />
             </button>
           )}
         </div>
@@ -97,7 +101,17 @@ export function UsageTab({ onAccount }: { onAccount(): void }) {
             {explain(error)}
           </p>
         ) : (
-          <span className="text-xs text-text-3">{t('usage.loading')}</span>
+          <div role="status" aria-label={t('usage.loading')} className="flex flex-col gap-3">
+            {[0, 1].map((i) => (
+              <div key={i} className="flex flex-col gap-1.5">
+                <div className="flex justify-between">
+                  <Skeleton className="h-3.5 w-24" />
+                  <Skeleton className="h-3 w-16" />
+                </div>
+                <Skeleton className="h-1 w-full" />
+              </div>
+            ))}
+          </div>
         )}
       </div>
 
@@ -109,12 +123,18 @@ export function UsageTab({ onAccount }: { onAccount(): void }) {
             aria-label={t('usage.refresh')}
             title={t('usage.refresh')}
             onClick={() => void refreshAgents(true)}
-            className="ml-auto flex size-7 cursor-pointer items-center justify-center rounded-sm text-text-3 hover:bg-raised hover:text-foreground"
+            disabled={loadingAgents}
+            className="ml-auto flex size-7 cursor-pointer items-center justify-center rounded-sm text-text-3 hover:bg-raised hover:text-foreground disabled:cursor-default"
           >
-            <RefreshCw size={14} aria-hidden="true" />
+            <RefreshCw size={14} aria-hidden="true" className={loadingAgents ? 'animate-spin motion-reduce:animate-none' : undefined} />
           </button>
         </div>
-        {agents.length === 0 ? (
+        {agents.length === 0 && loadingAgents ? (
+          <div role="status" aria-label={t('usage.loading')} className="flex flex-col gap-2">
+            <Skeleton className="h-4 w-32" />
+            <Skeleton className="h-1 w-full" />
+          </div>
+        ) : agents.length === 0 ? (
           <span className="text-xs text-text-3">{t('usage.noAgents')}</span>
         ) : (
           // i18n-ignore: a view name, not text.

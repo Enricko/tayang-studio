@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Gift as GiftIcon } from 'lucide-react';
 import type { Gift } from '@tayang/shared';
 import { Button } from '@/components/Button';
+import { Spinner } from '@/components/Loading';
 import { Input } from '@/components/ui/input';
 import { useCloudError } from '@/components/SocialAccounts';
 import { locale } from '@/i18n';
@@ -86,6 +87,7 @@ export function GiftCode() {
           className="h-9 flex-1 font-mono uppercase"
         />
         <Button type="submit" variant="secondary" className="h-9 px-4 text-[13px]" disabled={busy || !code.trim()}>
+          {busy && <Spinner />}
           {busy ? t('gift.redeeming') : t('gift.redeem')}
         </Button>
       </div>

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ArrowLeft, Loader2, QrCode } from 'lucide-react';
+import { ArrowLeft, QrCode } from 'lucide-react';
+import { Spinner } from '@/components/Loading';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { PLANS, findPlan, isLowerPlan, nextPeriod, type PaidPlanId, type Plan } from '@tayang/shared';
 import logo from '@/assets/brand/tayang-horizontal-reversed-color.svg';
@@ -208,7 +209,7 @@ function PayStep({ flow, onLeave }: { flow: Exclude<PayFlow, { phase: 'closed' |
       )}
       {flow.phase === 'starting' && (
         <p role="status" className="m-0 flex items-center gap-2 text-[13px] text-text-2">
-          <Loader2 size={16} strokeWidth={1.5} aria-hidden="true" className="animate-spin" />
+          <Spinner size={16} />
           {t('plans.pay.starting')}
         </p>
       )}

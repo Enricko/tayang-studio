@@ -1,3 +1,4 @@
+import { Spinner } from '@/components/Loading';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import type React from 'react';
@@ -101,7 +102,8 @@ export function PlanCard() {
       <div className="flex flex-wrap items-center gap-4 rounded-xl border border-border bg-card p-4">
         <div className="flex min-w-[220px] flex-1 flex-col gap-1">
           {known && <span className="text-sm font-medium">{known.name}</span>}
-          <span role="status" className="text-[13px] leading-normal text-text-2">
+          <span role="status" className="flex items-center gap-2 text-[13px] leading-normal text-text-2">
+            {!failed && <Spinner />}
             {failed ? t('billing.unknown') : t('billing.checking')}
           </span>
         </div>

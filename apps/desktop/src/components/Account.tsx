@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import type { Account, AuthErrorCode } from '@tayang/shared';
 import { Button } from '@/components/Button';
+import { Spinner } from '@/components/Loading';
 import { Oyen } from '@/components/Oyen';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -64,7 +65,8 @@ export function SignInDialog({ flow, apiUrl }: { flow: SignInFlow; apiUrl: strin
           <DialogDescription>{t('account.dialog.body')}</DialogDescription>
         </DialogHeader>
         {flow.phase === 'starting' && (
-          <p role="status" className="m-0 text-[13px] text-text-2">
+          <p role="status" className="m-0 flex items-center gap-2 text-[13px] text-text-2">
+            <Spinner />
             {t('account.dialog.starting')}
           </p>
         )}
@@ -73,7 +75,8 @@ export function SignInDialog({ flow, apiUrl }: { flow: SignInFlow; apiUrl: strin
             <p aria-label={t('account.dialog.code')} className="m-0 font-mono text-[32px] font-medium tracking-[0.12em]">
               {flow.start.userCode}
             </p>
-            <p role="status" className="m-0 text-[13px] text-text-2">
+            <p role="status" className="m-0 flex items-center gap-2 text-[13px] text-text-2">
+              <Spinner />
               {t('account.dialog.waiting')}
             </p>
           </div>
@@ -136,6 +139,7 @@ function SignOutDialog({ open, onClose }: { open: boolean; onClose(): void }) {
             {t('common.cancel')}
           </Button>
           <Button disabled={busy} onClick={() => void confirm()}>
+            {busy && <Spinner className="text-current" />}
             {t('account.signOut')}
           </Button>
         </DialogFooter>
@@ -201,8 +205,8 @@ export function AccountSection() {
             <span className="text-[13px] leading-normal text-text-2">{t('settings.planText')}</span>
             <span className="text-xs text-text-3">{t('billing.signInToUpgrade')}</span>
           </div>
-          <Button variant="secondary" className="gap-2" onClick={() => void signIn()}>
-            <GoogleMark />
+          <Button variant="secondary" className="gap-2" disabled={flow.phase === 'starting'} onClick={() => void signIn()}>
+            {flow.phase === 'starting' ? <Spinner /> : <GoogleMark />}
             {t('account.signInGoogle')}
           </Button>
         </div>

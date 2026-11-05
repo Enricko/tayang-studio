@@ -3,6 +3,7 @@ import { Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { i18n } from '@/i18n';
 import { AgentLogo } from '@/components/AgentLogo';
+import { Skeleton } from '@/components/Loading';
 import { UsagePopover } from '@/components/UsagePopover';
 import { AGENT_NAMES } from '@/lib/agents';
 import { formatResetIn } from '@/lib/time';
@@ -83,7 +84,16 @@ export function TayangCreditsCompact() {
     return () => clearInterval(every);
   }, [signedIn]);
 
-  if (!signedIn || !usage) return null;
+  if (!signedIn) return null;
+  // The first answer is on its way: hold its place, so the bar doesn't jump when it lands.
+  if (!usage) {
+    return (
+      <span role="status" aria-label={t('usage.credits')} className="flex h-6 items-center gap-1.5 px-1.5">
+        <Sparkles size={14} strokeWidth={1.75} aria-hidden="true" className="shrink-0 text-orange-light" />
+        <Skeleton className="h-2.5 w-20" />
+      </span>
+    );
+  }
   const line = t('usage.creditsLine', { count: usage.credits.remaining, posts: usage.posts.remaining });
   return (
     <button

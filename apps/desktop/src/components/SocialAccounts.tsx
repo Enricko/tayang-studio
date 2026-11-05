@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Plus, RefreshCw, Unplug } from 'lucide-react';
 import { SOCIAL_PLATFORMS, type SocialAccount, type SocialPlatform, type UsageResponse } from '@tayang/shared';
 import { Button } from '@/components/Button';
+import { Skeleton, Spinner } from '@/components/Loading';
 import { PlatformLogo } from '@/components/PlatformLogo';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { cloudErrorCode, cloudUsage, platformName, socialAccounts, socialConnect, socialDisconnect, type CloudErrorCode } from '@/lib/cloud';
@@ -34,11 +35,17 @@ export function SocialAccounts() {
   const [accounts, setAccounts] = useState<SocialAccount[] | null>(null);
   const [error, setError] = useState<CloudErrorCode | null>(null);
   const [connecting, setConnecting] = useState<SocialPlatform | null>(null);
+  // Requests under way: the list, opening a platform's sign-in page, disconnecting an account.
+  const [loading, setLoading] = useState(false);
+  const [opening, setOpening] = useState<SocialPlatform | null>(null);
+  const [removing, setRemoving] = useState<string | null>(null);
   const watch = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
+    setLoading(true);
     const [u, a] = await Promise.allSettled([cloudUsage(), socialAccounts()]);
+    setLoading(false);
     if (u.status === 'fulfilled') setUsage(u.value);
     if (a.status === 'fulfilled') setAccounts(a.value);
     else setError(cloudErrorCode(a.reason));
@@ -55,8 +62,10 @@ export function SocialAccounts() {
 
   const connect = async (platform: SocialPlatform) => {
     setError(null);
+    setOpening(platform);
     try {
       await socialConnect(platform);
+      setOpening(null);
       track('social account connect started', { platform });
       setConnecting(platform);
       const known = new Set((accounts ?? []).map((a) => a.id));
@@ -74,16 +83,20 @@ export function SocialAccounts() {
           .catch(() => {});
       }, WATCH_EVERY_MS);
     } catch (e) {
+      setOpening(null);
       setError(cloudErrorCode(e));
     }
   };
 
   const disconnect = async (a: SocialAccount) => {
+    setRemoving(a.id);
     try {
       await socialDisconnect(a.id);
       setAccounts((list) => (list ?? []).filter((x) => x.id !== a.id));
     } catch (e) {
       setError(cloudErrorCode(e));
+    } finally {
+      setRemoving(null);
     }
   };
 
@@ -100,15 +113,16 @@ export function SocialAccounts() {
           aria-label={t('cloud.refresh')}
           title={t('cloud.refresh')}
           onClick={() => void load()}
-          className="ml-auto flex size-7 cursor-pointer items-center justify-center rounded-sm text-text-3 hover:bg-raised hover:text-foreground"
+          disabled={loading}
+          className="ml-auto flex size-7 cursor-pointer items-center justify-center rounded-sm text-text-3 hover:bg-raised hover:text-foreground disabled:cursor-default"
         >
-          <RefreshCw size={14} aria-hidden="true" />
+          <RefreshCw size={14} aria-hidden="true" className={loading ? 'animate-spin motion-reduce:animate-none' : undefined} />
         </button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="secondary" className="h-8 px-3 text-[13px]">
-              <Plus size={14} aria-hidden="true" />
-              {t('cloud.connect')}
+            <Button variant="secondary" className="h-8 px-3 text-[13px]" disabled={opening !== null}>
+              {opening ? <Spinner /> : <Plus size={14} aria-hidden="true" />}
+              {opening ? t('cloud.opening', { platform: platformName(opening) }) : t('cloud.connect')}
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-52 border-hairline bg-card">
@@ -130,7 +144,16 @@ export function SocialAccounts() {
           </Button>
         </div>
       )}
-      {accounts && accounts.length === 0 ? (
+      {accounts === null && !error ? (
+        <div role="status" aria-label={t('cloud.loadingAccounts')} className="flex flex-col">
+          {[0, 1].map((i) => (
+            <div key={i} className="flex h-10 items-center gap-3">
+              <Skeleton className="size-7 rounded-full" />
+              <Skeleton className="h-3 w-40" />
+            </div>
+          ))}
+        </div>
+      ) : accounts && accounts.length === 0 ? (
         <span className="text-xs text-text-3">{t('cloud.noAccounts')}</span>
       ) : (
         <ul className="m-0 flex list-none flex-col p-0">
@@ -154,17 +177,19 @@ export function SocialAccounts() {
                 variant="ghost"
                 className="h-7 px-2 text-[13px]"
                 aria-label={t('cloud.disconnectName', { name: a.username ?? platformName(a.platform) })}
+                disabled={removing !== null}
                 onClick={() => void disconnect(a)}
               >
-                <Unplug size={14} aria-hidden="true" />
-                {t('cloud.disconnect')}
+                {removing === a.id ? <Spinner /> : <Unplug size={14} aria-hidden="true" />}
+                {removing === a.id ? t('cloud.disconnecting') : t('cloud.disconnect')}
               </Button>
             </li>
           ))}
         </ul>
       )}
       {connecting && (
-        <p role="status" className="m-0 text-xs text-text-2">
+        <p role="status" className="m-0 flex items-center gap-2 text-xs text-text-2">
+          <Spinner size={12} />
           {t('cloud.finishInBrowser', { platform: platformName(connecting) })}
         </p>
       )}
