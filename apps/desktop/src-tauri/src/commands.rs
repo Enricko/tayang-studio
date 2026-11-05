@@ -460,6 +460,32 @@ pub async fn list_recent_chats(state: State<'_, AppState>, limit: Option<u32>) -
     state.db.list_recent_chats(limit).map_err(err)
 }
 
+/// Archived threads for Settings › Archive.
+#[tauri::command]
+pub async fn list_archived_chats(state: State<'_, AppState>) -> CmdResult<Vec<RecentChat>> {
+    state.db.list_archived_chats().map_err(err)
+}
+
+/// Archives (or restores) the thread a chat belongs to.
+#[tauri::command]
+pub fn set_thread_archived(state: State<'_, AppState>, chat_id: String, archived: bool) -> CmdResult<()> {
+    state.db.set_thread_archived(&chat_id, archived).map_err(err)
+}
+
+/// What emptying the archive removed.
+#[derive(serde::Serialize)]
+pub struct PurgedArchive {
+    chats: usize,
+    cards: usize,
+}
+
+/// Deletes archived chats and cards for good. Projects and their videos stay.
+#[tauri::command]
+pub fn purge_archive(state: State<'_, AppState>) -> CmdResult<PurgedArchive> {
+    let (chats, cards) = state.db.purge_archive().map_err(err)?;
+    Ok(PurgedArchive { chats, cards })
+}
+
 /// One chat by id, whether or not it belongs to a project.
 pub fn lookup_chat(db: &Db, chat_id: &str) -> CmdResult<Option<Chat>> {
     db.get_chat(chat_id).map_err(err)
@@ -644,6 +670,12 @@ pub fn list_jobs(state: State<'_, AppState>) -> CmdResult<Vec<Job>> {
 #[tauri::command]
 pub fn delete_job(state: State<'_, AppState>, id: String) -> CmdResult<()> {
     state.db.delete_job(&id).map_err(err)
+}
+
+/// Archives (or restores) board cards.
+#[tauri::command]
+pub fn set_jobs_archived(state: State<'_, AppState>, ids: Vec<String>, archived: bool) -> CmdResult<()> {
+    state.db.set_jobs_archived(&ids, archived).map_err(err)
 }
 
 #[tauri::command]

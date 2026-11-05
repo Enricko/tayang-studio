@@ -84,6 +84,8 @@ export interface RecentChat extends Chat {
   projectTitle: string | null;
   /** The newest message's time, or the chat's own when it has none (RFC 3339). */
   activeAt: string;
+  /** When the thread was archived (RFC 3339); only in the archive's list. */
+  archivedAt?: string;
 }
 
 /** Relative position, 0-1. */
@@ -204,6 +206,8 @@ export interface Job {
    * is this job's video. Missing on other jobs, done ones, and jobs saved before it existed.
    */
   renderBaselineAt?: string | null;
+  /** When the card was archived off the board (RFC 3339); a card whose status changes comes back. */
+  archivedAt?: string | null;
 }
 
 /** A file on disk as the UI needs it: a render, or an image the agent made. */

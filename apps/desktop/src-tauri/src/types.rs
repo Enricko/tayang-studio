@@ -193,6 +193,9 @@ pub struct RecentChat {
     pub project_title: Option<String>,
     /// The newest message's time, or the chat's own when it has none (RFC 3339).
     pub active_at: String,
+    /// When the thread was archived (RFC 3339); only set in the archive's list.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub archived_at: Option<String>,
 }
 
 /// Relative position, 0-1.
@@ -409,6 +412,10 @@ pub struct Job {
     #[serde(default)]
     pub render_baseline_at: Option<String>,
     pub updated_at: String,
+    /// When the card was archived off the board (RFC 3339). Only the database sets it: a write from the UI
+    /// never carries it, and a card whose status changes comes back on the board.
+    #[serde(default)]
+    pub archived_at: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

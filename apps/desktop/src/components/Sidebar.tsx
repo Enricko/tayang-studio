@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Calendar, LayoutPanelLeft, MessageCircle, Palette, Plane, Plus, Smartphone, SlidersHorizontal } from 'lucide-react';
+import { Archive, Calendar, LayoutPanelLeft, MessageCircle, Palette, Plane, Plus, Smartphone, SlidersHorizontal } from 'lucide-react';
 import type { RecentChat } from '@tayang/shared';
 import logo from '@/assets/brand/tayang-horizontal-reversed-color.svg';
 import mark from '@/assets/brand/oyen-symbol-color.svg';
@@ -10,7 +10,7 @@ import { UpdateBanner } from '@/components/UpdateBanner';
 import { Button } from '@/components/Button';
 import { AllChats } from '@/components/AllChats';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { listRecentChats } from '@/lib/ipc';
+import { listRecentChats, setThreadArchived } from '@/lib/ipc';
 import { recentChats } from '@/lib/recentChats';
 import { useApp, type Route } from '@/state/app';
 import { useChat } from '@/state/chat';
@@ -139,6 +139,16 @@ export function Sidebar({ active, collapsed = false }: { active: SidebarKey; col
     navigate({ name: 'chat', chatId: chat.id });
   };
 
+  // Archived threads leave Recent (Settings › Archive brings them back); the open one closes.
+  const archive = (chat: RecentChat) => {
+    setRecent((list) => list.filter((c) => c.id !== chat.id));
+    const route = useApp.getState().route;
+    if (route.name === 'chat' && route.chatId === chat.id) navigate({ name: 'chat-new' });
+    void setThreadArchived(chat.id, true)
+      .catch(() => {})
+      .finally(() => useApp.getState().bumpProjects());
+  };
+
   // Chat goes back to the chat New chat started while it is still running; New chat always starts fresh.
   const goChat = () => {
     const live = useApp.getState().newChatId;
@@ -198,25 +208,40 @@ export function Sidebar({ active, collapsed = false }: { active: SidebarKey; col
             <span className="px-3 pb-1 text-xs text-text-3">{t('sidebar.recent')}</span>
             {recent.slice(0, RECENT).map((c) => {
               const st = status(c.id);
+              const name = c.projectTitle ?? c.title;
               return (
-                <a
-                  key={c.id}
-                  href="#"
-                  aria-current={openChatId === c.id ? 'page' : undefined}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    openChat(c);
-                  }}
-                  className={cn(
-                    'flex h-8 shrink-0 items-center gap-2 rounded-md px-3 text-[13px] text-[#D9D9D9] no-underline hover:bg-raised/50',
-                    openChatId === c.id && 'bg-raised/50',
+                <div key={c.id} className="group relative flex shrink-0">
+                  <a
+                    href="#"
+                    aria-current={openChatId === c.id ? 'page' : undefined}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      openChat(c);
+                    }}
+                    className={cn(
+                      'flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-3 text-[13px] text-[#D9D9D9] no-underline hover:bg-raised/50',
+                      openChatId === c.id && 'bg-raised/50',
+                      st !== 'working' && 'group-hover:pr-9 group-focus-within:pr-9',
+                    )}
+                  >
+                    <span aria-hidden="true" data-status={st} className={cn('size-1.5 shrink-0 rounded-full', DOT[st])} />
+                    <span className="truncate">{name}</span>
+                    {st !== 'idle' && ' '}
+                    {st !== 'idle' && <span className="sr-only">{t(st === 'working' ? 'sidebar.working' : 'sidebar.needsYou')}</span>}
+                  </a>
+                  {/* Not while its agent works: the turn would carry on out of sight. */}
+                  {st !== 'working' && (
+                    <button
+                      type="button"
+                      aria-label={t('sidebar.archive', { name })}
+                      title={t('sidebar.archiveTip')}
+                      onClick={() => archive(c)}
+                      className="absolute top-1/2 right-1.5 flex size-6 -translate-y-1/2 cursor-pointer items-center justify-center rounded-sm text-text-3 opacity-0 hover:bg-raised hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100"
+                    >
+                      <Archive size={14} strokeWidth={1.5} aria-hidden="true" />
+                    </button>
                   )}
-                >
-                  <span aria-hidden="true" data-status={st} className={cn('size-1.5 shrink-0 rounded-full', DOT[st])} />
-                  <span className="truncate">{c.projectTitle ?? c.title}</span>
-                  {st !== 'idle' && ' '}
-                  {st !== 'idle' && <span className="sr-only">{t(st === 'working' ? 'sidebar.working' : 'sidebar.needsYou')}</span>}
-                </a>
+                </div>
               );
             })}
             {recent.length > RECENT && (

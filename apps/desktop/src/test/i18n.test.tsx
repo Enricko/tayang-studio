@@ -4,8 +4,13 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Settings } from '@tayang/shared';
 
 vi.mock('@/lib/ipc', () => ({
+  listJobs: vi.fn().mockResolvedValue([]),
   listProjects: vi.fn().mockResolvedValue([]),
   listRecentChats: vi.fn().mockResolvedValue([]),
+  listArchivedChats: vi.fn().mockResolvedValue([]),
+  setThreadArchived: vi.fn().mockResolvedValue(undefined),
+  purgeArchive: vi.fn().mockResolvedValue({ chats: 0, cards: 0 }),
+  setJobsArchived: vi.fn().mockResolvedValue(undefined),
   updateSettings: vi.fn(),
   detectAgents: vi.fn().mockResolvedValue([]),
   getSystemInfo: vi.fn().mockResolvedValue({ os: 'macos', osVersion: '15', packageManager: 'brew' }),

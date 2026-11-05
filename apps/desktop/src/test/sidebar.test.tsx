@@ -5,6 +5,10 @@ import type { RecentChat } from '@tayang/shared';
 
 vi.mock('@/lib/ipc', () => ({
   listRecentChats: vi.fn(),
+  listArchivedChats: vi.fn().mockResolvedValue([]),
+  setThreadArchived: vi.fn().mockResolvedValue(undefined),
+  purgeArchive: vi.fn().mockResolvedValue({ chats: 0, cards: 0 }),
+  setJobsArchived: vi.fn().mockResolvedValue(undefined),
 }));
 
 import { listRecentChats } from '@/lib/ipc';

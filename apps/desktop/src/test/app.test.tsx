@@ -8,6 +8,10 @@ vi.mock('@/lib/ipc', () => ({
   systemLocale: vi.fn(),
   listProjects: vi.fn().mockResolvedValue([]),
   listRecentChats: vi.fn().mockResolvedValue([]),
+  listArchivedChats: vi.fn().mockResolvedValue([]),
+  setThreadArchived: vi.fn().mockResolvedValue(undefined),
+  purgeArchive: vi.fn().mockResolvedValue({ chats: 0, cards: 0 }),
+  setJobsArchived: vi.fn().mockResolvedValue(undefined),
   syncStyles: vi.fn().mockResolvedValue({ styles: [], offline: false }),
 }));
 vi.mock('@/lib/events', () => ({ onAgentUpdate: vi.fn(), onPermission: vi.fn() }));

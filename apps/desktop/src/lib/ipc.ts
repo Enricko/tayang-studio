@@ -79,6 +79,11 @@ export const listChats = (projectId?: string) =>
   invoke<Chat[]>('list_chats', { projectId: projectId ?? null });
 /** Chats with and without a project, newest activity first; all of them without a limit. */
 export const listRecentChats = (limit?: number) => invoke<RecentChat[]>('list_recent_chats', { limit: limit ?? null });
+export const listArchivedChats = () => invoke<RecentChat[]>('list_archived_chats');
+/** Archives or restores the thread a chat belongs to (every chat of its project). */
+export const setThreadArchived = (chatId: string, archived: boolean) => invoke<void>('set_thread_archived', { chatId, archived });
+/** Deletes archived chats and cards for good; projects and their videos stay. */
+export const purgeArchive = () => invoke<{ chats: number; cards: number }>('purge_archive');
 export const getChat =(chatId: string) => invoke<Chat | null>('get_chat', { chatId });
 export const createChat = (projectId: string | null, agentId: AgentId, title: string) =>
   invoke<Chat>('create_chat', { projectId, agentId, title });
@@ -116,6 +121,7 @@ export const copyStyleRefs = (styleId: string, projectId: string) => invoke<numb
 export const listJobs = () => invoke<Job[]>('list_jobs');
 export const upsertJob = (job: Job) => invoke<void>('upsert_job', { job });
 export const deleteJob = (id: string) => invoke<void>('delete_job', { id });
+export const setJobsArchived = (ids: string[], archived: boolean) => invoke<void>('set_jobs_archived', { ids, archived });
 
 // ---- agent ----
 /** Resolves true when Claude started without the Tayang plugin: send it the skills as text too. */

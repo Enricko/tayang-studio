@@ -5,6 +5,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentInfo, AgentUpdate, Job, PermissionRequest, Project, Settings, Style as StyleT } from '@tayang/shared';
 
 vi.mock('@/lib/ipc', () => ({
+  listArchivedChats: vi.fn().mockResolvedValue([]),
+  setThreadArchived: vi.fn().mockResolvedValue(undefined),
+  purgeArchive: vi.fn().mockResolvedValue({ chats: 0, cards: 0 }),
+  setJobsArchived: vi.fn().mockResolvedValue(undefined),
   listAutopilots: vi.fn().mockResolvedValue([]),
   listSlots: vi.fn().mockResolvedValue([]),
   saveAutopilot: vi.fn(),

@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Archive } from 'lucide-react';
 import type { AgentInfo, Job, JobStatus, Project } from '@tayang/shared';
 import { AgentLogo } from '@/components/AgentLogo';
 import { Button } from '@/components/Button';
 import { Oyen, type OyenMood } from '@/components/Oyen';
 import { AGENT_NAMES, CLOSED_NOTE } from '@/lib/agents';
 import { onAgentUpdate } from '@/lib/events';
-import { deleteJob, detectAgents, getChat, listProjects } from '@/lib/ipc';
+import { deleteJob, detectAgents, getChat, listProjects, setJobsArchived } from '@/lib/ipc';
 import { settleLateRenders } from '@/lib/buildJobs';
 import { sendInProjectChat } from '@/lib/openProject';
 import { localized, stored } from '@/lib/stored';
@@ -26,7 +27,7 @@ const COLUMNS: { key: 'queued' | 'working' | 'needsYou' | 'done'; mood: OyenMood
 /** The notes of a build job whose turn ended without a video: its card offers Continue. */
 const isStoppedNote = (note: string) => note === stored('agents.noVideo') || note === stored('agents.waitingAnswer');
 
-function JobCard({ job, project, onDismiss }: { job: Job; project: string; onDismiss(): void }) {
+function JobCard({ job, project, onDismiss, onArchive }: { job: Job; project: string; onDismiss(): void; onArchive?(): void }) {
   const navigate = useApp((s) => s.navigate);
   const { t } = useTranslation();
   const studyRunning = useStudy((s) => s.phase === 'running' || s.phase === 'finishing');
@@ -74,7 +75,7 @@ function JobCard({ job, project, onDismiss }: { job: Job; project: string; onDis
   return (
     <article
       className={cn(
-        'relative flex flex-col gap-2 overflow-hidden rounded-md border bg-card p-3',
+        'group relative flex flex-col gap-2 overflow-hidden rounded-md border bg-card p-3',
         failed ? 'border-deep-orange' : 'border-border',
       )}
     >
@@ -84,6 +85,17 @@ function JobCard({ job, project, onDismiss }: { job: Job; project: string; onDis
           {working && <span aria-hidden="true" className="tayang-pulse size-1.5 rounded-full bg-primary" />}
           {working ? t('agents.workingAgo', { ago: ago(job.updatedAt) }) : ago(job.updatedAt)}
         </span>
+        {onArchive && (
+          <button
+            type="button"
+            aria-label={t('agents.archiveCard', { title: job.title })}
+            title={t('sidebar.archiveTip')}
+            onClick={onArchive}
+            className="absolute top-2 right-2 flex size-7 cursor-pointer items-center justify-center rounded-sm bg-card text-text-3 opacity-0 hover:bg-raised hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+          >
+            <Archive size={14} strokeWidth={1.5} aria-hidden="true" />
+          </button>
+        )}
       </div>
       <span className="text-sm leading-[1.4] font-medium">{job.kind === 'study-style' ? localized(job.title) : job.title}</span>
       <span className="text-xs text-text-3">{project}</span>
@@ -169,6 +181,10 @@ export function Agents() {
     return () => void un.then((fn) => fn());
   }, [load]);
 
+  // Archived cards live in Settings › Archive; a card whose status changes comes back by itself.
+  const onBoard = jobs.filter((j) => !j.archivedAt);
+  const archive = (ids: string[]) => void setJobsArchived(ids, true).then(load, load);
+
   const projectName = (j: Job) =>
     j.projectId ? (projects.find((p) => p.id === j.projectId)?.title ?? '') : j.kind === 'study-style' ? t('agents.styleLibrary') : '';
 
@@ -202,7 +218,7 @@ export function Agents() {
 
       <div className="grid items-start gap-4 overflow-x-auto" style={{ gridTemplateColumns: 'repeat(4, minmax(220px, 1fr))' }}>
         {COLUMNS.map((col) => {
-          const cards = jobs.filter((j) => col.match(j.status));
+          const cards = onBoard.filter((j) => col.match(j.status));
           const name = t(`agents.columns.${col.key}`);
           return (
             <section
@@ -214,6 +230,16 @@ export function Agents() {
                 <Oyen mood={col.mood} size={24} />
                 <span className="text-[13px] font-medium">{name}</span>
                 <span className="font-mono text-xs text-text-3">{cards.length}</span>
+                {col.key === 'done' && cards.length > 0 && (
+                  <Button
+                    variant="ghost"
+                    className="ml-auto h-7 px-2 text-xs"
+                    onClick={() => archive(cards.map((c) => c.id))}
+                  >
+                    <Archive size={13} aria-hidden="true" />
+                    {t('agents.archiveAll')}
+                  </Button>
+                )}
               </div>
               {cards.map((j) => (
                 <JobCard
@@ -221,6 +247,7 @@ export function Agents() {
                   job={j}
                   project={projectName(j)}
                   onDismiss={() => void deleteJob(j.id).then(load, load)}
+                  onArchive={col.key === 'done' ? () => archive([j.id]) : undefined}
                 />
               ))}
             </section>

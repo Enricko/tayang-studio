@@ -91,7 +91,7 @@ const CHAT_SELECT: &str = "SELECT id, project_id AS projectId, agent_id AS agent
     created_at AS createdAt FROM chats";
 const JOB_SELECT: &str = "SELECT id, kind, title, project_id AS projectId, chat_id AS chatId, \
     agent_id AS agentId, status, progress, note, source_url AS sourceUrl, updated_at AS updatedAt, \
-    render_baseline_at AS renderBaselineAt FROM jobs";
+    render_baseline_at AS renderBaselineAt, archived_at AS archivedAt FROM jobs";
 const JOB_KEYS: [&str; 12] = [
     "id", "kind", "title", "projectId", "chatId", "agentId", "status", "progress", "note",
     "sourceUrl", "updatedAt", "renderBaselineAt",
@@ -274,6 +274,7 @@ impl Db {
         Self::migrate_styles(&conn)?;
         Self::migrate_jobs(&conn)?;
         Self::migrate_projects(&conn)?;
+        Self::migrate_archive(&conn)?;
         Ok(Db { conn: Mutex::new(conn), home: Mutex::new(Default::default()) })
     }
 
@@ -525,7 +526,7 @@ impl Db {
                SELECT c.id, c.project_id, c.agent_id, c.title, c.created_at, c.rowid AS rid, p.title AS project_title, \
                  COALESCE((SELECT MAX(m.created_at) FROM messages m WHERE m.chat_id = c.id), c.created_at) AS active_at \
                FROM chats c LEFT JOIN projects p ON p.id = c.project_id \
-               WHERE c.project_id IS NULL OR p.id IS NOT NULL \
+               WHERE (c.project_id IS NULL OR p.id IS NOT NULL) AND c.archived_at IS NULL \
              ), ranked AS ( \
                SELECT *, ROW_NUMBER() OVER (PARTITION BY COALESCE(project_id, id) ORDER BY active_at DESC, rid DESC) AS n \
                FROM active \
@@ -535,6 +536,65 @@ impl Db {
              FROM ranked WHERE n = 1 ORDER BY active_at DESC, rid DESC LIMIT ?1",
             &[&limit],
         )
+    }
+
+    /// Archived threads, most recently archived first: a project once, like Recent.
+    pub fn list_archived_chats(&self) -> Result<Vec<RecentChat>> {
+        query_as(
+            &self.conn(),
+            "WITH arch AS ( \
+               SELECT c.id, c.project_id, c.agent_id, c.title, c.created_at, c.archived_at, c.rowid AS rid, \
+                 p.title AS project_title, \
+                 COALESCE((SELECT MAX(m.created_at) FROM messages m WHERE m.chat_id = c.id), c.created_at) AS active_at \
+               FROM chats c LEFT JOIN projects p ON p.id = c.project_id \
+               WHERE (c.project_id IS NULL OR p.id IS NOT NULL) AND c.archived_at IS NOT NULL \
+             ), ranked AS ( \
+               SELECT *, ROW_NUMBER() OVER (PARTITION BY COALESCE(project_id, id) ORDER BY active_at DESC, rid DESC) AS n \
+               FROM arch \
+             ) \
+             SELECT id, project_id AS projectId, agent_id AS agentId, title, created_at AS createdAt, \
+               project_title AS projectTitle, active_at AS activeAt, archived_at AS archivedAt \
+             FROM ranked WHERE n = 1 ORDER BY archived_at DESC, rid DESC",
+            &[],
+        )
+    }
+
+    /// Archives or restores a whole thread: every chat of the chat's project, or the chat alone.
+    pub fn set_thread_archived(&self, chat_id: &str, archived: bool) -> Result<()> {
+        let stamp: Option<String> = archived.then(now);
+        self.conn().execute(
+            "UPDATE chats SET archived_at = ?2 \
+             WHERE COALESCE(project_id, id) = (SELECT COALESCE(project_id, id) FROM chats WHERE id = ?1)",
+            rusqlite::params![chat_id, stamp],
+        )?;
+        Ok(())
+    }
+
+    /// Archives or restores board cards. A working card is never archived: it is still going.
+    pub fn set_jobs_archived(&self, ids: &[String], archived: bool) -> Result<()> {
+        let stamp: Option<String> = archived.then(now);
+        let conn = self.conn();
+        let tx = conn.unchecked_transaction()?;
+        for id in ids {
+            tx.execute(
+                "UPDATE jobs SET archived_at = ?2 WHERE id = ?1 AND (?2 IS NULL OR status <> 'working')",
+                rusqlite::params![id, stamp],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Deletes everything archived for good: archived chats with their messages, and archived cards.
+    /// Projects and their folders (the videos) stay. Returns (chats, cards) removed.
+    pub fn purge_archive(&self) -> Result<(usize, usize)> {
+        let conn = self.conn();
+        let tx = conn.unchecked_transaction()?;
+        tx.execute("DELETE FROM messages WHERE chat_id IN (SELECT id FROM chats WHERE archived_at IS NOT NULL)", [])?;
+        let chats = tx.execute("DELETE FROM chats WHERE archived_at IS NOT NULL", [])?;
+        let cards = tx.execute("DELETE FROM jobs WHERE archived_at IS NOT NULL AND status <> 'working'", [])?;
+        tx.commit()?;
+        Ok((chats, cards))
     }
 
     /// Points a chat at another agent. `None` when the chat doesn't exist.
@@ -576,6 +636,10 @@ impl Db {
                 msg.created_at
             ],
         )?;
+        // Writing in an archived thread brings it back to Recent.
+        if role == MessageRole::User {
+            self.set_thread_archived(chat_id, false)?;
+        }
         Ok(msg)
     }
 
@@ -653,6 +717,21 @@ impl Db {
         ] {
             if !have.iter().any(|c| c == col) {
                 conn.execute_batch(&format!("ALTER TABLE projects ADD COLUMN {col} {def}"))?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Adds `archived_at` to chats and jobs in databases created before the archive.
+    fn migrate_archive(conn: &Connection) -> Result<()> {
+        for table in ["chats", "jobs"] {
+            let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+            let have = stmt
+                .query_map([], |r| r.get::<_, String>(1))?
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            drop(stmt);
+            if !have.iter().any(|c| c == "archived_at") {
+                conn.execute_batch(&format!("ALTER TABLE {table} ADD COLUMN archived_at TEXT"))?;
             }
         }
         Ok(())
@@ -853,7 +932,8 @@ impl Db {
              title=excluded.title, project_id=excluded.project_id, chat_id=excluded.chat_id, \
              agent_id=excluded.agent_id, status=excluded.status, progress=excluded.progress, \
              note=excluded.note, source_url=excluded.source_url, updated_at=excluded.updated_at, \
-             render_baseline_at=excluded.render_baseline_at",
+             render_baseline_at=excluded.render_baseline_at, \
+             archived_at=CASE WHEN jobs.status = excluded.status THEN jobs.archived_at ELSE NULL END",
             params_from_iter(vals),
         )?;
         Ok(())
@@ -1261,6 +1341,78 @@ mod tests {
     }
 
     #[test]
+    fn an_archived_thread_leaves_recent_until_restored_or_written_in() {
+        let db = db();
+        db.insert_project(&project("a", "2026-01-01T00:00:00Z")).unwrap();
+        let first = db.create_chat(Some("a"), AgentId::Claude, "First").unwrap();
+        let second = db.create_chat(Some("a"), AgentId::Claude, "Second").unwrap();
+        let loose = db.create_chat(None, AgentId::Claude, "Loose").unwrap();
+        // Archiving one chat of a project archives the whole thread.
+        db.set_thread_archived(&first.id, true).unwrap();
+        let ids = |v: Vec<RecentChat>| v.into_iter().map(|c| c.id).collect::<Vec<_>>();
+        assert_eq!(ids(db.list_recent_chats(None).unwrap()), vec![loose.id.clone()]);
+        let archived = db.list_archived_chats().unwrap();
+        assert_eq!(archived.len(), 1, "a project shows once");
+        assert_eq!(archived[0].project_id.as_deref(), Some("a"));
+        assert!(archived[0].archived_at.is_some());
+        db.set_thread_archived(&second.id, false).unwrap();
+        assert_eq!(db.list_recent_chats(None).unwrap().len(), 2);
+        assert!(db.list_archived_chats().unwrap().is_empty());
+        // The user writing in an archived thread brings it back; the agent writing does not.
+        db.set_thread_archived(&loose.id, true).unwrap();
+        db.add_message(&loose.id, MessageRole::Agent, &[]).unwrap();
+        assert_eq!(db.list_archived_chats().unwrap().len(), 1);
+        db.add_message(&loose.id, MessageRole::User, &[]).unwrap();
+        assert!(db.list_archived_chats().unwrap().is_empty());
+    }
+
+    #[test]
+    fn purging_the_archive_deletes_archived_chats_and_cards_only() {
+        let db = db();
+        let gone = db.create_chat(None, AgentId::Claude, "Gone").unwrap();
+        let kept = db.create_chat(None, AgentId::Claude, "Kept").unwrap();
+        db.add_message(&gone.id, MessageRole::User, &[]).unwrap();
+        db.add_message(&kept.id, MessageRole::User, &[]).unwrap();
+        db.set_thread_archived(&gone.id, true).unwrap();
+        let job = |id: &str, status: JobStatus| Job {
+            id: id.into(),
+            kind: JobKind::Build,
+            title: id.into(),
+            project_id: None,
+            chat_id: None,
+            agent_id: AgentId::Claude,
+            status,
+            progress: None,
+            note: None,
+            source_url: None,
+            render_baseline_at: None,
+            updated_at: "2026-01-01T00:00:00Z".into(),
+            archived_at: None,
+        };
+        db.upsert_job(&job("done", JobStatus::Done)).unwrap();
+        db.upsert_job(&job("busy", JobStatus::Working)).unwrap();
+        db.upsert_job(&job("other", JobStatus::Done)).unwrap();
+        db.set_jobs_archived(&["done".into(), "busy".into()], true).unwrap();
+        let archived = |id: &str| db.list_jobs().unwrap().into_iter().find(|j| j.id == id).unwrap().archived_at.is_some();
+        assert!(archived("done"));
+        assert!(!archived("busy"), "a working card is never archived");
+        // Rewriting a card with the same status keeps it archived; a new status brings it back.
+        db.upsert_job(&job("done", JobStatus::Done)).unwrap();
+        assert!(archived("done"));
+        db.upsert_job(&job("other", JobStatus::Done)).unwrap();
+        db.set_jobs_archived(&["other".into()], true).unwrap();
+        db.upsert_job(&job("other", JobStatus::Working)).unwrap();
+        assert!(!archived("other"));
+
+        assert_eq!(db.purge_archive().unwrap(), (1, 1));
+        assert!(db.get_chat(&gone.id).unwrap().is_none());
+        assert!(db.list_messages(&gone.id).unwrap().is_empty());
+        assert_eq!(db.list_messages(&kept.id).unwrap().len(), 1);
+        let left: Vec<String> = db.list_jobs().unwrap().into_iter().map(|j| j.id).collect();
+        assert!(!left.contains(&"done".to_string()) && left.contains(&"busy".to_string()));
+    }
+
+    #[test]
     fn recent_chats_newest_activity_first_with_project_titles() {
         let db = db();
         db.insert_project(&project("a", "2026-01-01T00:00:00Z")).unwrap();
@@ -1521,6 +1673,7 @@ mod tests {
             note: None,
             source_url: None,
             render_baseline_at: None,
+            archived_at: None,
             updated_at: "2026-01-01T00:00:00Z".into(),
         };
         db.upsert_job(&j).unwrap();
@@ -1618,6 +1771,7 @@ mod tests {
             note: None,
             source_url: None,
             render_baseline_at: None,
+            archived_at: None,
             updated_at: "2026-01-01T00:00:00Z".into(),
         };
         db.upsert_job(&job("a")).unwrap();
@@ -1648,6 +1802,7 @@ mod tests {
             note: None,
             source_url: None,
             render_baseline_at: None,
+            archived_at: None,
             updated_at: "2026-01-01T00:00:00Z".into(),
         };
         let mut w = job("w", JobStatus::Working);

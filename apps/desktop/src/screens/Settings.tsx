@@ -5,6 +5,7 @@ import { getVersion } from '@tauri-apps/api/app';
 import { disable as disableAutostart, enable as enableAutostart } from '@tauri-apps/plugin-autostart';
 import { DEFAULT_SETTINGS, type AgentInfo, type Settings as SettingsT, type SystemInfo, type ToolId } from '@tayang/shared';
 import { AccountSection } from '@/components/Account';
+import { ArchiveSection } from '@/components/ArchiveSection';
 import { AgentLogo } from '@/components/AgentLogo';
 import { Button } from '@/components/Button';
 import { ToolRow, TOOL_ORDER } from '@/components/ToolRow';
@@ -24,7 +25,7 @@ import { useApp } from '@/state/app';
 import { useInstall } from '@/state/install';
 import { useUpdater } from '@/state/updater';
 
-const SECTIONS = ['general', 'agents', 'video', 'render', 'tools', 'account'] as const;
+const SECTIONS = ['general', 'agents', 'video', 'render', 'tools', 'archive', 'account'] as const;
 
 function isHttpUrl(v: string): boolean {
   try {
@@ -457,6 +458,11 @@ export function Settings() {
               />
             ))}
           </ul>
+        </section>
+
+        <section id="archive" className="flex flex-col gap-3">
+          <h2 className="m-0 text-base font-medium">{t('settings.sections.archive')}</h2>
+          <ArchiveSection />
         </section>
 
         <section id="account" className="flex flex-col gap-3">
