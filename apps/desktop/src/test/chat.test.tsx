@@ -68,7 +68,7 @@ import { setUiLanguage } from '@/i18n';
 import { useApp } from '@/state/app';
 import { buildRecap, useChat } from '@/state/chat';
 import { useUsage } from '@/state/usage';
-import { UsageLineCompact } from '@/components/UsageBar';
+import { StatusBar } from '@/components/StatusBar';
 import { renderTiming } from '@/lib/renderCheck';
 import { useRender } from '@/state/render';
 
@@ -1298,16 +1298,19 @@ describe('Agent picker', () => {
     expect(screen.queryByRole('menuitem')).not.toBeInTheDocument();
   });
 
-  it('usage bar follows the open chat agent', async () => {
+  it('the status bar puts the open chat agent first', async () => {
     vi.mocked(ipc.getChat).mockResolvedValue({ ...chat('c1', 'p1'), agentId: 'gemini' });
-    useUsage.setState({ usage: [], loaded: true, start: () => {} });
+    const ok = (agentId: 'claude' | 'gemini', usedPercent: number) =>
+      ({ agentId, status: 'ok', session: { usedPercent, resetsAt: null }, weekly: null, modelWeekly: null, updatedAt: '', message: null }) as const;
+    useUsage.setState({ usage: [ok('claude', 11), ok('gemini', 22)], loaded: true, start: () => {} });
     render(
       <>
-        <UsageLineCompact />
+        <StatusBar />
         <ChatProject chatId="c1" />
       </>,
     );
-    expect(await screen.findByRole('button', { name: 'Gemini CLI usage' })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getAllByTestId('status-agent')[0]).toHaveTextContent('22% used'));
+    expect(screen.getAllByTestId('status-agent')[1]).toHaveTextContent('11% used');
   });
 });
 

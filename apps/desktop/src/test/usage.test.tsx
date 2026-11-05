@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, within, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import type { AgentUsage } from '@tayang/shared';
@@ -6,7 +6,8 @@ import type { AgentUsage } from '@tayang/shared';
 vi.mock('@/lib/ipc', () => ({ getAgentUsage: vi.fn() }));
 
 import { getAgentUsage } from '@/lib/ipc';
-import { UsageLineCompact, usageLine } from '@/components/UsageBar';
+import { usageLine } from '@/components/UsageBar';
+import { StatusBar } from '@/components/StatusBar';
 import { formatResetIn } from '@/lib/time';
 import { mergeUsage, stopUsagePolling, useUsage } from '@/state/usage';
 import { i18n } from '@/i18n';
@@ -83,7 +84,7 @@ describe('mergeUsage', () => {
   });
 });
 
-describe('compact usage line and popover', () => {
+describe('status bar usage and popover', () => {
   beforeEach(() => {
     stopUsagePolling();
     useUsage.setState({ usage: [], loaded: false, loading: false });
@@ -94,12 +95,12 @@ describe('compact usage line and popover', () => {
   afterEach(() => stopUsagePolling());
 
   it('shows the status line and opens the popover with one row per agent', async () => {
-    render(<UsageLineCompact />);
+    render(<StatusBar />);
     expect(await screen.findByText(/33% used .* · 48% used .* · 85% used Fable/)).toBeInTheDocument();
-    const bar = screen.getByRole('progressbar', { name: '5 hour usage' });
+    const bar = screen.getByRole('progressbar', { name: 'Claude Code usage' });
     expect(bar).toHaveAttribute('aria-valuenow', '33');
 
-    await userEvent.click(screen.getByRole('button', { name: /usage$/i }));
+    await userEvent.click(screen.getByRole('button', { name: 'Agent usage' }));
     expect(await screen.findByText('Usage')).toBeInTheDocument();
     expect(screen.getByText('all agents')).toBeInTheDocument();
     expect(screen.getAllByTestId('usage-row')).toHaveLength(2);
@@ -110,7 +111,7 @@ describe('compact usage line and popover', () => {
     expect(localStorage.getItem('tayang.usageView')).toBe('compact');
     expect(screen.queryByText(/^Resets in /)).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole('button', { name: 'Refresh usage' }));
+    await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Refresh usage' }));
     await waitFor(() => expect(getAgentUsage).toHaveBeenLastCalledWith(true));
 
     await userEvent.click(screen.getByRole('button', { name: /Manage accounts/ }));
@@ -118,8 +119,8 @@ describe('compact usage line and popover', () => {
   });
 
   it('goes to the Agents screen from usage details', async () => {
-    render(<UsageLineCompact />);
-    await userEvent.click(screen.getByRole('button', { name: /usage$/i }));
+    render(<StatusBar />);
+    await userEvent.click(screen.getByRole('button', { name: 'Agent usage' }));
     await userEvent.click(await screen.findByRole('button', { name: /Usage details & history/ }));
     expect(useApp.getState().route).toEqual({ name: 'agents' });
   });
@@ -127,10 +128,10 @@ describe('compact usage line and popover', () => {
   it('shows opencode without a meter, with today and the last 7 days in the popover', async () => {
     useApp.setState({ settings: { defaultAgent: 'opencode' } as never, route: { name: 'chat-new' } });
     vi.mocked(getAgentUsage).mockResolvedValue([opencode]);
-    render(<UsageLineCompact />);
+    render(<StatusBar />);
     expect(await screen.findByText('today $0.00 · 186.6K tokens')).toBeInTheDocument();
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: /usage$/i }));
+    await userEvent.click(screen.getByRole('button', { name: 'Agent usage' }));
     expect(await screen.findByText('$0.00 · 186.6K tokens')).toBeInTheDocument();
     expect(screen.getByText('$0.00 · 186.6K tokens').parentElement).toHaveAttribute('title', '54 replies');
     expect(screen.getByText('$1.50 · 1.2M tokens')).toBeInTheDocument();

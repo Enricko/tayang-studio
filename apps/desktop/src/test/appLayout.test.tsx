@@ -101,19 +101,9 @@ describe('App sidebar resizing', () => {
     expect(within(nav).getByRole('link', { name: 'Videos' })).toBeInTheDocument();
     expect(within(nav).getByRole('button', { name: 'New chat' })).toBeInTheDocument();
     expect(within(nav).queryByText('Recent')).toBeNull();
-    // usage as a small ring; unknown usage is not drawn as 0%
-    const ring = within(nav).getByRole('button', { name: 'Claude Code usage' });
-    expect(ring).toHaveClass('size-10');
-    expect(within(ring).queryByRole('progressbar')).toBeNull();
-    expect(ring.querySelector('[data-testid="usage-ring-progress"]')).toBeNull();
-    act(() =>
-      useUsage.setState({
-        loaded: true,
-        usage: [{ agentId: 'claude', status: 'ok', session: { usedPercent: 33, resetsAt: null }, weekly: null, modelWeekly: null, updatedAt: '', message: null }],
-      }),
-    );
-    expect(within(nav).getByRole('button', { name: 'Claude Code usage: 33% used in 5 hours' })).toBeInTheDocument();
-    expect(nav.querySelector('[data-testid="usage-ring-progress"]')).not.toBeNull();
+    // usage lives in the status bar, not the rail
+    expect(within(nav).queryByRole('button', { name: 'Claude Code usage' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Agent usage' })).toBeInTheDocument();
     // out again
     drag(handle, 64, 260);
     expect(panel.style.width).toBe('260px');

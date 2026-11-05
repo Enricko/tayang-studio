@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/Button';
 import { ResizeHandle } from '@/components/ResizeHandle';
 import { Sidebar, type SidebarKey } from '@/components/Sidebar';
+import { StatusBar } from '@/components/StatusBar';
 import { setUiLanguage } from '@/i18n';
 import { systemLanguage } from '@/lib/language';
 import { getSettings, getSystemInfo, syncStyles, updateSettings } from '@/lib/ipc';
@@ -198,7 +199,8 @@ function Shell({ route }: { route: Route }) {
   useSidebarShortcut();
 
   return (
-    <div className="flex h-full bg-background">
+    <div className="flex h-full flex-col bg-background">
+    <div className="flex min-h-0 flex-1">
       <div id="app-sidebar" className="relative h-full shrink-0" style={{ width: fitted.sidebar }}>
         <Sidebar active={SIDEBAR_KEY[route.name] ?? 'chat'} collapsed={fitted.collapsed} />
         <ResizeHandle
@@ -239,6 +241,8 @@ function Shell({ route }: { route: Route }) {
           <Settings />
         )}
       </main>
+      </div>
+      <StatusBar />
     </div>
   );
 }

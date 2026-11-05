@@ -4,7 +4,6 @@ import { Archive, Calendar, LayoutPanelLeft, Share2, MessageCircle, Palette, Pla
 import type { RecentChat } from '@tayang/shared';
 import logo from '@/assets/brand/tayang-horizontal-reversed-color.svg';
 import mark from '@/assets/brand/oyen-symbol-color.svg';
-import { TayangCreditsCompact, UsageLineCompact, UsageRing } from '@/components/UsageBar';
 import { UpdateBanner } from '@/components/UpdateBanner';
 import { Button } from '@/components/Button';
 import { AllChats } from '@/components/AllChats';
@@ -276,14 +275,6 @@ export function Sidebar({ active, collapsed = false }: { active: SidebarKey; col
             onClick={() => navigate({ name: 'settings' })}
           />
           {!rail && <UpdateBanner />}
-          {rail ? (
-            <UsageRing />
-          ) : (
-            <div className="flex flex-col gap-0.5 border-t border-border pt-2">
-              <UsageLineCompact />
-              <TayangCreditsCompact />
-            </div>
-          )}
         </div>
       </nav>
     </TooltipProvider>
