@@ -34,7 +34,7 @@ function Row({ label, w, text }: { label: string; w: UsageWindow; text?: string 
   );
 }
 
-function AgentBlock({ u, view }: { u: AgentUsage; view: View }) {
+export function AgentBlock({ u, view }: { u: AgentUsage; view: View }) {
   const { t } = useTranslation();
   const name = AGENT_NAMES[u.agentId];
   const ok = u.status === 'ok';

@@ -89,8 +89,11 @@ export interface VoiceResponse {
   usage: UsageMeter;
 }
 
-/** Bluesky is left out: it needs an app password, not OAuth. */
-export const SOCIAL_PLATFORMS = ['tiktok', 'tiktok_business', 'instagram', 'youtube', 'facebook', 'x', 'threads', 'linkedin', 'pinterest'] as const;
+/**
+ * The platforms a user can connect. Bluesky is left out (it needs an app password, not OAuth); X,
+ * LinkedIn and Pinterest are left out for now.
+ */
+export const SOCIAL_PLATFORMS = ['tiktok', 'tiktok_business', 'instagram', 'youtube', 'facebook', 'threads'] as const;
 export type SocialPlatform = (typeof SOCIAL_PLATFORMS)[number];
 
 export interface SocialAccount {

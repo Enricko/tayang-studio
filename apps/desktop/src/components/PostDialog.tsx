@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useCloudError } from '@/components/SocialAccounts';
+import { PlatformLogo } from '@/components/PlatformLogo';
 import { defaultSlot, localToIso } from '@/components/ScheduleDialog';
 import { cloudErrorCode, platformName, socialAccounts, socialPost, socialPostStatus, type CloudErrorCode } from '@/lib/cloud';
 import { listProjects } from '@/lib/ipc';
@@ -152,6 +153,7 @@ export function PostDialog({
               {accounts.map((a) => (
                 <label key={a.id} className="flex cursor-pointer items-center gap-3 text-[13px]">
                   <Checkbox checked={picked.has(a.id)} onCheckedChange={() => toggle(a.id)} />
+                  <PlatformLogo platform={a.platform} size={18} />
                   <span className="min-w-0 flex-1 truncate">{a.username ? `@${a.username}` : platformName(a.platform)}</span>
                   <span className="text-xs text-text-3">{platformName(a.platform)}</span>
                 </label>

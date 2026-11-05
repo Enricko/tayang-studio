@@ -1737,8 +1737,27 @@ describe('Videos schedule action', () => {
   });
 });
 
+/** Settings shows one tab at a time: open the one a test is about. */
+const openSettingsTab = (tab: string) => useApp.setState({ route: { name: 'settings', tab } });
+
 describe('Settings', () => {
+  it('shows one tab at a time and remembers the last one', async () => {
+    localStorage.clear();
+    useApp.setState({ route: { name: 'settings' } });
+    const { unmount } = render(<SettingsScreen />);
+    expect(await screen.findByRole('tab', { name: 'General' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.queryByRole('switch', { name: 'Keep Tayang running in the background' })).toBeNull();
+    await userEvent.click(screen.getByRole('tab', { name: 'Agents' }));
+    expect(await screen.findByRole('switch', { name: 'Keep Tayang running in the background' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { level: 2, name: 'General' })).toBeNull();
+    unmount();
+    render(<SettingsScreen />);
+    expect(await screen.findByRole('tab', { name: 'Agents' })).toHaveAttribute('aria-selected', 'true');
+    localStorage.clear();
+  });
+
   it('background mode saves through updateSettings; open at login is disabled until it is on', async () => {
+    openSettingsTab('agents');
     render(<SettingsScreen />);
     expect(await screen.findByRole('switch', { name: 'Open at login' })).toBeDisabled();
     const bg = screen.getByRole('switch', { name: 'Keep Tayang running in the background' });
@@ -1750,6 +1769,7 @@ describe('Settings', () => {
   it('says so, in the user language, when there is no system tray for background mode, and shows it off', async () => {
     vi.mocked(ipc.updateSettings).mockRejectedValueOnce(new Error('tray-unavailable'));
     vi.mocked(ipc.getSettings).mockResolvedValue({ ...settings, backgroundMode: false });
+    openSettingsTab('agents');
     render(<SettingsScreen />);
     await userEvent.click(await screen.findByRole('switch', { name: 'Keep Tayang running in the background' }));
     expect(await screen.findByText("Background mode needs a system tray, which isn't available here")).toBeInTheDocument();
@@ -1760,6 +1780,7 @@ describe('Settings', () => {
 
   it('the test notification button sends one and explains what to check; a denial or error is said too', async () => {
     vi.mocked(sendTestNotification).mockResolvedValueOnce(true).mockResolvedValueOnce(false).mockRejectedValueOnce(new Error('no toast'));
+    openSettingsTab('agents');
     render(<SettingsScreen />);
     const btn = await screen.findByRole('button', { name: 'Send a test notification' });
     await userEvent.click(btn);
@@ -1772,12 +1793,14 @@ describe('Settings', () => {
 
   it('the test notification button is in Indonesian too', async () => {
     setUiLanguage('id');
+    openSettingsTab('agents');
     render(<SettingsScreen />);
     expect(await screen.findByRole('button', { name: 'Kirim notifikasi percobaan' })).toBeInTheDocument();
   });
 
   it('open at login enables the OS login item, then saves', async () => {
     useApp.setState({ settings: { ...settings, backgroundMode: true } });
+    openSettingsTab('agents');
     render(<SettingsScreen />);
     await userEvent.click(await screen.findByRole('switch', { name: 'Open at login' }));
     await waitFor(() => expect(ipc.updateSettings).toHaveBeenCalledWith({ openAtLogin: true }));
@@ -1787,6 +1810,7 @@ describe('Settings', () => {
   it('shows an error and keeps the setting when the OS login item fails', async () => {
     vi.mocked(autostart.enable).mockRejectedValueOnce(new Error('denied by the system'));
     useApp.setState({ settings: { ...settings, backgroundMode: true } });
+    openSettingsTab('agents');
     render(<SettingsScreen />);
     await userEvent.click(await screen.findByRole('switch', { name: 'Open at login' }));
     expect(await screen.findByText(/Couldn't change that: denied by the system/)).toBeInTheDocument();
@@ -1795,6 +1819,7 @@ describe('Settings', () => {
 
   it('turning the background off also turns off open at login', async () => {
     useApp.setState({ settings: { ...settings, backgroundMode: true, openAtLogin: true } });
+    openSettingsTab('agents');
     render(<SettingsScreen />);
     await userEvent.click(await screen.findByRole('switch', { name: 'Keep Tayang running in the background' }));
     await waitFor(() => expect(ipc.updateSettings).toHaveBeenCalledWith({ backgroundMode: false, openAtLogin: false }));
@@ -1802,6 +1827,7 @@ describe('Settings', () => {
   });
 
   it('toggles frameCheck through updateSettings', async () => {
+    openSettingsTab('agents');
     render(<SettingsScreen />);
     const sw = await screen.findByRole('switch', { name: 'Check every frame before showing me' });
     await userEvent.click(sw);
@@ -1809,6 +1835,7 @@ describe('Settings', () => {
   });
 
   it('toggles auto mode through updateSettings and explains it', async () => {
+    openSettingsTab('agents');
     render(<SettingsScreen />);
     const sw = await screen.findByRole('switch', { name: 'Auto mode for chats' });
     expect(screen.getByText('Autopilots always use Auto mode.')).toBeInTheDocument();
@@ -1823,6 +1850,7 @@ describe('Settings', () => {
   });
 
   it('toggles shareInstallStats through updateSettings and explains what is sent', async () => {
+    openSettingsTab('account');
     render(<SettingsScreen />);
     const sw = await screen.findByRole('switch', { name: 'Share anonymous install stats' });
     expect(sw).toBeChecked();
@@ -1836,6 +1864,7 @@ describe('Settings', () => {
   });
 
   it('edits the API address and explains what it is for', async () => {
+    openSettingsTab('account');
     render(<SettingsScreen />);
     const input = await screen.findByLabelText('API address');
     expect(input).toHaveValue('https://studio.tayang.app/api');
@@ -1849,6 +1878,7 @@ describe('Settings', () => {
   });
 
   it('rejects an API address that is not http(s)', async () => {
+    openSettingsTab('account');
     render(<SettingsScreen />);
     const input = await screen.findByLabelText('API address');
     await userEvent.clear(input);
@@ -1860,6 +1890,7 @@ describe('Settings', () => {
 
   it('clearing the API address resets it to the default', async () => {
     useApp.setState({ settings: { ...settings, apiUrl: 'http://localhost:8787/api' } });
+    openSettingsTab('account');
     render(<SettingsScreen />);
     const input = await screen.findByLabelText('API address');
     await userEvent.clear(input);
@@ -1868,6 +1899,7 @@ describe('Settings', () => {
   });
 
   it('signs in with Google through the API, not tayang.app', async () => {
+    openSettingsTab('account');
     render(<SettingsScreen />);
     expect(screen.queryByRole('button', { name: /tayang\.app/ })).not.toBeInTheDocument();
     await userEvent.click(await screen.findByRole('button', { name: 'Sign in with Google' }));
@@ -1877,6 +1909,7 @@ describe('Settings', () => {
   });
 
   it('says existing projects stay put when the working folder changes', async () => {
+    openSettingsTab('render');
     render(<SettingsScreen />);
     expect(await screen.findByText('Existing projects stay where they are')).toBeInTheDocument();
   });

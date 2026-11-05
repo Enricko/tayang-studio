@@ -30,6 +30,7 @@ import { cloudErrorCode } from '@/lib/cloud';
 import { SocialAccounts } from '@/components/SocialAccounts';
 import { PostDialog } from '@/components/PostDialog';
 import { Social } from '@/screens/Social';
+import { UsageTab } from '@/components/UsageTab';
 import { listProjects } from '@/lib/ipc';
 import { useApp } from '@/state/app';
 import { useAuth } from '@/state/auth';
@@ -84,14 +85,15 @@ describe('cloudErrorCode', () => {
 });
 
 describe('SocialAccounts in Settings', () => {
-  it('shows credits and auto-posts left and the connected accounts, and disconnects one', async () => {
+  it('shows the auto-posts left and the connected accounts, and disconnects one', async () => {
     vi.mocked(cloud.cloudUsage).mockResolvedValue(usage(90));
     vi.mocked(cloud.socialAccounts).mockResolvedValue([acct('sa_1', 'tiktok', 'oyen'), acct('sa_2', 'youtube', null, 'disconnected')]);
     vi.mocked(cloud.socialDisconnect).mockResolvedValue();
     render(<SocialAccounts />);
     expect(await screen.findByText('@oyen')).toBeInTheDocument();
-    expect(screen.getByText('165 of 165 left')).toBeInTheDocument();
-    expect(screen.getByText('86 of 90 left')).toBeInTheDocument();
+    expect(screen.getByText('86 auto-posts left this month')).toBeInTheDocument();
+    // Credits are in Settings › Usage now.
+    expect(screen.queryByText('165 of 165 left')).not.toBeInTheDocument();
     expect(screen.getByText('Reconnect')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Disconnect oyen' }));
     expect(cloud.socialDisconnect).toHaveBeenCalledWith('sa_1');
@@ -105,7 +107,11 @@ describe('SocialAccounts in Settings', () => {
     render(<SocialAccounts />);
     expect(await screen.findByText(/No accounts yet/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Connect account' }));
-    await userEvent.click(await screen.findByRole('menuitem', { name: 'TikTok' }));
+    const menu = await screen.findByRole('menu');
+    expect(within(menu).getAllByRole('menuitem').map((m) => m.textContent)).toEqual([
+      'TikTok', 'TikTok Business', 'Instagram', 'YouTube', 'Facebook', 'Threads',
+    ]);
+    await userEvent.click(within(menu).getByRole('menuitem', { name: 'TikTok' }));
     expect(cloud.socialConnect).toHaveBeenCalledWith('tiktok');
     expect(await screen.findByText(/Finish connecting TikTok in your browser/)).toBeInTheDocument();
   });
@@ -230,5 +236,25 @@ describe('Social media screen', () => {
     vi.mocked(listProjects).mockResolvedValue([project]);
     render(<Social />);
     expect(await screen.findByText(/Nothing posted yet/)).toBeInTheDocument();
+  });
+});
+
+describe('Settings › Usage', () => {
+  it('shows the plan\'s credits and auto-posts with meters', async () => {
+    vi.mocked(cloud.cloudUsage).mockResolvedValue(usage(90));
+    render(<UsageTab onAccount={() => {}} />);
+    expect(await screen.findByText('86 of 90 left')).toBeInTheDocument();
+    expect(screen.getByText('165 of 165 left')).toBeInTheDocument();
+    expect(screen.getByRole('progressbar', { name: 'Auto-posts' })).toHaveAttribute('aria-valuenow', '4');
+    expect(screen.getByText('Your agents')).toBeInTheDocument();
+  });
+
+  it('signed out, points to the Account tab', async () => {
+    useAuth.setState({ status: { state: 'signed-out', signedIn: false } as never });
+    const onAccount = vi.fn();
+    render(<UsageTab onAccount={onAccount} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Go to Account' }));
+    expect(onAccount).toHaveBeenCalled();
+    expect(cloud.cloudUsage).not.toHaveBeenCalled();
   });
 });

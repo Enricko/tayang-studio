@@ -24,7 +24,7 @@ export type Route =
   | { name: 'autopilot-wizard'; /** Editing this autopilot; none for a new one. */ id?: string }
   | { name: 'agents' }
   | { name: 'calendar' }
-  | { name: 'settings' }
+  | { name: 'settings'; /** The tab to open on (Settings' own id). */ tab?: string }
   /** Full window, like onboarding. `from` is where Back returns to; `plan` is picked first. */
   | { name: 'plans'; from?: 'settings' | 'autopilot'; plan?: PaidPlanId };
 

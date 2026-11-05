@@ -131,7 +131,8 @@ describe('Indonesian interface', () => {
     expect(updateSettings).toHaveBeenCalledWith({ uiLanguage: 'id' });
     expect(useApp.getState().settings?.uiLanguage).toBe('id');
     expect(document.documentElement.lang).toBe('id');
-    expect(screen.getByRole('heading', { level: 2, name: 'Default video' })).toBeInTheDocument();
+    // The section names follow too.
+    expect(screen.getByRole('tab', { name: 'Default video' })).toBeInTheDocument();
     // and back, with no restart
     await userEvent.click(within(screen.getByRole('tablist', { name: 'Bahasa' })).getByRole('tab', { name: 'English' }));
     expect(await screen.findByRole('heading', { level: 1, name: 'Settings' })).toBeInTheDocument();

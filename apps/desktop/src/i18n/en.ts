@@ -196,7 +196,7 @@ export const en = {
   settings: {
     title: 'Settings',
     sectionsAria: 'Settings sections',
-    sections: { general: 'General', agents: 'Agents', video: 'Video defaults', render: 'Rendering', tools: 'Tools', archive: 'Archive', account: 'Account' },
+    sections: { general: 'General', agents: 'Agents', video: 'Video defaults', render: 'Rendering', tools: 'Tools', usage: 'Usage', archive: 'Archive', account: 'Account' },
     saveError: "Couldn't save: {{message}}",
     language: 'Language',
     languageHint: 'The language of Tayang and your agent’s replies. Videos are set separately in Video defaults',
@@ -556,6 +556,7 @@ export const en = {
     },
   },
   cloud: {
+    postsLeftShort: '{{count}} auto-posts left this month',
     title: 'Credits and auto-post',
     refresh: 'Refresh',
     credits: 'AI credits',
@@ -652,6 +653,13 @@ export const en = {
     checking: 'Checking…',
     upToDate: "You're on the latest version",
     devBuild: 'Updates are off in development builds',
+  },
+  usageTab: {
+    tayang: 'Tayang plan',
+    resets: 'resets {{date}}',
+    signedOut: 'Sign in to your Tayang account to see your AI credits and auto-posts.',
+    toAccount: 'Go to Account',
+    agents: 'Your agents',
   },
   usage: {
     notYet: 'Usage isn\'t available for {{agent}} yet',

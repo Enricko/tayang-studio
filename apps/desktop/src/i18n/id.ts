@@ -198,7 +198,7 @@ export const id: Translations = {
   settings: {
     title: 'Pengaturan',
     sectionsAria: 'Bagian pengaturan',
-    sections: { general: 'Umum', agents: 'Agen', video: 'Default video', render: 'Render', tools: 'Alat', archive: 'Arsip', account: 'Akun' },
+    sections: { general: 'Umum', agents: 'Agen', video: 'Default video', render: 'Render', tools: 'Alat', usage: 'Pemakaian', archive: 'Arsip', account: 'Akun' },
     saveError: 'Belum tersimpan: {{message}}',
     language: 'Bahasa',
     languageHint: 'Bahasa tampilan Tayang dan balasan agenmu. Bahasa video diatur terpisah di Default video',
@@ -550,6 +550,7 @@ export const id: Translations = {
     },
   },
   cloud: {
+    postsLeftShort: 'sisa {{count}} posting otomatis bulan ini',
     title: 'Kredit dan posting otomatis',
     refresh: 'Muat ulang',
     credits: 'Kredit AI',
@@ -646,6 +647,13 @@ export const id: Translations = {
     checking: 'Mengecek…',
     upToDate: 'Sudah versi terbaru',
     devBuild: 'Pembaruan mati di build pengembangan',
+  },
+  usageTab: {
+    tayang: 'Paket Tayang',
+    resets: 'reset {{date}}',
+    signedOut: 'Masuk ke akun Tayang untuk melihat kredit AI dan posting otomatis.',
+    toAccount: 'Ke Akun',
+    agents: 'Agenmu',
   },
   usage: {
     notYet: 'Pemakaian {{agent}} belum tersedia',

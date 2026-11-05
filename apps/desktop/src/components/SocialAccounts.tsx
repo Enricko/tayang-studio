@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Plus, RefreshCw, Unplug } from 'lucide-react';
 import { SOCIAL_PLATFORMS, type SocialAccount, type SocialPlatform, type UsageResponse } from '@tayang/shared';
 import { Button } from '@/components/Button';
+import { PlatformLogo } from '@/components/PlatformLogo';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { cloudErrorCode, cloudUsage, platformName, socialAccounts, socialConnect, socialDisconnect, type CloudErrorCode } from '@/lib/cloud';
 import { useApp } from '@/state/app';
@@ -88,7 +89,10 @@ export function SocialAccounts() {
   return (
     <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4">
       <div className="flex items-center gap-2">
-        <span className="text-sm font-medium">{t('cloud.title')}</span>
+        <span className="text-sm font-medium">{t('cloud.accounts')}</span>
+        {usage && usage.posts.allowance > 0 && (
+          <span className="text-xs text-text-3">{t('cloud.postsLeftShort', { count: usage.posts.remaining })}</span>
+        )}
         <button
           type="button"
           aria-label={t('cloud.refresh')}
@@ -98,30 +102,18 @@ export function SocialAccounts() {
         >
           <RefreshCw size={14} aria-hidden="true" />
         </button>
-      </div>
-      {usage && (
-        <dl className="m-0 grid grid-cols-2 gap-3">
-          {(['credits', 'posts'] as const).map((m) => (
-            <div key={m} className="flex flex-col gap-0.5 rounded-md bg-raised/50 px-3 py-2">
-              <dt className="text-xs text-text-3">{t(`cloud.${m}`)}</dt>
-              <dd className="m-0 font-mono text-sm">{t('cloud.left', { left: usage[m].remaining, of: usage[m].allowance })}</dd>
-            </div>
-          ))}
-        </dl>
-      )}
-      <div className="flex items-center gap-2 pt-1">
-        <span className="text-[13px] text-text-2">{t('cloud.accounts')}</span>
         {!noPosts && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="secondary" className="ml-auto h-8 px-3 text-[13px]">
+              <Button variant="secondary" className="h-8 px-3 text-[13px]">
                 <Plus size={14} aria-hidden="true" />
                 {t('cloud.connect')}
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-52 border-hairline bg-card">
               {SOCIAL_PLATFORMS.map((p) => (
-                <DropdownMenuItem key={p} onSelect={() => void connect(p)} className="h-9 text-[13px]">
+                <DropdownMenuItem key={p} onSelect={() => void connect(p)} className="h-9 gap-2.5 text-[13px]">
+                  <PlatformLogo platform={p} size={18} />
                   {platformName(p)}
                 </DropdownMenuItem>
               ))}
@@ -142,11 +134,15 @@ export function SocialAccounts() {
         <ul className="m-0 flex list-none flex-col p-0">
           {(accounts ?? []).map((a) => (
             <li key={a.id} className="flex h-10 items-center gap-3 border-t border-[#222] first:border-t-0">
-              {a.profilePhotoUrl ? (
-                <img src={a.profilePhotoUrl} alt="" className="size-6 rounded-full" />
-              ) : (
-                <span aria-hidden="true" className="size-6 rounded-full bg-raised" />
-              )}
+              {/* The profile photo with the platform's logo on its corner. */}
+              <span className="relative shrink-0">
+                {a.profilePhotoUrl ? (
+                  <img src={a.profilePhotoUrl} alt="" className="size-7 rounded-full" />
+                ) : (
+                  <span aria-hidden="true" className="block size-7 rounded-full bg-raised" />
+                )}
+                <PlatformLogo platform={a.platform} size={14} className="absolute -right-1 -bottom-1 ring-2 ring-card" />
+              </span>
               <span className="min-w-0 flex-1 truncate text-[13px]">
                 {a.username ? `@${a.username}` : platformName(a.platform)}
                 <span className="pl-2 text-xs text-text-3">{platformName(a.platform)}</span>
