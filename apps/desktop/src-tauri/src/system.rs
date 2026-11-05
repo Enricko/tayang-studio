@@ -552,7 +552,9 @@ mod path_tests {
         std::fs::write(h.join(".nvm/versions/node/v9.0.0/bin/touch"), "").unwrap();
         std::fs::create_dir_all(h.join(".fnm/aliases/default/bin")).unwrap();
         std::fs::create_dir_all(h.join(".volta/bin")).unwrap();
-        std::fs::write(h.join(".volta/bin/npx"), "").unwrap();
+        // A name no real machine has: the system folders in the list (a CI runner's /usr/local/bin has npx)
+        // must not answer for it.
+        std::fs::write(h.join(".volta/bin/tayang-test-tool"), "").unwrap();
 
         let existing = std::env::join_paths(["/usr/bin"]).unwrap();
         let dirs = search_dirs(Some(h), Some(&existing), None);
@@ -566,7 +568,7 @@ mod path_tests {
         for d in &dirs {
             assert!(path.contains(d), "{d:?} missing from PATH");
         }
-        assert_eq!(find_in(&dirs, "npx", &[String::new()]), Some(h.join(".volta/bin/npx")));
+        assert_eq!(find_in(&dirs, "tayang-test-tool", &[String::new()]), Some(h.join(".volta/bin/tayang-test-tool")));
     }
 
     #[test]
