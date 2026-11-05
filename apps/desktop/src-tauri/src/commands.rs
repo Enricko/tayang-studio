@@ -914,14 +914,27 @@ fn urlencode(s: &str) -> String {
         .collect()
 }
 
+/// The video's title for the platforms that show one (YouTube, TikTok), as PostForMe's per-platform
+/// settings; the caption stays the description. None without a title. YouTube allows 100 characters.
+pub fn title_configurations(title: Option<&str>) -> Option<serde_json::Value> {
+    let t: String = title.map(str::trim).filter(|t| !t.is_empty())?.chars().take(100).collect();
+    Some(serde_json::json!({
+        "youtube": { "title": t },
+        "tiktok": { "title": t },
+        "tiktok_business": { "title": t },
+    }))
+}
+
 /// Posts the project's latest render to `account_ids`, now or at `scheduled_at`: the video goes to
 /// PostForMe's storage first, then the post is made and charged one auto-post per account. A retry
 /// passes the same `client_request_id`, so it never posts twice. The project keeps the post id.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // a Tauri command takes its fields as arguments
 pub async fn social_post(
     state: State<'_, AppState>,
     auth: State<'_, Arc<Auth>>,
     project_id: String,
+    title: Option<String>,
     caption: String,
     account_ids: Vec<String>,
     scheduled_at: Option<String>,
@@ -946,6 +959,9 @@ pub async fn social_post(
     });
     if let Some(at) = scheduled_at {
         body["scheduledAt"] = serde_json::Value::String(at);
+    }
+    if let Some(config) = title_configurations(title.as_deref()) {
+        body["platformConfigurations"] = config;
     }
     let out = after_cloud(&auth, &base, "post", crate::cloud::send(client, reqwest::Method::POST, &base, &token, "/v1/social/posts", Some(&body)).await)?;
     if let Some(post_id) = out.get("postId").and_then(serde_json::Value::as_str) {
@@ -2003,6 +2019,17 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn a_title_goes_to_the_platforms_that_show_one() {
+        assert_eq!(title_configurations(None), None);
+        assert_eq!(title_configurations(Some("  ")), None);
+        let c = title_configurations(Some(" Lampu lalu lintas ")).unwrap();
+        assert_eq!(c["youtube"]["title"], "Lampu lalu lintas");
+        assert_eq!(c["tiktok"]["title"], "Lampu lalu lintas");
+        let long = "x".repeat(150);
+        assert_eq!(title_configurations(Some(&long)).unwrap()["youtube"]["title"].as_str().unwrap().len(), 100);
+    }
 
     #[test]
     fn recent_images_looks_only_in_a_video_chats_folder() {

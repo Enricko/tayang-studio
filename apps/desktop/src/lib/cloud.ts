@@ -44,7 +44,7 @@ export const socialAccounts = () => invoke<{ accounts: SocialAccount[] }>('socia
 export const socialConnect = (platform: SocialPlatform) => invoke<void>('social_connect', { platform });
 export const socialDisconnect = (id: string) => invoke<void>('social_disconnect', { id });
 /** Uploads the project's latest render and posts it; pass the same `clientRequestId` to retry. */
-export const socialPost = (o: { projectId: string; caption: string; accountIds: string[]; scheduledAt: string | null; clientRequestId: string }) =>
+export const socialPost = (o: { projectId: string; title?: string | null; caption: string; accountIds: string[]; scheduledAt: string | null; clientRequestId: string }) =>
   invoke<CreatePostResponse>('social_post', o);
 export const socialPostStatus = (postId: string) => invoke<PostDetails>('social_post_status', { postId });
 
