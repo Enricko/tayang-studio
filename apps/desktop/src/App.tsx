@@ -24,6 +24,7 @@ import { Plans } from '@/screens/Plans';
 import { Settings } from '@/screens/Settings';
 import { Style } from '@/screens/Style';
 import { Videos } from '@/screens/Videos';
+import { Social } from '@/screens/Social';
 import { Connect } from '@/screens/onboarding/Connect';
 import { Requirements } from '@/screens/onboarding/Requirements';
 import { AccountStep } from '@/screens/onboarding/AccountStep';
@@ -38,6 +39,7 @@ const SIDEBAR_KEY: Partial<Record<Route['name'], SidebarKey>> = {
   'chat-new': 'chat',
   chat: 'chat',
   videos: 'videos',
+  social: 'social',
   style: 'style',
   autopilot: 'autopilot',
   'autopilot-wizard': 'autopilot',
@@ -197,6 +199,8 @@ function Shell({ route }: { route: Route }) {
           <ChatRoute />
         ) : route.name === 'videos' ? (
           <Videos />
+        ) : route.name === 'social' ? (
+          <Social />
         ) : route.name === 'style' ? (
           <Style />
         ) : route.name === 'autopilot' || route.name === 'autopilot-wizard' ? (

@@ -17,6 +17,8 @@ export type Route =
       styleId?: string;
     }
   | { name: 'videos' }
+  /** Social accounts and the videos posted to them. */
+  | { name: 'social' }
   | { name: 'style'; /** Focus the link box when the screen opens. */ focusLink?: boolean }
   | { name: 'autopilot'; /** One autopilot's detail view. */ id?: string }
   | { name: 'autopilot-wizard'; /** Editing this autopilot; none for a new one. */ id?: string }

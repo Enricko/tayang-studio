@@ -15,12 +15,22 @@ vi.mock('@/lib/cloud', async (orig) => {
     socialPostStatus: vi.fn(),
   };
 });
-vi.mock('@/lib/ipc', () => ({ listProjects: vi.fn().mockResolvedValue([]) }));
+vi.mock('@/lib/ipc', () => ({ listProjects: vi.fn().mockResolvedValue([]), videoThumbnail: vi.fn().mockResolvedValue(null), assetUrl: (p: string) => p }));
+vi.mock('@/lib/auth', () => ({
+  authStatus: vi.fn(async () => null),
+  onAuthChanged: vi.fn(async () => () => {}),
+  authStart: vi.fn(),
+  authCancel: vi.fn(),
+  authLogout: vi.fn(),
+  authErrorCode: vi.fn(),
+}));
 
 import * as cloud from '@/lib/cloud';
 import { cloudErrorCode } from '@/lib/cloud';
 import { SocialAccounts } from '@/components/SocialAccounts';
 import { PostDialog } from '@/components/PostDialog';
+import { Social } from '@/screens/Social';
+import { listProjects } from '@/lib/ipc';
 import { useApp } from '@/state/app';
 import { useAuth } from '@/state/auth';
 
@@ -175,5 +185,50 @@ describe('PostDialog', () => {
     open();
     await userEvent.click(await screen.findByRole('button', { name: 'Connect an account' }));
     expect(useApp.getState().route).toEqual({ name: 'settings' });
+  });
+});
+
+describe('Social media screen', () => {
+  it('signed out, offers to sign in instead of the accounts', () => {
+    useAuth.setState({ status: { state: 'signed-out', signedIn: false } as never, flow: { phase: 'closed' } });
+    render(<Social />);
+    expect(screen.getByRole('heading', { name: 'Social media' })).toBeInTheDocument();
+    expect(screen.getByText('Post your videos from Tayang')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Sign in with Google' })).toBeInTheDocument();
+    expect(cloud.socialAccounts).not.toHaveBeenCalled();
+  });
+
+  it('shows the accounts and every posted video with how it went', async () => {
+    vi.mocked(cloud.cloudUsage).mockResolvedValue(usage(90));
+    vi.mocked(cloud.socialAccounts).mockResolvedValue([acct('sa_1', 'tiktok', 'oyen')]);
+    vi.mocked(listProjects).mockResolvedValue([
+      { ...project, id: 'p1', title: 'Pelangi', socialPostId: 'sp_1', postedAt: '2026-11-05T10:00:00.000Z' },
+      { ...project, id: 'p2', title: 'Belum diposting' },
+    ]);
+    vi.mocked(cloud.socialPostStatus).mockResolvedValue({
+      postId: 'sp_1',
+      status: 'processed',
+      scheduledAt: null,
+      results: [
+        { socialAccountId: 'sa_1', success: true, error: null, url: 'https://tiktok.com/@oyen/video/1' },
+        { socialAccountId: 'sa_2', success: false, error: 'video too long', url: null },
+      ],
+    });
+    render(<Social />);
+    expect(await screen.findByText('@oyen')).toBeInTheDocument();
+    const posts = await screen.findByRole('list', { name: 'Posts' });
+    expect(within(posts).getByText('Pelangi')).toBeInTheDocument();
+    expect(within(posts).queryByText('Belum diposting')).not.toBeInTheDocument();
+    expect(await within(posts).findByText('1 posted')).toBeInTheDocument();
+    expect(within(posts).getByText('1 failed')).toBeInTheDocument();
+    expect(within(posts).getByRole('link', { name: 'Open the post of Pelangi' })).toHaveAttribute('href', 'https://tiktok.com/@oyen/video/1');
+  });
+
+  it('says so when nothing was posted yet', async () => {
+    vi.mocked(cloud.cloudUsage).mockResolvedValue(usage(90));
+    vi.mocked(cloud.socialAccounts).mockResolvedValue([]);
+    vi.mocked(listProjects).mockResolvedValue([project]);
+    render(<Social />);
+    expect(await screen.findByText(/Nothing posted yet/)).toBeInTheDocument();
   });
 });

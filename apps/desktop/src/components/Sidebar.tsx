@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Archive, Calendar, LayoutPanelLeft, MessageCircle, Palette, Plane, Plus, Smartphone, SlidersHorizontal } from 'lucide-react';
+import { Archive, Calendar, LayoutPanelLeft, Share2, MessageCircle, Palette, Plane, Plus, Smartphone, SlidersHorizontal } from 'lucide-react';
 import type { RecentChat } from '@tayang/shared';
 import logo from '@/assets/brand/tayang-horizontal-reversed-color.svg';
 import mark from '@/assets/brand/oyen-symbol-color.svg';
@@ -30,11 +30,12 @@ const DOT: Record<ChatStatus, string> = {
   idle: 'bg-[#4A4A4A]',
 };
 
-export type SidebarKey = 'chat' | 'videos' | 'style' | 'autopilot' | 'agents' | 'calendar' | 'settings';
+export type SidebarKey = 'chat' | 'videos' | 'social' | 'style' | 'autopilot' | 'agents' | 'calendar' | 'settings';
 
 const NAV: { key: SidebarKey; icon: typeof Calendar; route: Route }[] = [
   { key: 'chat', icon: MessageCircle, route: { name: 'chat-new' } },
   { key: 'videos', icon: Smartphone, route: { name: 'videos' } },
+  { key: 'social', icon: Share2, route: { name: 'social' } },
   { key: 'style', icon: Palette, route: { name: 'style' } },
   { key: 'autopilot', icon: Plane, route: { name: 'autopilot' } },
   { key: 'agents', icon: LayoutPanelLeft, route: { name: 'agents' } },
