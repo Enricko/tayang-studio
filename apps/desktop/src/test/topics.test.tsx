@@ -12,6 +12,7 @@ vi.mock('@/lib/ipc', () => ({
   updateSlot: vi.fn(),
   listProjects: vi.fn(),
   createProject: vi.fn(),
+  makeStyleSheets: vi.fn(async () => []),
   keepStyleRefs: vi.fn(async () => []),
   copyStyleRefs: vi.fn(async () => 0),
   createChat: vi.fn(),

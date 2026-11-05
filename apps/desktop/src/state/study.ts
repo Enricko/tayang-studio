@@ -11,6 +11,7 @@ import {
   deleteJob,
   listStyles,
   keepStyleRefs,
+  makeStyleSheets,
   makeStylePreview,
   readStyleResult,
   saveStyle,
@@ -167,15 +168,23 @@ export const useStudy = create<StudyState>((set, get) => {
       // Neither fails the study.
       let made: Awaited<ReturnType<typeof makeStylePreview>> = null;
       let references: string[] = [];
+      // Contact sheets of the whole source first: the preview deletes the source.
+      try {
+        references = await makeStyleSheets(studyId, style.id);
+      } catch {
+        /* no sheets: the frames the agent kept, if any */
+      }
       try {
         made = await makeStylePreview(studyId, style.id);
       } catch {
         /* the style is saved without a preview */
       }
-      try {
-        references = await keepStyleRefs(studyId, style.id);
-      } catch {
-        /* the style is saved without reference frames */
+      if (!references.length) {
+        try {
+          references = await keepStyleRefs(studyId, style.id);
+        } catch {
+          /* the style is saved without reference frames */
+        }
       }
       if (made || references.length) {
         await saveStyle({

@@ -34,7 +34,7 @@ function styleSection(style: Style): string {
     ...(style.palette?.length ? [`Palette: ${style.palette.join(', ')}`] : []),
     ...(refs.length
       ? [
-          `Reference frames: ${refs.join(', ')}. Open them before you start and keep them open: your frames must look like them (rendering technique, characters, palette, lighting, camera, captions). Match the look, never copy their content.`,
+          `Reference contact sheets: ${refs.join(', ')}. Each is a 4x3 grid of frames from the source video in time order (left to right, top to bottom); together they show the whole video. Open them all before you start and keep them open: your frames must look like them (rendering technique, characters, palette, lighting, camera, captions, pacing). Match the look, never copy their content.`,
         ]
       : []),
   ].join('\n');

@@ -149,21 +149,20 @@ export function buildStudyStylePrompt(url: string, outDir: string): string {
   const sep = outDir.includes('\\') && !outDir.includes('/') ? '\\' : '/';
   const base = outDir.replace(/[\\/]+$/, '');
   const stylePath = `${base}${sep}style.json`;
-  const refsDir = `${base}${sep}refs`;
+  const sheetsDir = `${base}${sep}sheets`;
   const sourceTemplate = `${base}${sep}source.%(ext)s`;
   return [
     `Study the visual style of this video so another agent can recreate the look faithfully: ${url}`,
     `1. Download it with \`yt-dlp\` into the folder \`"${outDir}"\`: \`yt-dlp -f "bv*[height<=1080]+ba/b[height<=1080]/b" -o "${sourceTemplate}" <the link>\`.`,
-    '2. With ffmpeg, sample about 48 frames: use scene detection plus a regular interval, so you cover cuts and steady moments.',
-    '3. Look at the frames closely and describe the camera, pacing, type, color, captions and transitions.',
-    `4. Pick the 6 frames that best show the look (characters, environment, lighting, captions, a transition) and save them as \`"${refsDir}"\` ref-1.jpg … ref-6.jpg, 540 px wide, JPEG.`,
-    `5. Write \`"${stylePath}"\` as: { "name": string, "notes": { "camera": string, "pacing": string, "type": string, "color": string, "captions": string, "transitions": string }, "prompt": string, "engine": "remotion" | "hyperframes", "build": string, "palette": string[] }.`,
+    `2. Make contact sheets so you can see the whole video at once: 48 frames sampled evenly across it, 4x3 per image, in time order (left to right, top to bottom). Get the duration with ffprobe, then: \`ffmpeg -i <source> -vf "fps=48/<duration>,scale=320:-2,tile=4x3" -frames:v 4 -q:v 4 "${sheetsDir}/sheet-%02d.jpg"\` (create \`"${sheetsDir}"\` first). If a moment needs a closer look, take a single full-size frame of it too.`,
+    '3. Look at every sheet closely and describe the camera, pacing, type, color, captions and transitions. Use all the frames, not just the first ones: changes across the sheets are the pacing and the transitions.',
+    `4. Write \`"${stylePath}"\` as: { "name": string, "notes": { "camera": string, "pacing": string, "type": string, "color": string, "captions": string, "transitions": string }, "prompt": string, "engine": "remotion" | "hyperframes", "build": string, "palette": string[] }.`,
     '   - "name": a short style name. "prompt": a few short lines of direct instructions for the look.',
     '   - "engine": "remotion" when the look needs a real 3D world, 3D or 2.5D characters, depth, lighting or a moving 3D camera (build it with Remotion plus three.js via @remotion/three); "hyperframes" when it is flat 2D motion graphics, kinetic type or illustration.',
     '   - "build": a concrete technical recipe a developer can follow to rebuild this look with that engine: how the world and characters are made (geometry, materials, toon or flat shading, outlines), lighting, the camera rig and its moves (lens, speed), how captions are drawn (font style, size as % of frame height, stroke, position) and how transitions are done. Be specific; this is what decides whether the copy looks right.',
     '   - "palette": 5 to 8 of the main colours as #RRGGBB, measured from the frames.',
-    '6. Delete the sampled frames (keep the refs folder). Leave source.* in place; Tayang makes a short preview from it and then deletes it.',
-    'Copy the look, never the footage: no text, logos, characters\' names, music or clips from the source in the prompt or the recipe. The reference frames are only for comparing the look.',
+    '5. Delete any single frames you took (keep the sheets folder). Leave source.* in place; Tayang makes its own contact sheets and a short preview from it, then deletes it.',
+    'Copy the look, never the footage: no text, logos, characters\' names, music or clips from the source in the prompt or the recipe. The contact sheets are only for comparing the look.',
   ].join('\n');
 }
 

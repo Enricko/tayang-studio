@@ -39,6 +39,7 @@ vi.mock('@/lib/ipc', () => ({
     return clone(s);
   }),
   listProjects: vi.fn(async () => clone(db.projects)),
+  makeStyleSheets: vi.fn(async () => []),
   keepStyleRefs: vi.fn(async () => []),
   copyStyleRefs: vi.fn(async () => 0),
   createProject: vi.fn(async (input: { title: string; kind: Project['kind']; language: Project['language']; styleId?: string }) => {

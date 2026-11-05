@@ -50,7 +50,7 @@ export function frameCheckPrompt(opts: { engine?: 'hyperframes' | 'remotion'; re
     '2. Look at each still for overlapping elements, text that is cut off or outside the safe area, and timing that does not match the voice or captions.',
     ...(opts.references
       ? [
-          `   Compare each still with the reference frames in ${STYLE_REFS_DIR}/: the same rendering technique, character design, palette, lighting, camera framing and caption style. Anything that looks different is a problem to fix.`,
+          `   Then make a contact sheet of your render the same way as the references (\`ffmpeg -i <your render> -vf "fps=12/<duration>,scale=320:-2,tile=4x3" -frames:v 1 renders/check-sheet.jpg\`) and look at it side by side with the contact sheets in ${STYLE_REFS_DIR}/: the same rendering technique, character design, palette, lighting, camera framing, caption style and pacing. Anything that looks different is a problem to fix.`,
         ]
       : []),
     '3. Fix every problem you find, then render and look at the affected stills again.',

@@ -633,6 +633,51 @@ pub fn keep_style_refs(study_dir: &Path, out_dir: &Path) -> Result<Vec<PathBuf>>
     Ok(kept)
 }
 
+/// Frames per contact sheet (columns x rows) and frames sampled across the whole source.
+pub const SHEET_COLS: u32 = 4;
+pub const SHEET_ROWS: u32 = 3;
+const SHEET_FRAMES: u32 = 48;
+const SHEETS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(180);
+
+/// Contact sheets of a finished study's source: 48 frames sampled evenly across the whole video, 320 px
+/// wide, tiled 4x3 in time order into `sheet-01.jpg` … `sheet-04.jpg` in `out_dir` (replacing what it had).
+/// The source is left for the preview. None made (no source, no ffmpeg) leaves `out_dir` as it was.
+pub fn make_style_sheets(tools: &MediaTools, study_dir: &Path, out_dir: &Path) -> Result<Vec<PathBuf>> {
+    let Some(source) = source_files(study_dir).into_iter().max_by_key(|p| p.metadata().map(|m| m.len()).unwrap_or(0)) else {
+        return Ok(Vec::new());
+    };
+    let Ok(info) = probe_within(tools, &source, Some(SHEETS_TIMEOUT)) else { return Ok(Vec::new()) };
+    if info.duration_sec <= 0.0 {
+        return Ok(Vec::new());
+    }
+    let Some(name) = out_dir.file_name().map(|n| n.to_string_lossy().into_owned()) else { return Ok(Vec::new()) };
+    let tmp = out_dir.with_file_name(format!(".{name}.sheets.tmp"));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).map_err(|e| format!("Can't make the contact sheets: {e}"))?;
+    let os = |s: &str| std::ffi::OsString::from(s);
+    let sheets = SHEET_FRAMES / (SHEET_COLS * SHEET_ROWS);
+    let filter = format!(
+        "fps={SHEET_FRAMES}/{:.3},scale=320:-2,tile={SHEET_COLS}x{SHEET_ROWS}",
+        info.duration_sec
+    );
+    let mut args: Vec<std::ffi::OsString> = vec![os("-i")];
+    args.push(source.as_os_str().to_owned());
+    for a in ["-map", "0:v:0", "-an", "-sn", "-dn", "-vf", &filter, "-frames:v", &sheets.to_string(), "-q:v", "4"] {
+        args.push(os(a));
+    }
+    args.push(tmp.join("sheet-%02d.jpg").into_os_string());
+    if !ffmpeg_ok(tools, &args, SHEETS_TIMEOUT) || ref_images(&tmp).is_empty() {
+        let _ = std::fs::remove_dir_all(&tmp);
+        return Ok(Vec::new());
+    }
+    let _ = std::fs::remove_dir_all(out_dir);
+    if let Some(parent) = out_dir.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    std::fs::rename(&tmp, out_dir).map_err(|e| format!("Can't keep the contact sheets: {e}"))?;
+    Ok(ref_images(out_dir))
+}
+
 /// Copies a style's reference frames into `<project>/style-refs/`, where the brief points the agent.
 /// Returns how many were copied; a style without refs copies none.
 pub fn copy_style_refs(refs_dir: &Path, project_folder: &Path) -> Result<usize> {
@@ -1084,6 +1129,29 @@ mod tests {
             .unwrap();
         assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
         p
+    }
+
+    #[test]
+    fn contact_sheets_cover_the_whole_source_in_four_by_three_grids_and_keep_the_source() {
+        let Some(t) = test_tools() else { return };
+        let tmp = tempfile::tempdir().unwrap();
+        let study = tmp.path().join("study dir");
+        let source = make_source(&t, &study, "source.mp4");
+        let out = style_refs_dir(tmp.path(), "copied-1").unwrap();
+        let sheets = make_style_sheets(&t, &study, &out).unwrap();
+        let names: Vec<_> = sheets.iter().map(|p| p.file_name().unwrap().to_string_lossy().into_owned()).collect();
+        assert_eq!(names, vec!["sheet-01.jpg", "sheet-02.jpg", "sheet-03.jpg", "sheet-04.jpg"]);
+        // One sheet is 4 frames of 320 px across and 3 rows of 320x569 frames down.
+        let dims = Command::new(&t.ffprobe)
+            .args(["-v", "error", "-show_entries", "stream=width,height", "-of", "csv=p=0"])
+            .arg(&sheets[0])
+            .output()
+            .unwrap();
+        assert_eq!(String::from_utf8_lossy(&dims.stdout).trim(), "1280,1704");
+        assert!(source.is_file(), "the preview still needs the source");
+        // A study without a source makes none and leaves earlier sheets alone.
+        assert!(make_style_sheets(&t, &tmp.path().join("nothing"), &out).unwrap().is_empty());
+        assert!(out.join("sheet-01.jpg").is_file());
     }
 
     #[test]

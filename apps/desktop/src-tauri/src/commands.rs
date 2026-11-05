@@ -558,6 +558,20 @@ pub async fn make_style_preview(
         .map_err(err)?
 }
 
+/// Contact sheets of a finished study's source (48 frames across the whole video, 4x3 per sheet) as the
+/// style's references (`<app data>/style-refs/<style>`). Run before the preview, which deletes the source.
+#[tauri::command]
+pub async fn make_style_sheets(app: AppHandle, state: State<'_, AppState>, study_id: String, style_id: String) -> CmdResult<Vec<String>> {
+    let study = study_path(&state.working_for_study(&study_id), &study_id)?;
+    let data = app.path().app_data_dir().map_err(err)?;
+    let out = media::style_refs_dir(&data, &style_id).ok_or("That style id isn't valid")?;
+    let tools = state.media.clone();
+    let made = tauri::async_runtime::spawn_blocking(move || media::make_style_sheets(&tools, &study, &out))
+        .await
+        .map_err(err)??;
+    Ok(made.into_iter().map(|p| p.to_string_lossy().into_owned()).collect())
+}
+
 /// Keeps a finished study's reference frames as the style's own (`<app data>/style-refs/<style>`).
 /// Returns their paths; none when the study left no refs.
 #[tauri::command]

@@ -25,6 +25,7 @@ vi.mock('@/lib/ipc', () => ({
   readStyleResult: vi.fn(),
   studyDir: vi.fn(),
   makeStylePreview: vi.fn(),
+  makeStyleSheets: vi.fn(async () => []),
   keepStyleRefs: vi.fn(async () => []),
   copyStyleRefs: vi.fn(async () => 0),
   removeStudyDir: vi.fn().mockResolvedValue(undefined),
@@ -372,7 +373,7 @@ describe('Copied style recipe in the popup', () => {
     engine: 'remotion',
     build: 'three.js world inside Remotion',
     palette: ['#5BC8F5', '#F2C14E'],
-    references: ['/d/style-refs/copied-r/ref-1.jpg', '/d/style-refs/copied-r/ref-2.jpg'],
+    references: ['/d/style-refs/copied-r/sheet-01.jpg', '/d/style-refs/copied-r/sheet-02.jpg'],
   };
 
   it('shows the engine, the build recipe, the palette and the reference frames', async () => {
@@ -383,9 +384,9 @@ describe('Copied style recipe in the popup', () => {
     expect(within(dialog).getByText('three.js world inside Remotion')).toBeInTheDocument();
     expect(within(dialog).getByText('Remotion')).toBeInTheDocument();
     expect(within(dialog).getByLabelText('#5BC8F5')).toBeInTheDocument();
-    const refs = within(dialog).getAllByRole('img', { name: /Reference frame/ });
+    const refs = within(dialog).getAllByRole('img', { name: /Contact sheet/ });
     expect(refs).toHaveLength(2);
-    expect(refs[0]).toHaveAttribute('src', 'asset://localhost//d/style-refs/copied-r/ref-1.jpg');
+    expect(refs[0]).toHaveAttribute('src', 'asset://localhost//d/style-refs/copied-r/sheet-01.jpg');
   });
 
   it('Study again re-runs the study on the source link and keeps the same style', async () => {
@@ -979,9 +980,10 @@ describe('Study preview', () => {
     return { view, chatId };
   };
 
-  it('keeps the study\'s reference frames and saves the recipe with the style', async () => {
+  it('makes contact sheets of the source before the preview and saves them with the recipe', async () => {
     vi.mocked(ipc.makeStylePreview).mockResolvedValue(null);
-    vi.mocked(ipc.keepStyleRefs).mockResolvedValue(['/data/style-refs/x/ref-1.jpg', '/data/style-refs/x/ref-2.jpg']);
+    vi.mocked(ipc.makeStyleSheets).mockResolvedValue(['/data/style-refs/x/sheet-01.jpg', '/data/style-refs/x/sheet-02.jpg']);
+    vi.mocked(ipc.keepStyleRefs).mockClear();
     vi.mocked(ipc.readStyleResult).mockResolvedValue(
       JSON.stringify({ name: 'Storybook', notes: { camera: 'Dolly' }, prompt: 'p', engine: 'remotion', build: 'three.js', palette: ['#112233'] }),
     );
@@ -997,16 +999,18 @@ describe('Study preview', () => {
     updateHandlers.forEach((h) => h({ chatId, update: { kind: 'done', stopReason: 'end_turn' } }));
     await waitFor(() => expect(vi.mocked(ipc.upsertJob).mock.calls.at(-1)![0].status).toBe('done'));
     const studyId = useStudy.getState().studyId!;
-    expect(ipc.keepStyleRefs).toHaveBeenCalledWith(studyId, `copied-${studyId}`);
+    expect(ipc.makeStyleSheets).toHaveBeenCalledWith(studyId, `copied-${studyId}`);
+    expect(vi.mocked(ipc.makeStyleSheets).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(ipc.makeStylePreview).mock.invocationCallOrder.at(-1)!);
+    expect(ipc.keepStyleRefs).not.toHaveBeenCalled();
     expect(vi.mocked(ipc.saveStyle).mock.calls.at(-1)![0]).toMatchObject({
       engine: 'remotion',
       build: 'three.js',
       palette: ['#112233'],
-      references: ['/data/style-refs/x/ref-1.jpg', '/data/style-refs/x/ref-2.jpg'],
+      references: ['/data/style-refs/x/sheet-01.jpg', '/data/style-refs/x/sheet-02.jpg'],
     });
     view.unmount();
     useStudy.getState().dismiss();
-    vi.mocked(ipc.keepStyleRefs).mockResolvedValue([]);
+    vi.mocked(ipc.makeStyleSheets).mockResolvedValue([]);
   });
 
   it('a study run again saves over the same style id and keeps its creation date', async () => {

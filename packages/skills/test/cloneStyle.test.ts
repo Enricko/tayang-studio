@@ -15,19 +15,23 @@ const copied3d: Style = {
   engine: 'remotion',
   build: 'Three.js world inside Remotion (@remotion/three); flat 2D characters on billboards; toon shading.',
   palette: ['#5BC8F5', '#F2C14E', '#2E7D32'],
-  references: ['/data/style-media/copied-1/refs/ref-1.jpg', '/data/style-media/copied-1/refs/ref-2.jpg'],
+  references: ['/data/style-refs/copied-1/sheet-01.jpg', '/data/style-refs/copied-1/sheet-02.jpg'],
 };
 
 describe('study prompt for a complete clone', () => {
   const p = buildStudyStylePrompt('https://v', '/out');
-  it('asks for the engine, a build recipe, a palette and reference frames', () => {
+  it('asks for the engine, a build recipe and a palette', () => {
     expect(p).toContain('"engine"');
     expect(p).toContain('"build"');
     expect(p).toContain('"palette"');
-    expect(p).toContain('`"/out/refs"`');
-    expect(p).toContain('ref-1.jpg');
     expect(p).toMatch(/remotion/i);
     expect(p).toMatch(/hyperframes/i);
+  });
+  it('has the agent study contact sheets of the whole video, many frames per image', () => {
+    expect(p).toContain('tile=4x3');
+    expect(p).toContain('fps=48/<duration>');
+    expect(p).toContain('`"/out/sheets"`');
+    expect(p).not.toContain('ref-1.jpg');
   });
   it('no longer tells the agent to recreate every look with HyperFrames', () => {
     expect(p).not.toContain('recreate the look with HyperFrames');
@@ -67,11 +71,13 @@ describe('brief for a copied style', () => {
     expect(b).toContain('renders/krakatoa-<n>.mp4');
     expect(b).toContain('How to build this look: Three.js world inside Remotion');
     expect(b).toContain('Palette: #5BC8F5, #F2C14E, #2E7D32');
-    expect(b).toContain(`${STYLE_REFS_DIR}/ref-1.jpg`);
-    expect(b).toContain(`${STYLE_REFS_DIR}/ref-2.jpg`);
+    expect(b).toContain(`${STYLE_REFS_DIR}/sheet-01.jpg`);
+    expect(b).toContain(`${STYLE_REFS_DIR}/sheet-02.jpg`);
+    expect(b).toContain('a 4x3 grid of frames from the source video in time order');
     expect(b).toMatch(/never copy/i);
     expect(b).toContain('npx remotion still');
-    expect(b).toContain(`Compare each still with the reference frames in ${STYLE_REFS_DIR}/`);
+    expect(b).toContain(`side by side with the contact sheets in ${STYLE_REFS_DIR}/`);
+    expect(b).toContain('tile=4x3');
   });
   it('a HyperFrames style without references keeps the HyperFrames toolchain and no reference step', () => {
     const flat: Style = { ...copied3d, engine: 'hyperframes', build: null, palette: [], references: [] };

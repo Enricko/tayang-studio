@@ -161,7 +161,7 @@ describe('style', () => {
     const p = buildStudyStylePrompt('https://v', '/Users/a b/x');
     expect(p).toContain('-o "/Users/a b/x/source.%(ext)s"');
     expect(p).toContain('-f "bv*[height<=1080]+ba/b[height<=1080]/b"');
-    expect(p).toContain('Delete the sampled frames (keep the refs folder). Leave source.* in place; Tayang makes a short preview from it and then deletes it.');
+    expect(p).toContain('Leave source.* in place; Tayang makes its own contact sheets and a short preview from it, then deletes it.');
     expect(p).not.toContain('Delete the downloaded video');
     expect(p).toContain('Copy the look, never the footage');
     expect(buildStudyStylePrompt('https://v', 'C:\\Users\\a b\\x')).toContain('-o "C:\\Users\\a b\\x\\source.%(ext)s"');

@@ -108,6 +108,7 @@ export const removeStudyDir = (studyId: string) => invoke<void>('remove_study_di
 /** Cuts a short silent clip and a poster from the study's downloaded video, then deletes that video. */
 export const makeStylePreview = (studyId: string, styleId: string) =>
   invoke<{ previewPath: string | null; posterPath: string } | null>('make_style_preview', { studyId, styleId });
+export const makeStyleSheets = (studyId: string, styleId: string) => invoke<string[]>('make_style_sheets', { studyId, styleId });
 export const keepStyleRefs = (studyId: string, styleId: string) => invoke<string[]>('keep_style_refs', { studyId, styleId });
 export const copyStyleRefs = (styleId: string, projectId: string) => invoke<number>('copy_style_refs', { styleId, projectId });
 

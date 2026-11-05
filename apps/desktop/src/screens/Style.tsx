@@ -483,15 +483,16 @@ function Detail({
         {!editing && !!style.references?.length && (
           <div className="flex flex-col gap-2">
             <span className="text-xs text-text-3">{t('style.references')}</span>
-            <div className="grid grid-cols-3 gap-1.5">
+            <div className="grid grid-cols-2 gap-1.5">
               {style.references.map((r, i) => (
                 <img
                   key={r}
                   src={assetUrl(r)}
                   alt={t('style.referenceAlt', { n: i + 1 })}
+                  title={t('style.referenceAlt', { n: i + 1 })}
                   loading="lazy"
                   decoding="async"
-                  className="aspect-[9/16] w-full rounded-sm border border-border bg-black object-cover"
+                  className="w-full rounded-sm border border-border bg-black object-contain"
                 />
               ))}
             </div>
