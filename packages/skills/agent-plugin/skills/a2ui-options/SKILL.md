@@ -9,7 +9,7 @@ Tayang's chat draws A2UI v0.9 surfaces. Use one any time you offer choices, ask 
 
 ## Format
 
-Write a fenced block with the language `a2ui`. One JSON message per line. Every message has `"version":"v0.9"`.
+Write a fenced block with the language `a2ui`. One JSON message per line. Every message has `"version":"v0.9"`. The block must be valid JSON: write a quote inside text as `\"` (or use other quotes, like the ones around “Cartoon 3D”), and never break a line inside a string.
 
 ```a2ui
 {"version":"v0.9","createSurface":{"surfaceId":"pick","catalogId":"https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json"}}
