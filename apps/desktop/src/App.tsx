@@ -11,6 +11,8 @@ import { onTick, startScheduler } from '@/lib/scheduler';
 import { recheckDoneBuildJobs, settleLateRenders } from '@/lib/buildJobs';
 import { backfillProjectStatus } from '@/lib/projectStatus';
 import { startAutopilot } from '@/state/autopilot';
+import { AUTOPILOT_ENABLED } from '@/lib/features';
+import { ComingSoon } from '@/screens/ComingSoon';
 import { startUpdateChecks } from '@/state/updater';
 import { useWindowDrag } from '@/lib/windowDrag';
 import { Agents } from '@/screens/Agents';
@@ -104,7 +106,8 @@ export default function App() {
     if (!onboarded) return;
     let off: (() => void) | undefined;
     let gone = false;
-    const stopEngine = startAutopilot();
+    // Autopilot is coming soon: its engine stays off (see lib/features).
+    const stopEngine = AUTOPILOT_ENABLED ? startAutopilot() : () => {};
     // Startup and every tick: build jobs whose video arrived late become done.
     const stopLate = onTick(() => settleLateRenders());
     // "Your plan ends in 3 days", once per period.
@@ -194,10 +197,14 @@ function Shell({ route }: { route: Route }) {
           <Videos />
         ) : route.name === 'style' ? (
           <Style />
-        ) : route.name === 'autopilot' ? (
-          <Autopilot key={route.id ?? 'list'} id={route.id} />
-        ) : route.name === 'autopilot-wizard' ? (
-          <AutopilotWizard key={route.id ?? 'new'} id={route.id} />
+        ) : route.name === 'autopilot' || route.name === 'autopilot-wizard' ? (
+          !AUTOPILOT_ENABLED ? (
+            <ComingSoon feature="autopilot" />
+          ) : route.name === 'autopilot' ? (
+            <Autopilot key={route.id ?? 'list'} id={route.id} />
+          ) : (
+            <AutopilotWizard key={route.id ?? 'new'} id={route.id} />
+          )
         ) : route.name === 'agents' ? (
           <Agents />
         ) : route.name === 'calendar' ? (

@@ -1,3 +1,5 @@
+import userEvent from '@testing-library/user-event';
+import { ComingSoon } from '@/screens/ComingSoon';
 import { act, render, screen } from '@testing-library/react';
 import { vi } from 'vitest';
 import type { Settings } from '@tayang/shared';
@@ -89,19 +91,31 @@ describe('App start', () => {
     expect(backfillProjectStatus).toHaveBeenCalledWith(false);
   });
 
-  it('starts the autopilot engine once onboarded, and stops it on unmount', async () => {
+  it('leaves the autopilot engine off while Autopilot is coming soon', async () => {
     vi.mocked(startAutopilot).mockClear();
-    vi.mocked(getSettings).mockResolvedValue(base);
-    const first = render(<App />);
-    await screen.findByText('Get started');
-    expect(startAutopilot).not.toHaveBeenCalled();
-    first.unmount();
-    useApp.setState({ settings: null });
     vi.mocked(getSettings).mockResolvedValue({ ...base, onboarded: true });
     const { unmount } = render(<App />);
-    await vi.waitFor(() => expect(startAutopilot).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(useApp.getState().route).toEqual({ name: 'chat-new' }));
+    expect(startAutopilot).not.toHaveBeenCalled();
     unmount();
-    expect(engine.stop).toHaveBeenCalled();
+    expect(engine.stop).not.toHaveBeenCalled();
+  });
+
+  it('shows Autopilot as coming soon', async () => {
+    vi.mocked(getSettings).mockResolvedValue({ ...base, onboarded: true });
+    render(<App />);
+    await vi.waitFor(() => expect(useApp.getState().route).toEqual({ name: 'chat-new' }));
+    act(() => useApp.getState().navigate({ name: 'autopilot' }));
+    expect(await screen.findByRole('heading', { name: 'Autopilot is coming soon' })).toBeInTheDocument();
+    act(() => useApp.getState().navigate({ name: 'autopilot-wizard' }));
+    expect(screen.getByRole('heading', { name: 'Autopilot is coming soon' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open the Calendar' })).toBeInTheDocument();
+  });
+
+  it('the coming soon page sends the user to the Calendar meanwhile', async () => {
+    render(<ComingSoon feature="autopilot" />);
+    await userEvent.click(screen.getByRole('button', { name: 'Open the Calendar' }));
+    expect(useApp.getState().route).toEqual({ name: 'calendar' });
   });
 });
 

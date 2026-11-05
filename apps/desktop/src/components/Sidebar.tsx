@@ -16,6 +16,7 @@ import { useApp, type Route } from '@/state/app';
 import { useChat } from '@/state/chat';
 import { useJobs } from '@/state/jobs';
 import { cn } from '@/lib/utils';
+import { AUTOPILOT_ENABLED } from '@/lib/features';
 
 /** Recent shows this many; See all lists every chat. */
 const RECENT = 10;
@@ -59,6 +60,7 @@ function NavItem({
   icon: Icon,
   onClick,
   count,
+  badge,
   rail = false,
 }: {
   active: boolean;
@@ -66,6 +68,8 @@ function NavItem({
   icon: typeof Calendar;
   onClick: () => void;
   count?: number;
+  /** A word after the label (Soon); not on the rail. */
+  badge?: string;
   rail?: boolean;
 }) {
   // The rail shows the count as a dot: its number goes in the name and the tooltip.
@@ -91,6 +95,10 @@ function NavItem({
       >
         <Icon size={18} strokeWidth={1.5} aria-hidden="true" className="shrink-0" />
         {!rail && <span className="truncate">{label}</span>}
+        {!rail && badge && ' '}
+        {!rail && badge && (
+          <span className="ml-auto rounded-full border border-hairline px-1.5 py-px text-[10px] font-medium text-text-3">{badge}</span>
+        )}
         {count !== undefined &&
           (rail ? (
             <span aria-hidden="true" className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-primary" />
@@ -200,6 +208,7 @@ export function Sidebar({ active, collapsed = false }: { active: SidebarKey; col
               icon={n.icon}
               onClick={() => (n.key === 'chat' ? goChat() : navigate(n.route))}
               count={n.key === 'agents' && needsYou > 0 ? needsYou : undefined}
+              badge={n.key === 'autopilot' && !AUTOPILOT_ENABLED ? t('comingSoon.short') : undefined}
             />
           ))}
         </div>

@@ -227,7 +227,7 @@ export const en = {
     toolsIntro: 'Videos render on this computer. If something is missing, {{agent}} installs it after you allow it.',
     checkAgain: 'Check again',
     freePlan: "You're on the free plan. Making videos is free.",
-    planText: 'A Tayang plan adds voiceover, cloud rendering, premium styles and Autopilot posting.',
+    planText: 'A Tayang plan adds voiceover, cloud rendering, premium styles and auto-posting to your social accounts.',
     shareStats: 'Share anonymous install stats',
     shareStatsHint: "Sends a random install ID, your system (macOS, Windows or Linux), its version, your computer's processor type and the app version once a day. Nothing about you or your videos.",
     apiAddress: 'API address',
@@ -532,6 +532,15 @@ export const en = {
     binary: "This file can't be shown as text.",
     tooLarge: 'This file is too large to show here ({{size}}).',
     readFailed: "Couldn't open this file: {{message}}",
+  },
+  comingSoon: {
+    badge: 'Coming soon',
+    short: 'Soon',
+    autopilot: {
+      title: 'Autopilot is coming soon',
+      body: 'Pick a niche, a style and how often, and Tayang will make and post videos for you on schedule. Until then, plan your videos on the Calendar and post them from each video.',
+      meanwhile: 'Open the Calendar',
+    },
   },
   cloud: {
     title: 'Credits and auto-post',

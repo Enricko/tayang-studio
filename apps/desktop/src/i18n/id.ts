@@ -229,7 +229,7 @@ export const id: Translations = {
     toolsIntro: 'Video dirender di komputer ini. Kalau ada yang kurang, {{agent}} memasangnya setelah kamu izinkan.',
     checkAgain: 'Cek lagi',
     freePlan: 'Kamu pakai paket gratis. Bikin video tetap gratis.',
-    planText: 'Paket Tayang menambah voiceover, render cloud, gaya premium, dan posting Autopilot.',
+    planText: 'Paket Tayang menambah voiceover, render cloud, gaya premium, dan posting otomatis ke akun sosialmu.',
     shareStats: 'Bagikan statistik pemasangan anonim',
     shareStatsHint: 'Mengirim ID pemasangan acak, sistemmu (macOS, Windows, atau Linux), versinya, jenis prosesor komputermu, dan versi aplikasi sekali sehari. Tidak ada data tentang kamu atau videomu.',
     apiAddress: 'Alamat API',
@@ -526,6 +526,15 @@ export const id: Translations = {
     binary: 'File ini tidak bisa ditampilkan sebagai teks.',
     tooLarge: 'File ini terlalu besar untuk ditampilkan di sini ({{size}}).',
     readFailed: 'Gagal membuka file ini: {{message}}',
+  },
+  comingSoon: {
+    badge: 'Segera hadir',
+    short: 'Segera',
+    autopilot: {
+      title: 'Autopilot segera hadir',
+      body: 'Pilih niche, gaya, dan seberapa sering, lalu Tayang membuat dan memposting video untukmu sesuai jadwal. Sementara itu, rencanakan videomu di Kalender dan posting dari tiap video.',
+      meanwhile: 'Buka Kalender',
+    },
   },
   cloud: {
     title: 'Kredit dan posting otomatis',

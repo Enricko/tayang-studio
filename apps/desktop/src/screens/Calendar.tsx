@@ -16,6 +16,7 @@ import { openProjectChat } from '@/lib/openProject';
 import { ideasFromReply, startTopic, type TopicIdea } from '@/lib/topics';
 import { cn } from '@/lib/utils';
 import { useApp } from '@/state/app';
+import { AUTOPILOT_ENABLED } from '@/lib/features';
 import { headPermission, useChat } from '@/state/chat';
 
 const KINDS: VideoKind[] = ['explainer', 'promo', 'quote', 'news', 'tutorial', 'data', 'event'];
@@ -287,6 +288,7 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
             <ChevronRight size={16} strokeWidth={1.5} aria-hidden="true" />
           </Button>
         </div>
+        {AUTOPILOT_ENABLED && (
         <button
           type="button"
           onClick={() => useApp.getState().navigate({ name: 'autopilot' })}
@@ -294,6 +296,7 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
         >
           {t('calendar.manageAutopilots')}
         </button>
+        )}
         {slotError && (
           <p role="alert" className="m-0 text-xs text-orange-light">
             {slotError}
