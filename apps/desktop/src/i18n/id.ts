@@ -159,6 +159,7 @@ export const id: Translations = {
     cantAllowOnce: 'Permintaan ini tidak bisa diizinkan sekali saja',
   },
   errors: {
+    opencodeFreeLimit: 'Model gratis opencode sudah mencapai batas pemakaiannya. Pilih model lain di menu model, atau berlangganan OpenCode Go (opencode.ai/go)',
     agentStopped: 'Agen berhenti tiba-tiba',
     signIn: 'Login ke {{agent}}: buka terminal, jalankan {{command}} sekali, lalu coba lagi',
     yourAgentCommand: 'perintah agenmu',
@@ -492,6 +493,7 @@ export const id: Translations = {
     status: { draft: 'Draf', building: 'Sedang dibuat', rendered: 'Sudah dirender', scheduled: 'Terjadwal' },
   },
   activity: {
+    silent: 'Belum ada kabar dari agen. Modelnya mungkin sedang sibuk atau jatah gratisnya habis. Kamu bisa menghentikannya (tombol kotak) lalu coba lagi, atau pilih model lain.',
     workingFor: 'Sedang bekerja · {{time}}',
     renderingFor: 'Sedang merender video · {{time}}',
     thought_other: 'Berpikir {{count}} kali',

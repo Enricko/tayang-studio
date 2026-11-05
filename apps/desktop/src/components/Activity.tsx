@@ -280,9 +280,13 @@ export function ActivityGroup({ items, live, turn }: { items: ActivityItem[]; li
  * "● Working · 2m 10s" at the end of the live reply, for as long as the turn runs; "Rendering video" while the
  * agent's render command runs. Without a start time it reads "Working".
  */
-export function WorkingLine({ turn }: { turn?: LiveTurn }) {
+/** A turn with nothing from the agent for this long gets a word on why it may be stuck. */
+export const SILENT_MS = 2 * 60 * 1000;
+
+export function WorkingLine({ turn, silent = false }: { turn?: LiveTurn; /** Nothing came from the agent this turn. */ silent?: boolean }) {
   const { t } = useTranslation();
   const time = useElapsed(turn?.startedAt);
+  const quiet = silent && turn?.startedAt !== undefined && Date.now() - turn.startedAt >= SILENT_MS;
   if (turn?.render) {
     return (
       <span role="status" className="inline-flex items-center gap-2 text-[13px] text-text-3">
@@ -291,9 +295,12 @@ export function WorkingLine({ turn }: { turn?: LiveTurn }) {
     );
   }
   return (
-    <span role="status" className="inline-flex items-center gap-2 text-[13px] text-text-3">
-      <PulseDot />
-      {time ? t('activity.workingFor', { time }) : t('activity.working')}
+    <span className="flex flex-col gap-1">
+      <span role="status" className="inline-flex items-center gap-2 text-[13px] text-text-3">
+        <PulseDot />
+        {time ? t('activity.workingFor', { time }) : t('activity.working')}
+      </span>
+      {quiet && <span className="max-w-prose text-xs text-text-3">{t('activity.silent')}</span>}
     </span>
   );
 }

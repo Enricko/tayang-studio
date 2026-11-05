@@ -18,6 +18,7 @@ export const STORED_KEYS = [
   'agents.noVideo',
   'errors.agentStopped',
   'errors.signIn',
+  'errors.opencodeFreeLimit',
   'chat.ranWithoutAsking',
   'chat.busyNote',
   'chat.switched',

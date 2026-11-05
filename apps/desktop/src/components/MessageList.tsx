@@ -474,9 +474,11 @@ export function MessageList({
         );
       })}
       {streaming && (!last || last.role !== 'agent') && (
-        <div className="flex items-center gap-3">
+        <div className="flex items-start gap-3">
           <Oyen mood="sleepy" size={28} />
-          <WorkingLine turn={turn} />
+          <div className="pt-1">
+            <WorkingLine turn={turn} silent />
+          </div>
         </div>
       )}
       {children}

@@ -157,6 +157,7 @@ export const en = {
     cantAllowOnce: "This request can't be allowed once",
   },
   errors: {
+    opencodeFreeLimit: "opencode's free model has reached its usage limit. Pick another model in the model menu, or subscribe to OpenCode Go (opencode.ai/go)",
     agentStopped: 'The agent stopped unexpectedly',
     signIn: 'Sign in to {{agent}}: open a terminal and run {{command}} once, then try again',
     yourAgentCommand: "your agent's command",
@@ -492,6 +493,7 @@ export const en = {
     status: { draft: 'Draft', building: 'Building', rendered: 'Rendered', scheduled: 'Scheduled' },
   },
   activity: {
+    silent: "Nothing from the agent yet. Its model may be busy or out of free use. You can stop it (the square button) and try again, or pick another model.",
     workingFor: 'Working · {{time}}',
     renderingFor: 'Rendering video · {{time}}',
     thought_other: 'Thought {{count}} times',

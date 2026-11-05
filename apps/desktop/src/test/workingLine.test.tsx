@@ -85,4 +85,16 @@ describe('the live working line', () => {
     render(<MessageList messages={[user, agent([{ type: 'text', text: 'Render…' }])]} streaming />);
     expect(screen.getByRole('status')).toHaveTextContent('Sedang merender video · 1 mnt 20 dtk');
   });
+
+  it('says why after two minutes without a word from the agent', () => {
+    vi.setSystemTime(T0 + 119_000);
+    const { rerender } = render(<MessageList messages={[user]} streaming />);
+    expect(screen.queryByText(/Nothing from the agent yet/)).toBeNull();
+    vi.setSystemTime(T0 + 121_000);
+    rerender(<MessageList messages={[user]} streaming />);
+    expect(screen.getByText(/Nothing from the agent yet/)).toBeInTheDocument();
+    // Once the agent has said something, the turn isn't silent.
+    rerender(<MessageList messages={[user, agent([{ type: 'text', text: 'Halo' }])]} streaming />);
+    expect(screen.queryByText(/Nothing from the agent yet/)).toBeNull();
+  });
 });
