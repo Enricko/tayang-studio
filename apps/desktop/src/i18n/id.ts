@@ -797,6 +797,12 @@ export const id: Translations = {
       list: 'Video yang akan dijadwalkan',
     },
   },
+  agentNotify: {
+    aChat: 'Sebuah chat',
+    done: { title: 'Agenmu sudah selesai', body: '{{name}} sudah siap.' },
+    asks: { title: 'Agenmu butuh kamu', body: '{{name}}: pilih salah satu untuk lanjut.' },
+    permission: { title: 'Agenmu minta izin menjalankan perintah', body: '{{name}}: izinkan atau tolak di Tayang.' },
+  },
   reminders: {
     title: 'Tayang Studio',
     review: 'Cek {{title}} sebelum jatuh tempo',

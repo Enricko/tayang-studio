@@ -1,3 +1,4 @@
+import { notifyAgent } from '@/lib/agentNotify';
 import { create } from 'zustand';
 import { FOREGROUND_RULE, RENDERS_RULE, buildSessionPreamble, languageHint, sessionFacts, stripFramesToken } from '@tayang/skills';
 import type { AgentId, AgentUpdate, Chat, ChatMessage, Style, FileInfo, JobStatus, MessagePart, PermissionRequest } from '@tayang/shared';
@@ -609,6 +610,11 @@ export const useChat = create<ChatState>((set, get) => {
       finish(chatId);
       // The message is stored once, with every image the turn made.
       endTurnImages(chatId, turnMessage(chatId)?.id, true);
+      // Tell the user, unless they stopped it themselves: it waits for their pick, or it is done.
+      if (u.stopReason !== 'cancelled') {
+        const last = [...(get().messages[chatId] ?? [])].reverse().find((m) => m.role === 'agent');
+        void notifyAgent(chatId, waitsForAnswer(last) ? 'asks' : 'done');
+      }
       return;
     }
     // The session's models are the models store's (see state/models), not part of the conversation.
@@ -845,6 +851,7 @@ export const useChat = create<ChatState>((set, get) => {
         onPermission((req) => {
           if (!tracked.has(req.chatId)) return;
           writeJob(req.chatId, 'needs-you');
+          void notifyAgent(req.chatId, 'permission');
           set((s) => ({
             permissions: { ...s.permissions, [req.chatId]: [...(s.permissions[req.chatId] ?? []), req] },
           }));

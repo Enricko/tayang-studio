@@ -803,6 +803,12 @@ export const en = {
       list: 'Videos to schedule',
     },
   },
+  agentNotify: {
+    aChat: 'A chat',
+    done: { title: 'Your agent is done', body: '{{name}} is ready for you.' },
+    asks: { title: 'Your agent needs you', body: '{{name}}: pick an option to go on.' },
+    permission: { title: 'Your agent asks to run a command', body: '{{name}}: allow it or not in Tayang.' },
+  },
   reminders: {
     title: 'Tayang Studio',
     review: "Review {{title}} before it's due",
