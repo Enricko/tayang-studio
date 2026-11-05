@@ -11,6 +11,7 @@ import { onTick, startScheduler } from '@/lib/scheduler';
 import { recheckDoneBuildJobs, settleLateRenders } from '@/lib/buildJobs';
 import { backfillProjectStatus } from '@/lib/projectStatus';
 import { startAutopilot } from '@/state/autopilot';
+import { startUpdateChecks } from '@/state/updater';
 import { useWindowDrag } from '@/lib/windowDrag';
 import { Agents } from '@/screens/Agents';
 import { Autopilot } from '@/screens/Autopilot';
@@ -92,6 +93,9 @@ export default function App() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Release builds look for a new version shortly after launch and every few hours.
+  useEffect(() => startUpdateChecks(), []);
 
   // Once set up, the scheduler listens for the Rust tick (reminders and the autopilot engine). The engine
   // registers first, so the scheduler's first pass already runs it.

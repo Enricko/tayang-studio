@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { RefreshCw } from 'lucide-react';
+import { getVersion } from '@tauri-apps/api/app';
 import { disable as disableAutostart, enable as enableAutostart } from '@tauri-apps/plugin-autostart';
 import { DEFAULT_SETTINGS, type AgentInfo, type Settings as SettingsT, type SystemInfo, type ToolId } from '@tayang/shared';
 import { AccountSection } from '@/components/Account';
@@ -21,6 +22,7 @@ import { chooseLanguage } from '@/lib/language';
 import { sendTestNotification } from '@/lib/scheduler';
 import { useApp } from '@/state/app';
 import { useInstall } from '@/state/install';
+import { useUpdater } from '@/state/updater';
 
 const SECTIONS = ['general', 'agents', 'video', 'render', 'tools', 'account'] as const;
 
@@ -35,6 +37,40 @@ function isHttpUrl(v: string): boolean {
 
 function Card({ children }: { children: ReactNode }) {
   return <div className="rounded-xl border border-border bg-card">{children}</div>;
+}
+
+/** The app's version and a manual update check; what to do with a found update is in the sidebar. */
+function UpdatesRow({ dev = import.meta.env.DEV }: { dev?: boolean }) {
+  const { t } = useTranslation();
+  const { phase, version, error, check } = useUpdater();
+  const [current, setCurrent] = useState<string | null>(null);
+  useEffect(() => {
+    let gone = false;
+    getVersion()
+      .then((v) => !gone && setCurrent(v))
+      .catch(() => {});
+    return () => {
+      gone = true;
+    };
+  }, []);
+  const status = dev
+    ? t('updates.devBuild')
+    : phase === 'checking'
+      ? t('updates.checking')
+      : phase === 'none'
+        ? t('updates.upToDate')
+        : phase === 'available' || phase === 'downloading' || phase === 'ready'
+          ? t('updates.available', { version: version ?? '' })
+          : phase === 'error' && error
+            ? t('updates.failed', { message: error })
+            : undefined;
+  return (
+    <Row label={t('updates.label')} hint={current ? t('updates.version', { version: current }) : undefined} note={status}>
+      <Button variant="secondary" disabled={dev || phase === 'checking'} onClick={() => void check()}>
+        {t('updates.check')}
+      </Button>
+    </Row>
+  );
 }
 
 function Row({ label, hint, note, children }: { label: string; hint?: string; note?: string; children: ReactNode }) {
@@ -213,6 +249,7 @@ export function Settings() {
                 onChange={(l) => void chooseLanguage(l)}
               />
             </Row>
+            <UpdatesRow />
           </Card>
         </section>
 

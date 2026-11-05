@@ -6,6 +6,7 @@ import logo from '@/assets/brand/tayang-horizontal-reversed-color.svg';
 import mark from '@/assets/brand/oyen-symbol-color.svg';
 import ditherCard from '@/assets/brand/dither-card.png';
 import { UsageBar, UsageRing } from '@/components/UsageBar';
+import { UpdateBanner } from '@/components/UpdateBanner';
 import { Button } from '@/components/Button';
 import { AllChats } from '@/components/AllChats';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -239,6 +240,7 @@ export function Sidebar({ active, collapsed = false }: { active: SidebarKey; col
             icon={SlidersHorizontal}
             onClick={() => navigate({ name: 'settings' })}
           />
+          {!rail && <UpdateBanner />}
           {rail ? (
             <UsageRing />
           ) : (

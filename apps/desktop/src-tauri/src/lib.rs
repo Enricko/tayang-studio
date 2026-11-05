@@ -25,6 +25,10 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         // Launch at login is switched on and off from Settings (the JS plugin API), only while background mode is on.
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec![scheduler::HIDDEN_ARG])))
+        // Updates come from the signed latest.json on GitHub Releases (endpoints and public key in tauri.conf.json);
+        // the webview checks, downloads and installs, then relaunches through the process plugin.
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .on_window_event(|window, event| {
             let app = window.app_handle();
             scheduler::on_window_event(window, event, || {
