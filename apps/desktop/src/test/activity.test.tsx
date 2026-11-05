@@ -77,7 +77,8 @@ describe('inline activity', () => {
     const { container, rerender } = render(
       <MessageList streaming messages={[agent([tool('1', 'Run npm install', { toolKind: 'execute', status: 'running' })])]} />,
     );
-    expect(screen.getByRole('button')).toHaveTextContent('Ran 1 command · Run npm install');
+    expect(screen.getByRole('button')).toHaveTextContent('Ran 1 command');
+    expect(screen.getByTestId('activity-running')).toHaveTextContent(/Run\s*npm install/);
     expect(container.querySelector('.tayang-pulse')).not.toBeNull();
     rerender(<MessageList streaming messages={[agent([])]} />);
     expect(screen.getByText('Working')).toBeInTheDocument();

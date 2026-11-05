@@ -151,7 +151,7 @@ describe('a render inside a pipeline command is seen by its file', () => {
     expect(run()).toMatchObject({ source: 'agent', chatId: 'c1', toolCallId: 't1' });
     expect(vi.mocked(upsertJob).mock.calls.at(-1)![0]).toMatchObject({ status: 'working', note: 'Rendering video' });
     render(<MessageList messages={useChat.getState().messages.c1!} streaming />);
-    expect(screen.getByRole('button', { name: /Rendering video/ })).toBeInTheDocument();
+    expect(screen.getByTestId('activity-running')).toHaveTextContent(/Rendering video/);
     // It keeps growing.
     let size = 100;
     vi.mocked(newestVideoInfo).mockImplementation(async () => mp4((size += 1000), Date.now()));

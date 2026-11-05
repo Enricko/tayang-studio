@@ -199,6 +199,24 @@ function ToolRow({ part }: { part: ToolPart }) {
   );
 }
 
+/** The step running now: a pulse, what it does, its command or file (cut short, whole on hover), how long. */
+function RunningRow({ part, since }: { part: ToolPart; since?: number }) {
+  const row = rowOf(part);
+  return (
+    <>
+      <PulseDot />
+      <row.Icon size={13} strokeWidth={1.75} aria-hidden="true" className="shrink-0" />
+      <span className="shrink-0">{row.verb}</span>
+      <span className="flex min-w-0 items-center text-text-2">{row.detail}</span>
+      {since !== undefined && (
+        <span className="shrink-0 tabular-nums">
+          <Since since={since} />
+        </span>
+      )}
+    </>
+  );
+}
+
 /** One run of tool calls and thoughts between text: a muted summary line that opens into a list. */
 export function ActivityGroup({ items, live, turn }: { items: ActivityItem[]; live: boolean; turn?: LiveTurn }) {
   const { t } = useTranslation();
@@ -230,21 +248,18 @@ export function ActivityGroup({ items, live, turn }: { items: ActivityItem[]; li
               <span className="text-error">{t('activity.failed', { count: failed })}</span>
             </>
           )}
-          {running &&
-            (turn?.render && turn.render.toolCallId === running.toolCallId ? (
-              <>
-                {' · '}
-                <RenderingLabel since={turn.render.startedAt} />
-              </>
-            ) : (
-              <>
-                {' · '}
-                <PulseDot /> {rowOf(running).label}
-                {turn?.startedAt !== undefined && <Since since={turn.startedAt} />}
-              </>
-            ))}
         </span>
       </button>
+      {/* What is running now, on its own line: the summary stays short. */}
+      {running && (
+        <div data-testid="activity-running" className="ml-[21px] flex min-w-0 items-center gap-2 text-[13px] text-text-3">
+          {turn?.render && turn.render.toolCallId === running.toolCallId ? (
+            <RenderingLabel since={turn.render.startedAt} />
+          ) : (
+            <RunningRow part={running} since={turn?.startedAt} />
+          )}
+        </div>
+      )}
       {open && (
         <ul className="m-0 ml-[7px] flex list-none flex-col gap-2 border-l border-border py-1 pl-4">
           {rows.map((it, i) =>

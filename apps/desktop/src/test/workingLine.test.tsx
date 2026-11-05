@@ -57,7 +57,8 @@ describe('the live working line', () => {
     ];
     render(<MessageList messages={[user, agent(parts)]} streaming />);
     expect(screen.queryByRole('status')).toBeNull();
-    expect(screen.getByRole('button', { name: /Ran 1 command · Run npm install · 1m 1s/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Ran 1 command' })).toBeInTheDocument();
+    expect(screen.getByTestId('activity-running')).toHaveTextContent(/Run\s*npm install · 1m 1s/);
   });
 
   it('a finished step at the tail still gets the working line', () => {
@@ -73,7 +74,7 @@ describe('the live working line', () => {
       { type: 'tool', toolCallId: 't1', title: 'Run npx hyperframes render', status: 'running', toolKind: 'execute' },
     ];
     render(<MessageList messages={[user, agent(parts)]} streaming />);
-    expect(screen.getByRole('button', { name: /Ran 1 command · Rendering video · 1m 20s/ })).toBeInTheDocument();
+    expect(screen.getByTestId('activity-running')).toHaveTextContent(/Rendering video · 1m 20s/);
     expect(screen.queryByText(/npx hyperframes render/)).toBeNull();
   });
 
