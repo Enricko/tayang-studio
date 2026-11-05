@@ -9,6 +9,7 @@ import { getAgentUsage } from '@/lib/ipc';
 import { UsageBar, usageLine } from '@/components/UsageBar';
 import { formatResetIn } from '@/lib/time';
 import { mergeUsage, stopUsagePolling, useUsage } from '@/state/usage';
+import { i18n } from '@/i18n';
 import { useApp } from '@/state/app';
 
 const NOW = new Date('2026-11-04T10:00:00Z');
@@ -32,6 +33,17 @@ const gemini: AgentUsage = {
   message: "Usage isn't available for Gemini CLI yet",
 };
 
+const opencode: AgentUsage = {
+  agentId: 'opencode',
+  status: 'ok',
+  session: null,
+  weekly: null,
+  modelWeekly: null,
+  updatedAt: '2026-11-04T10:00:00Z',
+  message: null,
+  spend: { today: { replies: 54, tokens: 186_557, costUsd: 0 }, week: { replies: 120, tokens: 1_234_567, costUsd: 1.5 } },
+};
+
 describe('formatResetIn', () => {
   it('formats minutes, hours and days', () => {
     expect(formatResetIn('2026-11-04T10:42:30Z', NOW)).toBe('42m');
@@ -48,6 +60,17 @@ describe('usageLine', () => {
   });
   it('shows the message when not ok', () => {
     expect(usageLine(gemini, NOW)).toBe("Usage isn't available for Gemini CLI yet");
+  });
+  it("says an agent without usage in the interface language, not the backend's English", async () => {
+    await i18n.changeLanguage('id');
+    expect(usageLine({ ...gemini, agentId: 'codex' }, NOW)).toBe('Pemakaian Codex belum tersedia');
+    await i18n.changeLanguage('en');
+  });
+  it("shows what opencode spent today instead of limits", () => {
+    expect(usageLine(opencode, NOW)).toBe('today $0.00 · 186.6K tokens');
+    expect(usageLine({ ...opencode, spend: { today: { replies: 1, tokens: 1200, costUsd: 0.0042 }, week: opencode.spend!.week } }, NOW)).toBe(
+      'today $0.0042 · 1.2K tokens',
+    );
   });
 });
 
@@ -99,5 +122,17 @@ describe('UsageBar and popover', () => {
     await userEvent.click(screen.getByRole('button', { name: /usage$/i }));
     await userEvent.click(await screen.findByRole('button', { name: /Usage details & history/ }));
     expect(useApp.getState().route).toEqual({ name: 'agents' });
+  });
+
+  it('shows opencode without a meter, with today and the last 7 days in the popover', async () => {
+    useApp.setState({ settings: { defaultAgent: 'opencode' } as never, route: { name: 'chat-new' } });
+    vi.mocked(getAgentUsage).mockResolvedValue([opencode]);
+    render(<UsageBar />);
+    expect(await screen.findByText('today $0.00 · 186.6K tokens')).toBeInTheDocument();
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /usage$/i }));
+    expect(await screen.findByText('$0.00 · 186.6K tokens')).toBeInTheDocument();
+    expect(screen.getByText('$0.00 · 186.6K tokens').parentElement).toHaveAttribute('title', '54 replies');
+    expect(screen.getByText('$1.50 · 1.2M tokens')).toBeInTheDocument();
   });
 });

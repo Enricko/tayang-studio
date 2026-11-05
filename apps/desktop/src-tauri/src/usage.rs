@@ -1,5 +1,6 @@
 //! Agent usage: how much of the plan's rolling limits an agent has used.
-//! Only Claude Code is supported so far. The OAuth token is read, used for one request
+//! Claude Code reports its plan limits; opencode has none, so its own database gives what it
+//! spent instead. The Claude OAuth token is read, used for one request
 //! and dropped: it is never logged, stored or sent to the UI.
 
 use crate::system::Exec;
@@ -89,6 +90,7 @@ fn with_status(status: UsageStatus, message: &str, now: DateTime<Utc>) -> AgentU
         model_weekly: None,
         updated_at: stamp(now),
         message: Some(message.to_string()),
+        spend: None,
     }
 }
 
@@ -104,6 +106,7 @@ pub fn parse_claude_usage(json: &str, now: DateTime<Utc>) -> AgentUsage {
         model_weekly: model_weekly(&v),
         updated_at: stamp(now),
         message: None,
+        spend: None,
     }
 }
 
@@ -151,6 +154,60 @@ pub fn unavailable(id: AgentId, name: &str, now: DateTime<Utc>) -> AgentUsage {
         model_weekly: None,
         updated_at: stamp(now),
         message: Some(format!("Usage isn't available for {name} yet")),
+        spend: None,
+    }
+}
+
+/// opencode's own database (`$XDG_DATA_HOME/opencode/opencode.db`, else `~/.local/share/...`).
+pub fn opencode_db(home: &Path, xdg_data_home: Option<&str>) -> std::path::PathBuf {
+    let base = xdg_data_home.filter(|d| !d.is_empty()).map(std::path::PathBuf::from).unwrap_or_else(|| home.join(".local").join("share"));
+    base.join("opencode").join("opencode.db")
+}
+
+/// What opencode used since `day_start` and `week_start` (Unix ms), summed from the assistant
+/// messages it records with their tokens and cost. Opened read-only; None when there is no
+/// database or it isn't the shape this expects (an older opencode kept JSON files).
+pub fn opencode_spend(db: &Path, day_start_ms: i64, week_start_ms: i64) -> Option<SpendSummary> {
+    let conn = rusqlite::Connection::open_with_flags(
+        db,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .ok()?;
+    conn.busy_timeout(std::time::Duration::from_millis(500)).ok()?;
+    let sum = |since: i64| -> Option<Spend> {
+        conn.query_row(
+            "SELECT COUNT(*), \
+               COALESCE(SUM(COALESCE(json_extract(data,'$.tokens.input'),0) + COALESCE(json_extract(data,'$.tokens.output'),0) \
+                 + COALESCE(json_extract(data,'$.tokens.reasoning'),0)), 0), \
+               COALESCE(SUM(COALESCE(json_extract(data,'$.cost'),0)), 0.0) \
+             FROM message WHERE time_created >= ?1 AND json_extract(data,'$.role') = 'assistant'",
+            [since],
+            |r| Ok(Spend { replies: r.get::<_, i64>(0)? as u64, tokens: r.get::<_, i64>(1)?.max(0) as u64, cost_usd: r.get(2)? }),
+        )
+        .ok()
+    };
+    Some(SpendSummary { today: sum(day_start_ms)?, week: sum(week_start_ms)? })
+}
+
+/// opencode's usage: its spend when its database can be read, else "not available".
+pub fn opencode_usage(db: &Path, now: DateTime<Utc>) -> AgentUsage {
+    use chrono::{Local, TimeZone};
+    let local = now.with_timezone(&Local);
+    let midnight = local.date_naive().and_hms_opt(0, 0, 0).and_then(|t| Local.from_local_datetime(&t).earliest());
+    let day_start = midnight.map_or(now.timestamp_millis() - 86_400_000, |m| m.timestamp_millis());
+    let week_start = day_start - 6 * 86_400_000;
+    match opencode_spend(db, day_start, week_start) {
+        Some(spend) => AgentUsage {
+            agent_id: AgentId::Opencode,
+            status: UsageStatus::Ok,
+            session: None,
+            weekly: None,
+            model_weekly: None,
+            updated_at: stamp(now),
+            message: None,
+            spend: Some(spend),
+        },
+        None => unavailable(AgentId::Opencode, "OpenCode", now),
     }
 }
 
@@ -269,5 +326,42 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let ex = Fake(Some("{\"claudeAiOauth\":{\"accessToken\":\"tok-kc\"}}\n".into()));
         assert_eq!(read_claude_token(&ex, dir.path()).as_deref(), Some("tok-kc"));
+    }
+
+    #[test]
+    fn opencode_spend_sums_assistant_messages_by_period() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("opencode.db");
+        let conn = rusqlite::Connection::open(&db).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE message (id text PRIMARY KEY, session_id text NOT NULL, time_created integer NOT NULL, \
+             time_updated integer NOT NULL, data text NOT NULL);",
+        )
+        .unwrap();
+        let add = |id: &str, at: i64, data: &str| {
+            conn.execute("INSERT INTO message VALUES (?1,'s',?2,?2,?3)", rusqlite::params![id, at, data]).unwrap();
+        };
+        let reply = r#"{"role":"assistant","cost":0.25,"tokens":{"input":100,"output":20,"reasoning":5,"cache":{"read":9000}}}"#;
+        add("today", 2_000, reply);
+        add("week", 1_500, reply);
+        add("old", 100, reply);
+        add("user", 2_000, r#"{"role":"user"}"#);
+        add("free", 2_500, r#"{"role":"assistant","cost":0,"tokens":{"input":10,"output":1}}"#);
+        drop(conn);
+        let s = opencode_spend(&db, 1_900, 1_000).unwrap();
+        assert_eq!(s.today, Spend { replies: 2, tokens: 125 + 11, cost_usd: 0.25 });
+        assert_eq!(s.week, Spend { replies: 3, tokens: 250 + 11, cost_usd: 0.5 });
+        assert!(opencode_spend(&dir.path().join("missing.db"), 0, 0).is_none());
+        let u = opencode_usage(&db, Utc::now());
+        assert_eq!((u.agent_id, u.status), (AgentId::Opencode, UsageStatus::Ok));
+        assert_eq!(opencode_usage(&dir.path().join("missing.db"), Utc::now()).status, UsageStatus::Unavailable);
+    }
+
+    #[test]
+    fn opencode_db_follows_xdg_data_home() {
+        let home = Path::new("/home/u");
+        assert_eq!(opencode_db(home, None), Path::new("/home/u/.local/share/opencode/opencode.db"));
+        assert_eq!(opencode_db(home, Some("/data")), Path::new("/data/opencode/opencode.db"));
+        assert_eq!(opencode_db(home, Some("")), Path::new("/home/u/.local/share/opencode/opencode.db"));
     }
 }

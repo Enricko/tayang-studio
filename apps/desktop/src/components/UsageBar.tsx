@@ -8,14 +8,34 @@ import { formatResetIn } from '@/lib/time';
 import { cn } from '@/lib/utils';
 import { useApp } from '@/state/app';
 import { useUsage } from '@/state/usage';
-import type { AgentUsage } from '@tayang/shared';
+import type { AgentUsage, Spend } from '@tayang/shared';
 
 export const pct = (n: number) => `${Math.round(n)}%`;
+
+/** $0.00, or more decimals for a small but not zero cost ($0.0042). */
+export function formatCost(usd: number): string {
+  const digits = usd > 0 && usd < 0.01 ? 4 : 2;
+  return new Intl.NumberFormat(i18n.language || 'en', { style: 'currency', currency: 'USD', minimumFractionDigits: digits, maximumFractionDigits: digits }).format(usd);
+}
+
+/** 186K, 1.2M: in the interface language. */
+export const formatTokens = (n: number) => new Intl.NumberFormat(i18n.language || 'en', { notation: 'compact', maximumFractionDigits: 1 }).format(n);
+
+/** `$0.00 · 262.3K tokens`; the reply count goes in `spendTitle`, so the row fits the popover. */
+export const spendRow = (s: Spend) => i18n.t('usage.spendRow', { cost: formatCost(s.costUsd), tokens: formatTokens(s.tokens) });
+export const spendTitle = (s: Spend) => i18n.t('usage.spendTitle', { count: s.replies });
+
+/** Why there is no usage, in the interface language (the agent's own words only for errors). */
+export function usageMessage(u: AgentUsage): string {
+  if (u.status === 'unavailable') return i18n.t('usage.notYet', { agent: AGENT_NAMES[u.agentId] });
+  return u.message ?? i18n.t('usage.unavailable');
+}
 
 /** `33% used 1h 41m · 48% used 3d 13h · 26% used Fable` */
 export function usageLine(u: AgentUsage, now: Date = new Date()): string {
   const t = i18n.t;
-  if (u.status !== 'ok') return u.message ?? t('usage.unavailable');
+  if (u.status !== 'ok') return usageMessage(u);
+  if (u.spend) return t('usage.spendLine', { cost: formatCost(u.spend.today.costUsd), tokens: formatTokens(u.spend.today.tokens) });
   const parts: string[] = [];
   if (u.session) parts.push(t('usage.used', { pct: pct(u.session.usedPercent), what: formatResetIn(u.session.resetsAt, now) }).trim());
   if (u.weekly) parts.push(t('usage.used', { pct: pct(u.weekly.usedPercent), what: formatResetIn(u.weekly.resetsAt, now) }).trim());
@@ -73,7 +93,8 @@ export function UsageBar() {
           <AgentLogo id={agent} size={20} />
           <span className="text-[13px] font-medium">{AGENT_NAMES[agent]}</span>
         </span>
-        <UsageMeter percent={mine?.session?.usedPercent ?? 0} label={t('usage.fiveHour')} />
+        {/* An agent without plan limits (opencode) has nothing to fill a meter with. */}
+        {!mine?.spend && <UsageMeter percent={mine?.session?.usedPercent ?? 0} label={t('usage.fiveHour')} />}
         <span className="font-mono text-[11px] leading-4 text-text-2">{text}</span>
       </button>
     </UsagePopover>

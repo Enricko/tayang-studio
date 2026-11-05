@@ -332,6 +332,15 @@ export interface AgentUsage {
   modelWeekly: { label: string; window: UsageWindow } | null;
   updatedAt: string;
   message: string | null;
+  /** For agents without plan limits (opencode): what they used today and over the last 7 days. */
+  spend?: { today: Spend; week: Spend };
+}
+
+/** Replies, tokens (input, output and reasoning; cached reads left out) and cost over a period. */
+export interface Spend {
+  replies: number;
+  tokens: number;
+  costUsd: number;
 }
 
 // ---- autopilot ----

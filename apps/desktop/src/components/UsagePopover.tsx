@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { ChevronRight, RefreshCw } from 'lucide-react';
 import type { AgentUsage, UsageWindow } from '@tayang/shared';
 import { AgentLogo } from '@/components/AgentLogo';
-import { UsageMeter, pct } from '@/components/UsageBar';
+import { UsageMeter, pct, spendRow, spendTitle, usageMessage, usageLine } from '@/components/UsageBar';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { AGENT_NAMES } from '@/lib/agents';
@@ -45,7 +45,7 @@ function AgentBlock({ u, view }: { u: AgentUsage; view: View }) {
         <AgentLogo id={u.agentId} size={16} />
         <span className="w-20 shrink-0 truncate text-[13px]">{name}</span>
         <span className="truncate font-mono text-xs text-text-2">
-          {ok ? [u.session, u.weekly, u.modelWeekly?.window].filter(Boolean).map((w) => pct(w!.usedPercent)).join(' · ') : u.message}
+          {!ok || u.spend ? usageLine(u) : [u.session, u.weekly, u.modelWeekly?.window].filter(Boolean).map((w) => pct(w!.usedPercent)).join(' · ')}
         </span>
       </div>
     );
@@ -57,14 +57,27 @@ function AgentBlock({ u, view }: { u: AgentUsage; view: View }) {
         <span className="text-[13px] font-medium">{name}</span>
         {ok && reset && <span className="ml-auto text-xs text-text-2">{t('usage.resetsIn', { time: reset })}</span>}
       </div>
-      {ok ? (
+      {ok && u.spend ? (
+        <>
+          {[
+            { label: t('usage.today'), s: u.spend.today },
+            { label: t('usage.lastWeek'), s: u.spend.week },
+          ].map(({ label, s }) => (
+            <div key={label} className="flex items-center gap-2" title={spendTitle(s)}>
+              <span className="w-14 shrink-0 text-xs text-text-2">{label}</span>
+              <span className="truncate font-mono text-xs">{spendRow(s)}</span>
+            </div>
+          ))}
+          <span className="text-[11px] text-text-3">{t('usage.noLimits')}</span>
+        </>
+      ) : ok ? (
         <>
           {u.session && <Row label={t('usage.five')} w={u.session} />}
           {u.weekly && <Row label={t('usage.week')} w={u.weekly} />}
           {u.modelWeekly && <Row label={u.modelWeekly.label} w={u.modelWeekly.window} />}
         </>
       ) : (
-        <span className="text-xs text-text-2">{u.message}</span>
+        <span className="text-xs text-text-2">{usageMessage(u)}</span>
       )}
     </div>
   );

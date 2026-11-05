@@ -2350,6 +2350,12 @@ pub async fn get_agent_usage(
     let now = chrono::Utc::now();
     let mut out = Vec::new();
     for a in agents.iter().filter(|a| a.installed) {
+        if a.id == AgentId::Opencode {
+            let db = crate::usage::opencode_db(&state.home, std::env::var("XDG_DATA_HOME").ok().as_deref());
+            let usage = tauri::async_runtime::spawn_blocking(move || crate::usage::opencode_usage(&db, now)).await.map_err(err)?;
+            out.push(usage);
+            continue;
+        }
         if a.id != AgentId::Claude {
             out.push(crate::usage::unavailable(a.id, &a.name, now));
             continue;

@@ -798,6 +798,25 @@ pub struct AgentUsage {
     pub model_weekly: Option<ModelUsage>,
     pub updated_at: String,
     pub message: Option<String>,
+    /// For agents without plan limits (opencode): what they used today and over the last 7 days.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spend: Option<SpendSummary>,
+}
+
+/// Replies, tokens (input, output and reasoning; cached reads left out) and cost over a period.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Spend {
+    pub replies: u64,
+    pub tokens: u64,
+    pub cost_usd: f64,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpendSummary {
+    pub today: Spend,
+    pub week: Spend,
 }
 
 // ---- sign in (mirrors packages/shared/src/auth.ts) ----
