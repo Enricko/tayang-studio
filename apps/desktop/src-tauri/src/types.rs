@@ -155,6 +155,9 @@ pub struct Project {
     /// When the "review before it's due" reminder was shown; separate from `reminded_at`.
     #[serde(default)]
     pub review_reminded_at: Option<String>,
+    /// The auto-post this video went out with (the Tayang API's PostForMe post id).
+    #[serde(default)]
+    pub social_post_id: Option<String>,
     pub duration_sec: Option<f64>,
     pub created_at: String,
     pub updated_at: String,

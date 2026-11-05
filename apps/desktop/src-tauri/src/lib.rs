@@ -1,6 +1,8 @@
 pub mod acp;
+pub mod ai_proxy;
 pub mod auth;
 pub mod billing;
+pub mod cloud;
 pub mod commands;
 pub mod db;
 pub mod files;
@@ -76,6 +78,8 @@ pub fn run() {
                 }
             }
             scheduler::start_ticker(app.handle());
+            // The agents' AI images and voice, paid with the user's credits (see ai_proxy).
+            tauri::async_runtime::spawn(commands::start_ai_proxy(app.handle().clone()));
             // Anonymous install ping, in the background; never blocks the UI, failures are ignored.
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -114,6 +118,12 @@ pub fn run() {
             commands::read_project_file,
             commands::set_agent_model,
             commands::agent_models,
+            commands::cloud_usage,
+            commands::social_accounts,
+            commands::social_connect,
+            commands::social_disconnect,
+            commands::social_post,
+            commands::social_post_status,
             commands::list_recent_chats,
             commands::list_archived_chats,
             commands::set_thread_archived,

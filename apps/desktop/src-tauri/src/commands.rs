@@ -204,6 +204,7 @@ fn new_project_with(
         posted_at: None,
         reminded_at: None,
         review_reminded_at: None,
+        social_post_id: None,
         duration_sec: None,
         created_at: now.clone(),
         updated_at: now,
@@ -825,6 +826,167 @@ pub async fn billing_status(state: State<'_, AppState>, auth: State<'_, Arc<Auth
     after_billing(&auth, &base, crate::billing::status(auth.client(), &base, &token).await)
 }
 
+// ---- the Tayang account's credits, social accounts and auto-post ----
+
+/// `cloud:<code>`, the code being the kebab-case `CloudError` the UI knows.
+fn cloud_err(e: crate::cloud::CloudError) -> String {
+    format!("cloud:{}", e.code())
+}
+
+/// The API base and the stored sign-in token, or `cloud:signed-out`.
+async fn cloud_token(state: &AppState, auth: &Arc<Auth>) -> Result<(String, String), String> {
+    let base = api_base(state);
+    let token = auth.token(&base).await.ok_or_else(|| cloud_err(crate::cloud::CloudError::SignedOut))?;
+    Ok((base, token))
+}
+
+/// A 401 means the token is gone at the API: let the sign-in state find out (it clears it).
+fn after_cloud<T>(auth: &Arc<Auth>, base: &str, what: &str, r: Result<T, crate::cloud::CloudError>) -> CmdResult<T> {
+    if let Err(e) = &r {
+        eprintln!("[cloud] {what}: {}", e.code());
+        if *e == crate::cloud::CloudError::SignedOut {
+            let (auth, base) = (auth.clone(), base.to_string());
+            tauri::async_runtime::spawn(async move { auth.refresh(&base).await });
+        }
+    }
+    r.map_err(cloud_err)
+}
+
+/// Credits and auto-posts left in this cycle (`GET /v1/usage`).
+#[tauri::command]
+pub async fn cloud_usage(state: State<'_, AppState>, auth: State<'_, Arc<Auth>>) -> CmdResult<serde_json::Value> {
+    let auth = auth.inner().clone();
+    let (base, token) = cloud_token(&state, &auth).await?;
+    after_cloud(&auth, &base, "usage", crate::cloud::get(auth.client(), &base, &token, "/v1/usage").await)
+}
+
+/// The social accounts connected to this Tayang account.
+#[tauri::command]
+pub async fn social_accounts(state: State<'_, AppState>, auth: State<'_, Arc<Auth>>) -> CmdResult<serde_json::Value> {
+    let auth = auth.inner().clone();
+    let (base, token) = cloud_token(&state, &auth).await?;
+    after_cloud(&auth, &base, "accounts", crate::cloud::get(auth.client(), &base, &token, "/v1/social/accounts").await)
+}
+
+/// Opens the platform's sign-in page in the browser to connect an account; it shows up in
+/// `social_accounts` once the user has finished there.
+#[tauri::command]
+pub async fn social_connect(app: AppHandle, state: State<'_, AppState>, auth: State<'_, Arc<Auth>>, platform: String) -> CmdResult<()> {
+    let auth = auth.inner().clone();
+    let (base, token) = cloud_token(&state, &auth).await?;
+    let body = serde_json::json!({ "platform": platform });
+    let out = after_cloud(&auth, &base, "connect", crate::cloud::send(auth.client(), reqwest::Method::POST, &base, &token, "/v1/social/accounts/connect", Some(&body)).await)?;
+    let url = out.get("url").and_then(serde_json::Value::as_str).filter(|u| crate::cloud::is_https(u)).ok_or_else(|| cloud_err(crate::cloud::CloudError::BadUrl))?;
+    use tauri_plugin_opener::OpenerExt;
+    app.opener().open_url(url, None::<&str>).map_err(err)
+}
+
+#[tauri::command]
+pub async fn social_disconnect(state: State<'_, AppState>, auth: State<'_, Arc<Auth>>, id: String) -> CmdResult<()> {
+    let auth = auth.inner().clone();
+    let (base, token) = cloud_token(&state, &auth).await?;
+    let path = format!("/v1/social/accounts/{}", urlencode(&id));
+    after_cloud(&auth, &base, "disconnect", crate::cloud::send(auth.client(), reqwest::Method::DELETE, &base, &token, &path, None).await).map(|_| ())
+}
+
+fn urlencode(s: &str) -> String {
+    s.bytes()
+        .map(|b| if b.is_ascii_alphanumeric() || b"-_.~".contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") })
+        .collect()
+}
+
+/// Posts the project's latest render to `account_ids`, now or at `scheduled_at`: the video goes to
+/// PostForMe's storage first, then the post is made and charged one auto-post per account. A retry
+/// passes the same `client_request_id`, so it never posts twice. The project keeps the post id.
+#[tauri::command]
+pub async fn social_post(
+    state: State<'_, AppState>,
+    auth: State<'_, Arc<Auth>>,
+    project_id: String,
+    caption: String,
+    account_ids: Vec<String>,
+    scheduled_at: Option<String>,
+    client_request_id: String,
+) -> CmdResult<serde_json::Value> {
+    use crate::cloud::CloudError;
+    let auth = auth.inner().clone();
+    let (base, token) = cloud_token(&state, &auth).await?;
+    let folder = project_folder(&state, &project_id)?;
+    let video = media::latest_render(&folder).ok_or("This video has no render yet: render it first")?;
+    let client = auth.client();
+    let up = after_cloud(&auth, &base, "upload url", crate::cloud::send(client, reqwest::Method::POST, &base, &token, "/v1/social/media/upload-url", Some(&serde_json::json!({}))).await)?;
+    let (Some(upload_url), Some(media_url)) = (up.get("uploadUrl").and_then(serde_json::Value::as_str), up.get("mediaUrl").and_then(serde_json::Value::as_str)) else {
+        return Err(cloud_err(CloudError::Server));
+    };
+    after_cloud(&auth, &base, "upload", crate::cloud::upload(client, upload_url, &video, "video/mp4").await)?;
+    let mut body = serde_json::json!({
+        "caption": caption,
+        "socialAccountIds": account_ids,
+        "mediaUrl": media_url,
+        "clientRequestId": client_request_id,
+    });
+    if let Some(at) = scheduled_at {
+        body["scheduledAt"] = serde_json::Value::String(at);
+    }
+    let out = after_cloud(&auth, &base, "post", crate::cloud::send(client, reqwest::Method::POST, &base, &token, "/v1/social/posts", Some(&body)).await)?;
+    if let Some(post_id) = out.get("postId").and_then(serde_json::Value::as_str) {
+        let posted = out.get("status").and_then(serde_json::Value::as_str) != Some("scheduled");
+        let mut patch = serde_json::json!({ "socialPostId": post_id });
+        if posted {
+            patch["postedAt"] = serde_json::Value::String(chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true));
+        }
+        if let Err(e) = state.db.update_project(&project_id, patch) {
+            eprintln!("[cloud] posted, but couldn't save the post id on the project: {e}");
+        }
+    }
+    Ok(out)
+}
+
+/// One auto-post and how it went on each account.
+#[tauri::command]
+pub async fn social_post_status(state: State<'_, AppState>, auth: State<'_, Arc<Auth>>, post_id: String) -> CmdResult<serde_json::Value> {
+    let auth = auth.inner().clone();
+    let (base, token) = cloud_token(&state, &auth).await?;
+    let path = format!("/v1/social/posts/{}", urlencode(&post_id));
+    after_cloud(&auth, &base, "post status", crate::cloud::get(auth.client(), &base, &token, &path).await)
+}
+
+// ---- AI images and voice for agents ----
+
+/// The folder a chat's agent works in (its project's, else its own under the working folder).
+fn agent_folder(state: &AppState, chat_id: &str) -> Option<PathBuf> {
+    let folder = project_folder_for_chat(state, chat_id).ok()?;
+    resolve_cwd(&state.working(), chat_id, folder.as_deref()).ok()
+}
+
+/// Starts the agents' AI endpoint (see `ai_proxy`) and keeps it in the app state. Jobs run with the
+/// signed-in user's token, which never leaves Rust.
+pub async fn start_ai_proxy(handle: AppHandle) {
+    let for_folder = handle.clone();
+    let folder_for = Arc::new(move |chat: &str| for_folder.try_state::<AppState>().and_then(|s| agent_folder(&s, chat)));
+    let for_run = handle.clone();
+    let run: crate::ai_proxy::Runner = Arc::new(move |job, folder| {
+        let handle = for_run.clone();
+        Box::pin(async move {
+            let (Some(state), Some(auth)) = (handle.try_state::<AppState>(), handle.try_state::<Arc<Auth>>()) else {
+                return Err((503, serde_json::json!({ "error": "unavailable", "message": "Tayang is still starting" })));
+            };
+            let auth = auth.inner().clone();
+            let base = api_base(&state);
+            let Some(token) = auth.token(&base).await else {
+                return Err((401, serde_json::json!({ "error": "signed-out", "message": "The user isn't signed in to Tayang: make this without AI images or voice" })));
+            };
+            crate::ai_proxy::run_job(auth.client(), &base, &token, job, &folder).await
+        })
+    });
+    match crate::ai_proxy::start(folder_for, run).await {
+        Ok(proxy) => {
+            handle.manage(proxy);
+        }
+        Err(e) => eprintln!("[ai] the agents' AI endpoint couldn't start: {e}"),
+    }
+}
+
 // ---- agent ----
 
 struct TauriSink(AppHandle);
@@ -984,6 +1146,10 @@ pub async fn agent_start(
     let mut options = session_options(agent_id, plugin.as_deref(), skills);
     options.auto = wants_auto(&chat_id, auto.unwrap_or(false));
     options.model = picked_model(&state, agent_id);
+    // AI images and voice with the user's credits: this session's own token for Tayang's endpoint.
+    if let Some(proxy) = app.try_state::<Arc<crate::ai_proxy::AiProxy>>() {
+        options.env.extend(proxy.session_env(&chat_id));
+    }
     let skills_as_text = skills && needs_skills_text(agent_id, plugin.as_deref());
     state
         .acp
@@ -1665,6 +1831,7 @@ mod tests {
             posted_at: None,
             reminded_at: Some("2026-11-01T00:00:00Z".into()),
             review_reminded_at: None,
+            social_post_id: None,
             duration_sec: None,
             created_at: "t".into(),
             updated_at: "t".into(),
@@ -2042,6 +2209,7 @@ mod tests {
             posted_at: None,
             reminded_at: None,
             review_reminded_at: None,
+            social_post_id: None,
             duration_sec: None,
             created_at: String::new(),
             updated_at: String::new(),
@@ -2137,6 +2305,7 @@ mod tests {
             posted_at: None,
             reminded_at: None,
             review_reminded_at: None,
+            social_post_id: None,
             duration_sec: None,
             created_at: String::new(),
             updated_at: String::new(),

@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS projects (
   style_id TEXT, scheduled_at TEXT, duration_sec REAL,
   created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
   review_state TEXT NOT NULL DEFAULT 'none', posted_at TEXT, reminded_at TEXT,
-  review_reminded_at TEXT
+  review_reminded_at TEXT, social_post_id TEXT
 );
 CREATE TABLE IF NOT EXISTS chats (
   id TEXT PRIMARY KEY, project_id TEXT, agent_id TEXT NOT NULL,
@@ -81,11 +81,12 @@ CREATE TABLE IF NOT EXISTS autopilot_slots (
 const PROJECT_SELECT: &str = "SELECT id, title, slug, folder, kind, format, language, status, \
     style_id AS styleId, scheduled_at AS scheduledAt, duration_sec AS durationSec, \
     created_at AS createdAt, updated_at AS updatedAt, review_state AS reviewState, \
-    posted_at AS postedAt, reminded_at AS remindedAt, review_reminded_at AS reviewRemindedAt FROM projects";
-const PROJECT_KEYS: [&str; 17] = [
+    posted_at AS postedAt, reminded_at AS remindedAt, review_reminded_at AS reviewRemindedAt, \
+    social_post_id AS socialPostId FROM projects";
+const PROJECT_KEYS: [&str; 18] = [
     "id", "title", "slug", "folder", "kind", "format", "language", "status", "styleId",
     "scheduledAt", "durationSec", "createdAt", "updatedAt", "reviewState", "postedAt", "remindedAt",
-    "reviewRemindedAt",
+    "reviewRemindedAt", "socialPostId",
 ];
 const CHAT_SELECT: &str = "SELECT id, project_id AS projectId, agent_id AS agentId, title, \
     created_at AS createdAt FROM chats";
@@ -411,8 +412,8 @@ impl Db {
         self.conn().execute(
             "INSERT INTO projects (id, title, slug, folder, kind, format, language, status, \
              style_id, scheduled_at, duration_sec, created_at, updated_at, \
-             review_state, posted_at, reminded_at, review_reminded_at) \
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)",
+             review_state, posted_at, reminded_at, review_reminded_at, social_post_id) \
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18)",
             params_from_iter(vals),
         )?;
         Ok(())
@@ -452,7 +453,8 @@ impl Db {
         self.conn().execute(
             "UPDATE projects SET title=?1, slug=?2, folder=?3, kind=?4, format=?5, language=?6, \
              status=?7, style_id=?8, scheduled_at=?9, duration_sec=?10, created_at=?11, \
-             updated_at=?12, review_state=?13, posted_at=?14, reminded_at=?15, review_reminded_at=?16 WHERE id=?17",
+             updated_at=?12, review_state=?13, posted_at=?14, reminded_at=?15, review_reminded_at=?16, \
+             social_post_id=?17 WHERE id=?18",
             params_from_iter(vals),
         )?;
         Ok(updated)
@@ -715,6 +717,7 @@ impl Db {
             ("posted_at", "TEXT"),
             ("reminded_at", "TEXT"),
             ("review_reminded_at", "TEXT"),
+            ("social_post_id", "TEXT"),
         ] {
             if !have.iter().any(|c| c == col) {
                 conn.execute_batch(&format!("ALTER TABLE projects ADD COLUMN {col} {def}"))?;
@@ -1188,6 +1191,7 @@ mod tests {
             posted_at: None,
             reminded_at: None,
             review_reminded_at: None,
+            social_post_id: None,
             duration_sec: None,
             created_at: "2026-01-01T00:00:00Z".into(),
             updated_at: updated.into(),

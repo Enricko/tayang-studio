@@ -491,6 +491,7 @@ mod tests {
             posted_at: None,
             reminded_at: None,
             review_reminded_at: None,
+            social_post_id: None,
             duration_sec: None,
             created_at: "t".into(),
             updated_at: "t".into(),
