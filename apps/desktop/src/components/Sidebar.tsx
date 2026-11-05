@@ -167,7 +167,8 @@ export function Sidebar({ active, collapsed = false }: { active: SidebarKey; col
         )}
       >
         {rail ? (
-          <div className="flex justify-center pb-5 pt-6" data-tauri-drag-region>
+          // The macOS window buttons sit over the rail's top: the logo starts below them.
+          <div className="flex justify-center pb-5 pt-11" data-tauri-drag-region>
             <img src={mark} alt="Tayang" className="block size-7" />
           </div>
         ) : (
