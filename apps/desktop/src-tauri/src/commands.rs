@@ -1100,8 +1100,8 @@ fn project_folder_for_chat(state: &AppState, chat_id: &str) -> CmdResult<Option<
 
 /// Added to Claude's system prompt for sessions Tayang starts.
 pub const TAYANG_APPEND: &str = "You are running inside Tayang Studio, a desktop app for making motion videos. \
-Follow the tayang-studio and a2ui-options skills. The user sees your replies in a chat that draws A2UI, \
-so offer every choice as an A2UI card.";
+Follow the tayang-studio skill. When the user has to choose, ask with your AskUserQuestion tool: Tayang shows \
+it as a card with the options. Never write JSON or markup for a choice.";
 
 /// The Tayang agent plugin in the repo, used when the bundled copy is missing (`tauri dev`).
 /// Debug builds only: a release build must never reach into the build machine's checkout.
@@ -1119,13 +1119,15 @@ fn dev_plugin_dir() -> Option<PathBuf> {
     dir.join(".claude-plugin").join("plugin.json").is_file().then_some(dir)
 }
 
-/// `<resource dir>/agent-plugin` when it holds the plugin, else the repo copy (debug builds).
+/// The repo copy in debug builds (it is the one being edited; the build's copy in target/ goes stale,
+/// a skill deleted from the repo stays there), else `<resource dir>/agent-plugin` when it holds the plugin.
 /// `None` means Claude starts without the plugin, and the skills go into its first prompt instead.
 fn plugin_dir(resource_dir: Option<&Path>) -> Option<PathBuf> {
-    let found = resource_dir
-        .map(|r| r.join("agent-plugin"))
-        .filter(|p| p.join(".claude-plugin").join("plugin.json").is_file())
-        .or_else(dev_plugin_dir);
+    let found = dev_plugin_dir().or_else(|| {
+        resource_dir
+            .map(|r| r.join("agent-plugin"))
+            .filter(|p| p.join(".claude-plugin").join("plugin.json").is_file())
+    });
     if found.is_none() {
         eprintln!(
             "[tayang] warning: agent-plugin/.claude-plugin/plugin.json is missing from the app resources; \
@@ -1136,7 +1138,7 @@ fn plugin_dir(resource_dir: Option<&Path>) -> Option<PathBuf> {
 }
 
 /// Internal sessions (the setup installs, style studies and the autopilots' topic chats) never
-/// show A2UI in a chat, so they get neither the plugin nor the A2UI system prompt. Topic ideas
+/// talk to the user in a chat, so they get neither the plugin nor the system prompt. Topic ideas
 /// (`ideas-*`) do.
 pub fn wants_skills(chat_id: &str) -> bool {
     !(chat_id == "setup" || chat_id.starts_with("study-") || chat_id.starts_with("autopilot-"))
@@ -2135,13 +2137,19 @@ mod tests {
     }
 
     #[test]
-    fn plugin_dir_prefers_resources_then_dev_folder() {
+    fn plugin_dir_is_the_repo_copy_in_debug_builds_else_the_bundled_one() {
         let tmp = tempfile::tempdir().unwrap();
-        assert_eq!(plugin_dir(Some(tmp.path())), dev_plugin_dir());
         let real = tmp.path().join("agent-plugin").join(".claude-plugin");
         std::fs::create_dir_all(&real).unwrap();
         std::fs::write(real.join("plugin.json"), "{}").unwrap();
-        assert_eq!(plugin_dir(Some(tmp.path())), Some(tmp.path().join("agent-plugin")));
+        let expected = if cfg!(debug_assertions) { dev_plugin_dir() } else { Some(tmp.path().join("agent-plugin")) };
+        assert_eq!(plugin_dir(Some(tmp.path())), expected);
+    }
+
+    #[test]
+    fn the_system_prompt_asks_with_the_question_tool_not_a2ui() {
+        assert!(TAYANG_APPEND.contains("AskUserQuestion"));
+        assert!(!TAYANG_APPEND.to_lowercase().contains("a2ui"));
     }
 
     #[test]
