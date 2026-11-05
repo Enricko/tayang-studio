@@ -68,7 +68,7 @@ export function buildTopicIdeasPrompt(
   const lang = language === 'id' ? 'Indonesian' : 'English';
   const list = styles.length ? styles : DEFAULT_TOPIC_STYLES;
   const action =
-    '{"event":{"name":"pick_topic","context":{"title":"<the idea title>","kind":"<kind>","lengthSec":<number>,"styleId":"<style id or empty>","notes":"<what the user asked for that the title does not say, or empty>"}}}';
+    '{"event":{"name":"pick_topic","context":{"title":"<the idea title>","kind":"<kind>","lengthSec":<number>,"styleId":"<style id or empty>","notes":"<only what the user said that the title does not say, in their words; never your own choices; or empty>"}}}';
   return [
     `Suggest exactly 3 topic ideas for short videos. Write them in ${lang}. Allowed kinds: ${kinds.join(', ')}.`,
     '',

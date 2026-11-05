@@ -36,10 +36,10 @@ export const FOREGROUND_RULE =
  * $TAYANG_AI_TOKEN are set on every agent session; see the desktop's ai_proxy.rs).
  */
 export const AI_ASSETS_RULE =
-  'AI images and voice-over come from Tayang, paid with the user\'s Tayang credits. First check them: `curl -s "$TAYANG_AI_URL/usage" -H "Authorization: Bearer $TAYANG_AI_TOKEN"` (answers credits, imagesAffordable, voiceMinutesAffordable). ' +
-  'With credits, every voice-over comes from Tayang\'s /voice and every picture you can\'t build in code from /image: never another text-to-speech (say, edge-tts, Piper, a pipeline\'s own TTS, a key of your own), stock photos or images from the web. Keep the narration within voiceMinutesAffordable. ' +
+  'AI images and voice-over come from Tayang when the user has credits. Check them first: `curl -s "$TAYANG_AI_URL/usage" -H "Authorization: Bearer $TAYANG_AI_TOKEN"` (answers credits, imagesAffordable, voiceMinutesAffordable). ' +
+  'With enough credits, a voice-over comes from Tayang\'s /voice and a picture you can\'t build in code from /image, not another text-to-speech (say, edge-tts, Piper, a pipeline\'s own TTS, a key of your own), stock photos or images from the web. ' +
   'Image: `curl -s -X POST "$TAYANG_AI_URL/image" -H "Authorization: Bearer $TAYANG_AI_TOKEN" -d \'{"prompt":"<what to draw, in English>","aspect":"9:16","out":"assets/<name>.jpg"}\'` (1 credit per image; aspect 9:16, 16:9 or 1:1; up to 4 with "count"). Voice: `curl -s -X POST "$TAYANG_AI_URL/voice" -H "Authorization: Bearer $TAYANG_AI_TOKEN" -d \'{"text":"<the narration>","language":"id","out":"audio/<name>.mp3"}\'` (about 7 credits per minute). The answer lists the saved files. ' +
-  'Without credits (or signed out), build everything in code with on-screen text instead of narration, and tell the user once in one short line that AI voice and images come with Tayang credits. The user\'s wishes come first (no voice-over if they asked for none), and text, charts and maps are always built in code.';
+  'Without enough credits (or signed out), make it the way you would without Tayang: a free voice such as the system\'s text-to-speech, and pictures built in code; tell the user once in one short line that Tayang\'s AI voice and images come with credits. Never drop the voice-over because of credits: only the user decides there is none. Text, charts and maps are always built in code.';
 
 /** Tayang's preview and status read the render from renders/; a template pipeline may write it elsewhere. */
 export const RENDERS_RULE =
