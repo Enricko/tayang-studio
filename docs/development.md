@@ -67,8 +67,7 @@ Run this on a packaged build (`pnpm --filter @tayang/desktop tauri build`) befor
 
 ## CI and releases
 
-- `.github/workflows/ci.yml` runs on every push to `main` and every pull request: typecheck, the JS tests, clippy and the Rust tests on Linux, then builds the app for macOS (Apple silicon and Intel), Windows and Linux. The installers are kept as workflow artifacts for 7 days.
-- `.github/workflows/release.yml` runs on a `v*` tag. It builds every platform into a **draft** GitHub release with signed updater bundles and `latest.json`.
+CI runs only when a version tag (`v*`) is pushed, nothing runs on ordinary pushes or pull requests. `.github/workflows/release.yml` runs typecheck, the JS tests, clippy and the Rust tests, then builds macOS (Apple silicon and Intel), Windows and Linux into a **draft** GitHub release with signed updater bundles and `latest.json`. Before tagging, run the checks locally (`pnpm typecheck && pnpm test`, and `cargo clippy --all-targets -- -D warnings && cargo test` in `apps/desktop/src-tauri`).
 
 To ship a version:
 
