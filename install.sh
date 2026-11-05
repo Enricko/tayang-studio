@@ -95,7 +95,8 @@ install_macos() {
     if [ -w /Applications ]; then dir=/Applications; else dir="$HOME/Applications"; fi
   fi
   mkdir -p "$dir"
-  if pgrep -xq "tayang-studio" 2>/dev/null; then
+  # This copy only: a dev build (Tayang Studio Dev) has the same process name.
+  if pgrep -qf "$dir/$APP.app/Contents/MacOS/" 2>/dev/null; then
     say "Tayang is open; the new version starts the next time you open it."
   fi
   rm -rf "$dir/$APP.app"
