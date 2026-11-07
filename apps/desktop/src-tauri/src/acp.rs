@@ -257,6 +257,53 @@ pub struct SessionOptions {
     /// and then never answer the prompt; while a turn runs, Tayang reads it and ends the turn with
     /// the error.
     pub error_log: Option<PathBuf>,
+    /// Where each finished turn's token usage is appended, one JSON line per turn.
+    pub usage_log: Option<UsageLog>,
+}
+
+/// A local log of what each turn cost, to see where an agent's tokens go.
+#[derive(Debug, Clone)]
+pub struct UsageLog {
+    pub path: PathBuf,
+    /// The agent's key, such as `claude`.
+    pub agent: String,
+    /// What the chat is for: `project`, `chat`, `setup`, `study` or `autopilot`.
+    pub kind: String,
+}
+
+/// One usage log line, or None when the agent reported nothing. `usage` is the prompt result's
+/// (tokens of this turn); `last` is the agent's latest `usage_update` (context size, cost).
+pub fn usage_line(
+    log: &UsageLog,
+    chat_id: &str,
+    model: Option<&str>,
+    stop_reason: &str,
+    usage: Option<&Value>,
+    last: Option<&Value>,
+    at: &str,
+) -> Option<Value> {
+    if usage.is_none() && last.is_none() {
+        return None;
+    }
+    let mut line = json!({
+        "at": at,
+        "chat": chat_id,
+        "kind": log.kind,
+        "agent": log.agent,
+        "model": model,
+        "stop": stop_reason,
+    });
+    if let Some(u) = usage {
+        line["usage"] = u.clone();
+    }
+    if let Some(l) = last {
+        for key in ["used", "size", "cost"] {
+            if let Some(v) = l.get(key) {
+                line[key] = v.clone();
+            }
+        }
+    }
+    Some(line)
 }
 
 /// How auto mode was applied to a session.
@@ -571,6 +618,9 @@ struct SessionCore {
     prompting: AtomicBool,
     stopping: AtomicBool,
     error_log: Option<PathBuf>,
+    usage_log: Option<UsageLog>,
+    /// The agent's latest `usage_update`, taken by the next finished turn.
+    last_usage: Mutex<Option<Value>>,
 }
 
 impl SessionCore {
@@ -745,6 +795,9 @@ impl SessionCore {
                     *self.models.lock().unwrap() = Some(fresh);
                     self.emit_models();
                 }
+            }
+            "usage_update" => {
+                *self.last_usage.lock().unwrap() = Some(update.clone());
             }
             "current_mode_update" => {
                 if let Some(mode) = update.get("currentModeId").and_then(Value::as_str) {
@@ -984,13 +1037,11 @@ impl SessionCore {
         };
         self.prompting.store(false, Ordering::SeqCst);
         let update = match res {
-            Ok(v) => AgentUpdate::Done {
-                stop_reason: v
-                    .get("stopReason")
-                    .and_then(Value::as_str)
-                    .unwrap_or("end_turn")
-                    .to_string(),
-            },
+            Ok(v) => {
+                let stop_reason = v.get("stopReason").and_then(Value::as_str).unwrap_or("end_turn").to_string();
+                self.log_usage(&stop_reason, v.get("usage"));
+                AgentUpdate::Done { stop_reason }
+            }
             Err(e) if e.is_closed() => {
                 if self.stopping.load(Ordering::SeqCst) {
                     AgentUpdate::Done { stop_reason: "cancelled".into() }
@@ -1002,6 +1053,21 @@ impl SessionCore {
             Err(e) => AgentUpdate::Error { message: format!("The agent reported an error: {}", e.message) },
         };
         self.emit(update);
+    }
+
+    /// Appends this turn's usage to the usage log. Best effort: a failed write is ignored.
+    fn log_usage(&self, stop_reason: &str, usage: Option<&Value>) {
+        let Some(log) = &self.usage_log else { return };
+        let last = self.last_usage.lock().unwrap().take();
+        let model = self.models.lock().unwrap().as_ref().and_then(|m| m.current.clone());
+        let at = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+        let Some(line) = usage_line(log, &self.chat_id, model.as_deref(), stop_reason, usage, last.as_ref(), &at) else {
+            return;
+        };
+        use std::io::Write;
+        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&log.path) {
+            let _ = writeln!(f, "{line}");
+        }
     }
 
     /// Called once the agent's output is finished (or the process is gone).
@@ -1251,6 +1317,8 @@ impl AgentSession {
             prompting: AtomicBool::new(false),
             stopping: AtomicBool::new(false),
             error_log: options.error_log.clone(),
+            usage_log: options.usage_log.clone(),
+            last_usage: Mutex::new(None),
         });
         tokio::spawn(write_loop(stdin, out_rx));
         tokio::spawn(drain_stderr(stderr, chat_id.to_string()));

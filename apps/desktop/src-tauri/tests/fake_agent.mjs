@@ -18,6 +18,7 @@
 //   question   -> elicitation/create (a single choice "Topic" and a free-text "Note") when the client
 //                 offers form elicitation; reports "answer <JSON result>", or "no-elicitation"
 //   mode       -> reports "mode <current mode id>"
+//   usage      -> a usage_update (context and cost), then end_turn with the turn's token usage
 //   whoami     -> reports "whoami <JSON {meta, env}>": the session/new `_meta` and TAYANG_STUDIO
 //   any prompt with an image block -> text "image <mimeType> <data>"
 //
@@ -327,6 +328,11 @@ function handle(msg) {
       }
       if (params.prompt?.some((b) => b.type === "text" && b.text.trim() === "fail")) {
         send({ id, error: { code: -32603, message: "Internal error", data: { details: "quota exceeded" } } });
+        return;
+      }
+      if (params.prompt?.some((b) => b.type === "text" && b.text.trim() === "usage")) {
+        update({ sessionUpdate: "usage_update", used: 5000, size: 200000, cost: { amount: 0.01, currency: "USD" } });
+        send({ id, result: { stopReason: "end_turn", usage: { inputTokens: 10, outputTokens: 20, cachedReadTokens: 4000, cachedWriteTokens: 900, totalTokens: 4930 } } });
         return;
       }
       runPrompt(params).then((stopReason) => send({ id, result: { stopReason } }));

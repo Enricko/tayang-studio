@@ -1144,6 +1144,21 @@ pub fn wants_skills(chat_id: &str) -> bool {
     !(chat_id == "setup" || chat_id.starts_with("study-") || chat_id.starts_with("autopilot-"))
 }
 
+/// What a chat is for, as the usage log names it.
+pub fn chat_kind(chat_id: &str, has_project: bool) -> &'static str {
+    if chat_id == "setup" {
+        "setup"
+    } else if chat_id.starts_with("study-") {
+        "study"
+    } else if chat_id.starts_with("autopilot-") {
+        "autopilot"
+    } else if has_project {
+        "project"
+    } else {
+        "chat"
+    }
+}
+
 /// opencode logs a failed model call (a free model's usage limit) and then never answers the prompt:
 /// its log, for the session to watch. None for other agents.
 fn error_log(agent: AgentId) -> Option<PathBuf> {
@@ -1162,7 +1177,7 @@ fn session_options(agent: AgentId, plugin: Option<&Path>, skills: bool) -> crate
     let env = vec![("TAYANG_STUDIO".to_string(), "1".to_string())];
     let use_modes = agent == AgentId::Claude;
     if agent != AgentId::Claude || !skills {
-        return crate::acp::SessionOptions { meta: None, env, auto: false, use_modes, mode_timeout: None, model: None, error_log: error_log(agent) };
+        return crate::acp::SessionOptions { meta: None, env, auto: false, use_modes, mode_timeout: None, model: None, error_log: error_log(agent), usage_log: None };
     }
     let mut meta = serde_json::json!({ "systemPrompt": { "append": TAYANG_APPEND } });
     if let Some(path) = plugin {
@@ -1170,7 +1185,7 @@ fn session_options(agent: AgentId, plugin: Option<&Path>, skills: bool) -> crate
             "options": { "plugins": [{ "type": "local", "path": path.to_string_lossy() }] }
         });
     }
-    crate::acp::SessionOptions { meta: Some(meta), env, auto: false, use_modes, mode_timeout: None, model: None, error_log: error_log(agent) }
+    crate::acp::SessionOptions { meta: Some(meta), env, auto: false, use_modes, mode_timeout: None, model: None, error_log: error_log(agent), usage_log: None }
 }
 
 /// Starts the chat's agent. Resolves `true` when Claude started without the Tayang
@@ -1202,6 +1217,11 @@ pub async fn agent_start(
     let mut options = session_options(agent_id, plugin.as_deref(), skills);
     options.auto = wants_auto(&chat_id, auto.unwrap_or(false));
     options.model = picked_model(&state, agent_id);
+    options.usage_log = app.path().app_data_dir().ok().map(|dir| crate::acp::UsageLog {
+        path: dir.join("agent-usage.jsonl"),
+        agent: agent_key(agent_id),
+        kind: chat_kind(&chat_id, folder.is_some()).to_string(),
+    });
     // AI images and voice with the user's credits: this session's own token for Tayang's endpoint.
     if let Some(proxy) = app.try_state::<Arc<crate::ai_proxy::AiProxy>>() {
         options.env.extend(proxy.session_env(&chat_id));
@@ -1839,6 +1859,15 @@ pub fn write_brief(state: State<'_, AppState>, project_id: String, brief: String
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn chat_kind_names_what_the_chat_is_for() {
+        assert_eq!(chat_kind("setup", false), "setup");
+        assert_eq!(chat_kind("study-atlas", false), "study");
+        assert_eq!(chat_kind("autopilot-1", false), "autopilot");
+        assert_eq!(chat_kind("abc", true), "project");
+        assert_eq!(chat_kind("abc", false), "chat");
+    }
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn at_most_two_thumbnails_are_made_at_once() {
         use std::sync::atomic::{AtomicUsize, Ordering};

@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use tayang_studio_lib::acp::{AcpManager, AcpSink, AutoMethod, PromptPart, SessionOptions};
+use tayang_studio_lib::acp::{AcpManager, AcpSink, AutoMethod, PromptPart, SessionOptions, UsageLog};
 use tayang_studio_lib::types::{AgentQuestion, AgentUpdate, PermissionOptionKind, PermissionRequest, ToolCallStatus};
 
 #[derive(Default)]
@@ -527,6 +527,38 @@ async fn session_options_reach_the_agent_as_meta_and_env() {
     let json: serde_json::Value = serde_json::from_str(reply.strip_prefix("whoami ").unwrap()).unwrap();
     assert_eq!(json["meta"], meta);
     assert_eq!(json["env"], "1");
+    manager.stop("c1").await.unwrap();
+}
+
+#[tokio::test]
+async fn each_turn_appends_its_usage_to_the_usage_log() {
+    let ws = workspace();
+    let manager = AcpManager::new();
+    let sink = Arc::new(RecordingSink::default());
+    let path = ws.parent.join("agent-usage.jsonl");
+    let log = UsageLog { path: path.clone(), agent: "claude".into(), kind: "project".into() };
+    let options = SessionOptions { usage_log: Some(log), ..Default::default() };
+    manager.start_with("c1", &fake_agent(), &ws.cwd, sink.clone(), options).await.expect("agent starts");
+    manager.prompt("c1", vec![PromptPart::Text("usage".into())]).await.unwrap();
+    sink.wait_finished().await;
+    // A turn that reports nothing writes nothing.
+    sink.updates.lock().unwrap().clear();
+    manager.prompt("c1", vec![PromptPart::Text("hello".into())]).await.unwrap();
+    sink.wait_finished().await;
+    let lines: Vec<serde_json::Value> = std::fs::read_to_string(&path)
+        .unwrap()
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    assert_eq!(lines.len(), 1);
+    let line = &lines[0];
+    assert_eq!(line["chat"], "c1");
+    assert_eq!(line["kind"], "project");
+    assert_eq!(line["agent"], "claude");
+    assert_eq!(line["stop"], "end_turn");
+    assert_eq!(line["usage"]["cachedReadTokens"], 4000);
+    assert_eq!(line["used"], 5000);
+    assert_eq!(line["cost"]["amount"], 0.01);
     manager.stop("c1").await.unwrap();
 }
 
