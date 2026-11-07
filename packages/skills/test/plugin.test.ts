@@ -106,6 +106,13 @@ describe('agent plugin', () => {
     expect(buildProjectBrief(p, null, { fps: 30, frameCheck: false })).toContain(FOREGROUND_RULE);
   });
 
+  it('has the agent start a new video asked for in a plain chat through /video, not build it there', () => {
+    const skill = read('skills/tayang-studio/SKILL.md');
+    expect(skill).toContain('your folder has no `AGENTS.md`');
+    expect(skill).toContain('never build it here');
+    expect(buildSessionPreamble()).toContain('never build it here');
+  });
+
   it('has the agent look at one contact sheet of the stills, not each still, wherever it gets its instructions', () => {
     expect(SHEET_STEP).toContain('tile=4x3');
     expect(SHEET_STEP).toContain('stills/scene-%02d.png');
