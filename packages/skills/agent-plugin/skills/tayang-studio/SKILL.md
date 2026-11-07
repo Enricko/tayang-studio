@@ -64,9 +64,9 @@ The answer lists the saved files (inside your folder) and `creditsLeft`. If it i
 
 Before you say a video is done, unless the project brief or the message says to skip the frame check:
 
-1. Render a still of every scene.
-2. Look for overlapping elements, text that is cut off or outside the safe area, and timing that does not match the voice or captions.
-3. Fix every problem, then look at the affected stills again.
+1. Render a still of every scene, named in order: stills/scene-01.png, stills/scene-02.png, …
+2. Put the stills on one contact sheet and look at that one image, not at each still: `ffmpeg -y -i stills/scene-%02d.png -vf "scale=360:-2,tile=4x3" -frames:v 1 stills/sheet.jpg` (more than 12 scenes: run it again with `-start_number 13` before `-i` and `stills/sheet-2.jpg` as the output). Look for overlapping elements, text that is cut off or outside the safe area, and timing that does not match the voice or captions. Open a single still only when the sheet shows a problem you need to see closer.
+3. Fix every problem, then render the affected stills again and look at them.
 4. Reply with `[tayang:frames-checked]` exactly as written, whatever language you reply in, then a one-line summary of what you fixed.
 
 ## Scheduling videos

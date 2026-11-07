@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { buildSessionPreamble, languageHint, sessionFacts } from '../src/preamble';
 import { AUTOPILOT_RENDER_NOW, buildAutopilotBuildPrompt } from '../src/autopilot';
-import { FOREGROUND_RULE, RENDERS_RULE } from '../src/frameCheck';
+import { FOREGROUND_RULE, RENDERS_RULE, SHEET_STEP, frameCheckPrompt } from '../src/frameCheck';
 import { buildProjectBrief } from '../src/project';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', 'agent-plugin');
@@ -95,6 +95,7 @@ describe('agent plugin', () => {
 
   it('tells every agent to run long work in the foreground, wherever it gets its instructions', () => {
     expect(FOREGROUND_RULE).toContain('Never start a long job in the background and end your turn');
+    expect(FOREGROUND_RULE).toContain('`2>&1 | tail -n 30`');
     expect(read('skills/tayang-studio/SKILL.md')).toContain(FOREGROUND_RULE);
     expect(buildSessionPreamble()).toContain(FOREGROUND_RULE);
     expect(buildAutopilotBuildPrompt('Jalur Rempah', 30)).toContain(FOREGROUND_RULE);
@@ -103,6 +104,14 @@ describe('agent plugin', () => {
       styleId: null, scheduledAt: null, reviewState: 'none', postedAt: null, remindedAt: null, reviewRemindedAt: null,
       durationSec: null, createdAt: '', updatedAt: '' } as const;
     expect(buildProjectBrief(p, null, { fps: 30, frameCheck: false })).toContain(FOREGROUND_RULE);
+  });
+
+  it('has the agent look at one contact sheet of the stills, not each still, wherever it gets its instructions', () => {
+    expect(SHEET_STEP).toContain('tile=4x3');
+    expect(SHEET_STEP).toContain('stills/scene-%02d.png');
+    expect(read('skills/tayang-studio/SKILL.md')).toContain(`2. ${SHEET_STEP}`);
+    expect(frameCheckPrompt()).toContain(`2. ${SHEET_STEP}`);
+    expect(frameCheckPrompt({ engine: 'remotion' })).toContain('stills/scene-01.png');
   });
 
   it('tells every agent to leave the final mp4 in renders/, wherever it gets its instructions', () => {

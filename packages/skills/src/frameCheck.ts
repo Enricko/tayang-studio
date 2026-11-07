@@ -49,6 +49,13 @@ export const RENDERS_RULE =
 export const POST_RULE =
   `When a video is finished, and whenever the user asks for a post, write post.json in the project folder: {"title": "<up to 100 characters, a hook in the video's language>", "description": "<1 to 3 short lines in the video's language, no hashtags>", "hashtags": ["<3 to 5, without #>"], "scheduledAt": "<ISO 8601 with the user's UTC offset: the next good slot (11:00-13:00 or 19:00-21:00 local time) at least an hour from now; check the time with date>"}. Tayang's Post dialog fills its fields from it, and the user reviews it there. Never post yourself.`;
 
+/**
+ * Look at all stills as one small image instead of one full-size image each: a still costs the
+ * agent as many tokens as a whole sheet. `%02d` instead of a glob, which Windows builds of ffmpeg lack.
+ */
+export const SHEET_STEP =
+  'Put the stills on one contact sheet and look at that one image, not at each still: `ffmpeg -y -i stills/scene-%02d.png -vf "scale=360:-2,tile=4x3" -frames:v 1 stills/sheet.jpg` (more than 12 scenes: run it again with `-start_number 13` before `-i` and `stills/sheet-2.jpg` as the output). Look for overlapping elements, text that is cut off or outside the safe area, and timing that does not match the voice or captions. Open a single still only when the sheet shows a problem you need to see closer.';
+
 /** Folder in a project where Tayang puts the style's reference frames. */
 export const STYLE_REFS_DIR = 'style-refs';
 
@@ -56,18 +63,18 @@ export const STYLE_REFS_DIR = 'style-refs';
 export function frameCheckPrompt(opts: { engine?: 'hyperframes' | 'remotion'; references?: boolean } = {}): string {
   const still =
     opts.engine === 'remotion'
-      ? '1. Render a still of every scene with `npx remotion still` (one frame per scene).'
-      : '1. Render a still of every scene with `npx hyperframes`.';
+      ? '1. Render a still of every scene with `npx remotion still` (one frame per scene)'
+      : '1. Render a still of every scene with `npx hyperframes`';
   return [
     'Check the frames before you report this video as done.',
-    still,
-    '2. Look at each still for overlapping elements, text that is cut off or outside the safe area, and timing that does not match the voice or captions.',
+    `${still}, named in order: stills/scene-01.png, stills/scene-02.png, …`,
+    `2. ${SHEET_STEP}`,
     ...(opts.references
       ? [
           `   Then make a contact sheet of your render the same way as the references (\`ffmpeg -i <your render> -vf "fps=12/<duration>,scale=320:-2,tile=4x3" -frames:v 1 renders/check-sheet.jpg\`) and look at it side by side with the contact sheets in ${STYLE_REFS_DIR}/: the same rendering technique, character design, palette, lighting, camera framing, caption style and pacing. Anything that looks different is a problem to fix.`,
         ]
       : []),
-    '3. Fix every problem you find, then render and look at the affected stills again.',
+    '3. Fix every problem you find, then render the affected stills again and look at them.',
     `4. When all stills are clean, write ${FRAMES_CHECKED_TOKEN} exactly as shown, whatever language you reply in, then a one-line summary of what you fixed.`,
   ].join('\n');
 }
