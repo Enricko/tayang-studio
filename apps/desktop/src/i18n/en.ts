@@ -165,6 +165,7 @@ export const en = {
     cantAllowOnce: "This request can't be allowed once",
   },
   errors: {
+    signInClaude: 'Sign in to Claude first: open Settings › Agents and press Sign in to Claude',
     opencodeFreeLimit: "opencode's free model has reached its usage limit. Pick another model in the model menu, or subscribe to OpenCode Go (opencode.ai/go)",
     agentStopped: 'The agent stopped unexpectedly',
     signIn: 'Sign in to {{agent}}: open a terminal and run {{command}} once, then try again',
@@ -693,6 +694,15 @@ export const en = {
     checking: 'Checking…',
     upToDate: "You're on the latest version",
     devBuild: 'Updates are off in development builds',
+  },
+  claudeAccount: {
+    signIn: 'Sign in to Claude',
+    signingIn: 'Finish signing in in your browser…',
+    openPage: "Browser didn't open? Open the sign-in page",
+    signedIn: 'Signed in to Claude',
+    signedInAs: 'Signed in as {{email}}',
+    signOut: 'Sign out',
+    failed: "Couldn't sign in: {{reason}}",
   },
   usageTab: {
     tayang: 'Tayang plan',

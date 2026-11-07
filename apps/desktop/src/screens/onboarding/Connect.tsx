@@ -4,11 +4,13 @@ import { ArrowRight, Plus } from 'lucide-react';
 import type { AgentId, AgentInfo } from '@tayang/shared';
 import defaultOyen from '@/assets/brand/oyen-expr-default.svg';
 import { AgentLogo } from '@/components/AgentLogo';
+import { ClaudeAccountControl } from '@/components/ClaudeAccountControl';
 import { Button } from '@/components/Button';
 import { Oyen } from '@/components/Oyen';
 import { OnboardingHeader } from '@/components/OnboardingHeader';
 import { detectAgents, updateSettings } from '@/lib/ipc';
 import { useApp } from '@/state/app';
+import { useClaudeAccount } from '@/state/claudeAccount';
 import { track } from '@/lib/analytics';
 
 const ROWS: { id: AgentId; name?: string; installUrl?: string }[] = [
@@ -24,6 +26,7 @@ export function Connect() {
   const { t } = useTranslation();
   const [error, setError] = useState<string | null>(null);
   const [agents, setAgents] = useState<AgentInfo[] | null>(null);
+  const claudeSignedIn = useClaudeAccount((s) => !!s.account?.signedIn);
 
   useEffect(() => {
     let live = true;
@@ -45,7 +48,9 @@ export function Connect() {
   };
 
   const info = (id: AgentId) => agents?.find((a) => a.id === id);
-  const connectedId = ROWS.find((r) => info(r.id)?.installed && settings?.defaultAgent === r.id)?.id;
+  // Claude also needs Tayang's own sign-in (its own config folder, see claude_account.rs).
+  const ready = (id: AgentId) => !!info(id)?.installed && (id !== 'claude' || claudeSignedIn);
+  const connectedId = ROWS.find((r) => ready(r.id) && settings?.defaultAgent === r.id)?.id;
 
   return (
     <div className="flex min-h-full flex-col items-center bg-background px-6 pt-10 pb-12 text-foreground">
@@ -63,7 +68,8 @@ export function Connect() {
             const a = info(r.id);
             const name = r.name ?? t('onboarding.connect.otherAgent');
             const installed = !!a?.installed;
-            const connected = installed && settings?.defaultAgent === r.id;
+            const connected = ready(r.id) && settings?.defaultAgent === r.id;
+            const needsSignIn = installed && r.id === 'claude' && !claudeSignedIn;
             const status = r.id === 'custom'
               ? t('onboarding.connect.otherHint')
               : installed
@@ -87,7 +93,8 @@ export function Connect() {
                     {t('onboarding.connect.connected')}
                   </span>
                 )}
-                {installed && !connected && (
+                {needsSignIn && <ClaudeAccountControl onSignedIn={() => void connect('claude')} />}
+                {installed && !connected && !needsSignIn && (
                   <Button variant="secondary" className="h-9" onClick={() => connect(r.id)} aria-label={t('onboarding.connect.connectAria', { name })}>
                     {t('onboarding.connect.connect')}
                   </Button>

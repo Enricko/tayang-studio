@@ -1935,16 +1935,16 @@ describe('Style study job notes in another language', () => {
     await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
     const chatId = vi.mocked(ipc.agentPrompt).mock.calls[0]![0];
     act(() => updateHandlers.forEach((h) => h({ chatId, update: { kind: 'error', message: 'Authentication required' } })));
-    const sayIt = 'Login ke Claude Code: buka terminal, jalankan `claude` sekali, lalu coba lagi';
+    const sayIt = 'Masuk ke Claude dulu: buka Pengaturan › Agen lalu tekan Masuk ke Claude';
     expect(await screen.findByText(sayIt)).toBeInTheDocument();
     await waitFor(() =>
       expect(vi.mocked(ipc.upsertJob).mock.calls.at(-1)![0]).toMatchObject({
         status: 'failed',
         title: 'Study a video for a new style',
-        note: 'Sign in to Claude Code: open a terminal and run `claude` once, then try again',
+        note: 'Sign in to Claude first: open Settings › Agents and press Sign in to Claude',
       }),
     );
     // and the cancelled note, too
-    expect(localized('Sign in to Claude Code: open a terminal and run `claude` once, then try again')).toBe(sayIt);
+    expect(localized('Sign in to Claude first: open Settings › Agents and press Sign in to Claude')).toBe(sayIt);
   });
 });

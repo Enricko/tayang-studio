@@ -17,7 +17,7 @@ describe('agentErrorText', () => {
     'The agent could not start a session: oops (code -32000)',
   ])('maps "%s" to sign-in copy', (msg) => {
     expect(agentErrorText(msg, 'claude')).toBe(
-      'Sign in to Claude Code: open a terminal and run `claude` once, then try again',
+      'Sign in to Claude first: open Settings › Agents and press Sign in to Claude',
     );
   });
 

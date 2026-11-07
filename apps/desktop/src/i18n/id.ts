@@ -167,6 +167,7 @@ export const id: Translations = {
     cantAllowOnce: 'Permintaan ini tidak bisa diizinkan sekali saja',
   },
   errors: {
+    signInClaude: 'Masuk ke Claude dulu: buka Pengaturan › Agen lalu tekan Masuk ke Claude',
     opencodeFreeLimit: 'Model gratis opencode sudah mencapai batas pemakaiannya. Pilih model lain di menu model, atau berlangganan OpenCode Go (opencode.ai/go)',
     agentStopped: 'Agen berhenti tiba-tiba',
     signIn: 'Login ke {{agent}}: buka terminal, jalankan {{command}} sekali, lalu coba lagi',
@@ -687,6 +688,15 @@ export const id: Translations = {
     checking: 'Mengecek…',
     upToDate: 'Sudah versi terbaru',
     devBuild: 'Pembaruan mati di build pengembangan',
+  },
+  claudeAccount: {
+    signIn: 'Masuk ke Claude',
+    signingIn: 'Selesaikan login di browser…',
+    openPage: 'Browser tidak terbuka? Buka halaman login',
+    signedIn: 'Sudah masuk ke Claude',
+    signedInAs: 'Masuk sebagai {{email}}',
+    signOut: 'Keluar',
+    failed: 'Gagal masuk: {{reason}}',
   },
   usageTab: {
     tayang: 'Paket Tayang',

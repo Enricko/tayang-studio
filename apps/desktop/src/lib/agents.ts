@@ -30,6 +30,8 @@ export function agentErrorText(message: string | null | undefined, agent: AgentI
   const msg = (message ?? '').trim();
   if (AUTH.test(msg)) {
     const opts = lng ? { lng } : {};
+    // Claude signs in from Tayang (Settings › Agents), not a terminal.
+    if (agent === 'claude') return i18n.t('errors.signInClaude', opts);
     const cmd = SIGN_IN_COMMAND[agent] || i18n.t('errors.yourAgentCommand', opts);
     const run = agent === 'custom' ? cmd : `\`${cmd}\``;
     const name = agent === 'custom' ? i18n.t('agents.yourAgent', opts) : AGENT_NAMES[agent];

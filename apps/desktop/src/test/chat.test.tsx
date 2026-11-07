@@ -730,12 +730,12 @@ describe('ChatProject', () => {
     render(<ChatProject chatId="c1" />);
     await user.type(await screen.findByRole('textbox', { name: 'Message' }), 'go');
     await user.click(screen.getByRole('button', { name: 'Send' }));
-    await screen.findByText('Sign in to Claude Code: open a terminal and run `claude` once, then try again');
+    await screen.findByText('Sign in to Claude first: open Settings › Agents and press Sign in to Claude');
     const saved = vi.mocked(ipc.addMessage).mock.calls.map((c) => JSON.stringify(c[2]));
-    expect(saved.some((s) => s.includes('Sign in to Claude Code: open a terminal and run `claude` once, then try again'))).toBe(true);
+    expect(saved.some((s) => s.includes('Sign in to Claude first: open Settings › Agents and press Sign in to Claude'))).toBe(true);
     await act(async () => setUiLanguage('id'));
     expect(
-      await screen.findByText('Login ke Claude Code: buka terminal, jalankan `claude` sekali, lalu coba lagi'),
+      await screen.findByText('Masuk ke Claude dulu: buka Pengaturan › Agen lalu tekan Masuk ke Claude'),
     ).toBeInTheDocument();
   });
 
@@ -758,7 +758,7 @@ describe('ChatProject', () => {
     await user.type(await screen.findByRole('textbox', { name: 'Message' }), 'go');
     await user.click(screen.getByRole('button', { name: 'Send' }));
     expect(
-      await screen.findByText('Sign in to Claude Code: open a terminal and run `claude` once, then try again'),
+      await screen.findByText('Sign in to Claude first: open Settings › Agents and press Sign in to Claude'),
     ).toBeInTheDocument();
   });
 

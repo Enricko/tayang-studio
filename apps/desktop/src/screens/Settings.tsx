@@ -8,6 +8,7 @@ import { AccountSection } from '@/components/Account';
 import { ArchiveSection } from '@/components/ArchiveSection';
 import { GiftCode } from '@/components/GiftCode';
 import { UsageTab } from '@/components/UsageTab';
+import { ClaudeAccountControl } from '@/components/ClaudeAccountControl';
 import { AgentLogo } from '@/components/AgentLogo';
 import { Button } from '@/components/Button';
 import { ToolRow, TOOL_ORDER } from '@/components/ToolRow';
@@ -345,9 +346,13 @@ export function Settings() {
                         {a.installed ? (a.version ? t('settings.connectedVersion', { version: a.version }) : t('settings.connected')) : t('settings.notInstalled')}
                       </span>
                     </div>
-                    <Button variant="ghost" className="h-8 px-2 text-[13px] text-primary hover:text-accent-hover" onClick={() => navigate({ name: 'connect' })}>
-                      {a.installed ? t('settings.reconnect') : t('settings.howToInstall')}
-                    </Button>
+                    {a.id === 'claude' && a.installed ? (
+                      <ClaudeAccountControl showSignOut />
+                    ) : (
+                      <Button variant="ghost" className="h-8 px-2 text-[13px] text-primary hover:text-accent-hover" onClick={() => navigate({ name: 'connect' })}>
+                        {a.installed ? t('settings.reconnect') : t('settings.howToInstall')}
+                      </Button>
+                    )}
                   </div>
                 ))}
               </RadioGroup>
