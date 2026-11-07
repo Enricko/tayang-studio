@@ -58,10 +58,10 @@ function Detail({ span, scale, streaming }: { span: TraceSpan | undefined; scale
         <span className="tabular-nums">{t('trace.tookFor', { when: formatDuration(span.endMs - span.startMs) })}</span>
         {tokens && (
           <>
-            <span className="tabular-nums">{t('trace.inputTokens', { count: formatTokens(span.inputTokens) })}</span>
-            <span className="tabular-nums">{t('trace.cacheWrite', { count: formatTokens(span.cacheWriteTokens) })}</span>
-            <span className="tabular-nums">{t('trace.cacheRead', { count: formatTokens(span.cacheReadTokens) })}</span>
-            <span className="tabular-nums">{t('trace.output', { count: formatTokens(span.outputTokens) })}</span>
+            <span className="tabular-nums">{t('trace.inputTokens', { tokens: formatTokens(span.inputTokens) })}</span>
+            <span className="tabular-nums">{t('trace.cacheWrite', { tokens: formatTokens(span.cacheWriteTokens) })}</span>
+            <span className="tabular-nums">{t('trace.cacheRead', { tokens: formatTokens(span.cacheReadTokens) })}</span>
+            <span className="tabular-nums">{t('trace.output', { tokens: formatTokens(span.outputTokens) })}</span>
           </>
         )}
         {span.failed && (
