@@ -145,7 +145,7 @@ docker compose logs -f tayang
 another loopback port there and point the reverse proxy at it. The container always listens on 8787.
 
 The image includes Node 22, ffmpeg/ffprobe, git, the server, opencode 2.2.6 (free models work
-without an account) and Claude Code 2.1.319. It runs as UID/GID `10001`. The
+without an account), Claude Code 2.1.319 and Codex 0.167.0. It runs as UID/GID `10001`. The
 `tayang-data` volume keeps:
 
 - `/data/tayang.db` — database (same schema as desktop, plus web tables)

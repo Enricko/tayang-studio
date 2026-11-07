@@ -41,8 +41,8 @@ RUN mkdir -p /data/workspaces /data/home /data/tmp /data/thumbs /data/style-medi
     && chown -R tayang:tayang /data /app
 
 # Default agents for the self-hosted edition. opencode's free models work without an account;
-# Claude Code is installed so it can be signed in from Settings › Agents. Both are pinned for
-# reproducible deployments. Extend the image to add Codex/Gemini or other tools.
+# Claude Code and Codex are installed so they can be signed in from Settings › Agents. All are
+# pinned for reproducible deployments. Extend the image to add Gemini or other tools.
 ARG OPENCODE_VERSION=2.2.6
 ARG CLAUDE_CODE_VERSION=2.1.319
 ARG CODEX_VERSION=0.167.0
