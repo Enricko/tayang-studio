@@ -370,7 +370,7 @@ const AGENT_DEFS: [AgentDef; 4] = [
     ),
     (AgentId::Opencode, "OpenCode", "opencode", &["opencode", "acp"]),
     (AgentId::Gemini, "Gemini CLI", "gemini", &["gemini", "--experimental-acp"]),
-    (AgentId::Codex, "Codex", "codex", &["npx", "-y", "@zed-industries/codex-acp"]),
+    (AgentId::Codex, "Codex", "codex", &["npx", "-y", "@agentclientprotocol/codex-acp"]),
 ];
 
 /// The command that starts this agent in ACP mode; `None` for `custom`.

@@ -45,10 +45,11 @@ RUN mkdir -p /data/workspaces /data/home /data/tmp /data/thumbs /data/style-medi
 # reproducible deployments. Extend the image to add Codex/Gemini or other tools.
 ARG OPENCODE_VERSION=2.2.6
 ARG CLAUDE_CODE_VERSION=2.1.319
+ARG CODEX_VERSION=0.167.0
 RUN mkdir -p /opt/opencode \
     && HOME=/opt/opencode VERSION=${OPENCODE_VERSION} bash -c 'curl -fsSL https://opencode.ai/v2/install | bash -s -- --no-modify-path' \
     && ln -sf /opt/opencode/.opencode/bin/opencode /usr/local/bin/opencode \
-    && npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} \
+    && npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} @openai/codex@${CODEX_VERSION} \
     && npm cache clean --force
 
 ENV NODE_ENV=production \

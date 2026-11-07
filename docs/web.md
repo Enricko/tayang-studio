@@ -199,6 +199,28 @@ lost when the container is recreated. For a durable deployment extend the image 
 on the host and mount its binary/prefix). Agent credentials and configs in `/data/home` and
 `/data/claude` survive.
 
+### Use the server owner's existing agent logins (single-user)
+
+This edition has one owner, so the simplest deployment is to reuse the logins already present on the
+Linux server. The helper copies them into the container's persistent volume and never prints secrets:
+
+```bash
+# opencode, Claude Code and Codex must be installed and signed in on the host.
+./scripts/web-import-agent-auth.sh
+# or: pnpm web:import-agent-auth
+```
+
+It:
+
+- exports opencode credentials with `opencode auth export` and imports them through stdin;
+- copies `~/.claude/.credentials.json` and `~/.claude.json` into `/data/claude`;
+- copies `~/.codex/auth.json` into `/data/home/.codex` (not the host's model config);
+- fixes the volume ownership for the container's UID/GID 10001.
+
+Credentials stay on the server in the `tayang-data` volume; they are never returned to the browser.
+Re-run the helper after rotating a host login or when a provider token expires. Do not enable this
+pattern for a multi-user deployment without separating credentials per user.
+
 Authentication:
 
 - **Claude Code:** open Settings › Agents › Claude › Sign in to Claude. The server starts
@@ -208,6 +230,7 @@ Authentication:
 - **opencode:** `docker compose exec -it tayang opencode auth login` (or its documented provider
   login). Credentials stay in `/data/home`.
 - **Codex:** `docker compose exec -it tayang codex login`; credentials stay in `/data/home/.codex`.
+  Tayang starts the maintained `@agentclientprotocol/codex-acp` adapter.
 - **Gemini CLI:** run it once in the container and follow its sign-in.
 
 Headless limitation: some providers open a browser or wait for a localhost callback. On a headless

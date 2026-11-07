@@ -208,6 +208,9 @@ export const id: Translations = {
   settings: {
     title: 'Pengaturan',
     sectionsAria: 'Bagian pengaturan',
+    serverAccount: 'Akun server',
+    serverAccountHint: 'Memakai login agen yang sudah dikonfigurasi di server ini',
+    agentsIntroWeb: 'Edisi web mandiri memakai akun agen di server, bukan login browser. Klik Masuk ke Claude untuk menghubungkan Claude Code.',
     webNotice: 'Edisi web mandiri. Proyek, agen, render, dan riwayat berjalan di server, jadi menutup tab ini tidak menghentikannya.',
     webNoticeCloud: 'Masuk cloud Tayang, paket berbayar, posting sosial, gambar/suara AI, dan pembaruan aplikasi bukan bagian dari server mandiri ini.',
     signOut: 'Keluar dari server ini',

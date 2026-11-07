@@ -348,6 +348,7 @@ export function Settings() {
             <div className="flex flex-col gap-1">
               <h2 className="m-0 text-base font-medium">{t('settings.sections.agents')}</h2>
               <span className="text-[13px] text-text-2">{t('settings.agentsIntro')}</span>
+              {capabilities.web && <span className="text-xs text-text-3">{t('settings.agentsIntroWeb')}</span>}
             </div>
             <span id="default-agent-label" className="text-[13px] font-medium">
               {t('settings.defaultAgent')}
@@ -371,6 +372,10 @@ export function Settings() {
                     </div>
                     {a.id === 'claude' && a.installed ? (
                       <ClaudeAccountControl showSignOut />
+                    ) : capabilities.web && a.installed ? (
+                      <span className="shrink-0 text-xs text-text-3" title={t('settings.serverAccountHint')}>
+                        {t('settings.serverAccount')}
+                      </span>
                     ) : (
                       <Button variant="ghost" className="h-8 px-2 text-[13px] text-primary hover:text-accent-hover" onClick={() => navigate({ name: 'connect' })}>
                         {a.installed ? t('settings.reconnect') : t('settings.howToInstall')}

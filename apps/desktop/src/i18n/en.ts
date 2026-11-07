@@ -206,6 +206,9 @@ export const en = {
   settings: {
     title: 'Settings',
     sectionsAria: 'Settings sections',
+    serverAccount: 'Server account',
+    serverAccountHint: 'Uses the agent login already configured on this server',
+    agentsIntroWeb: 'The self-hosted web edition uses agent accounts on this server, not browser sign-ins. Use Sign in to Claude to connect Claude Code.',
     webNotice: 'Self-hosted web edition. Projects, agents, renders and history run on the server, so closing this tab does not stop them.',
     webNoticeCloud: 'Tayang cloud sign-in, paid plans, social posting, AI images/voice and app updates are not part of the self-hosted server.',
     signOut: 'Sign out of this server',
