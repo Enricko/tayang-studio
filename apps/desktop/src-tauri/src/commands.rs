@@ -2721,7 +2721,7 @@ mod tests {
 /// A chat's turns, model calls and tool calls with their timings and tokens. Claude Code's session
 /// files hold them; a chat with another agent has no trace.
 #[tauri::command]
-pub async fn get_chat_trace(state: State<'_, AppState>, chat_id: String) -> CmdResult<crate::trace::ChatTrace> {
+pub async fn get_chat_trace(app: AppHandle, state: State<'_, AppState>, chat_id: String) -> CmdResult<crate::trace::ChatTrace> {
     let Some(chat) = lookup_chat(&state.db, &chat_id)? else { return Ok(Default::default()) };
     if chat.agent_id != AgentId::Claude {
         return Ok(Default::default());
@@ -2744,8 +2744,9 @@ pub async fn get_chat_trace(state: State<'_, AppState>, chat_id: String) -> CmdR
     if folder.is_some() && tool_ids.is_empty() {
         return Ok(crate::trace::ChatTrace { supported: true, ..Default::default() });
     }
-    let home = state.home.clone();
-    tauri::async_runtime::spawn_blocking(move || crate::trace::chat_trace(&home, &cwd, &tool_ids)).await.map_err(err)
+    // Tayang's own Claude folder, then `~/.claude` for chats from before Tayang had one.
+    let configs = vec![claude_config_dir(&app)?, state.home.join(".claude")];
+    tauri::async_runtime::spawn_blocking(move || crate::trace::chat_trace(&configs, &cwd, &tool_ids)).await.map_err(err)
 }
 
 // ---- agent usage ----

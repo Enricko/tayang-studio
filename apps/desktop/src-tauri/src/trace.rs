@@ -1,6 +1,7 @@
 //! One chat's trace: its turns, model calls and tool calls on a time axis, with the tokens of each
 //! call. Tayang's own chat history has no timings, so this reads the session files Claude Code
-//! keeps in `~/.claude/projects`. They are an internal format: anything unknown is skipped, and a
+//! keeps in `<config folder>/projects`: Tayang's own Claude folder (see `claude_account`), and
+//! `~/.claude` for chats from before Tayang had one. They are an internal format: anything unknown is skipped, and a
 //! chat with no readable file has an empty trace. Other agents don't write these files.
 
 use chrono::DateTime;
@@ -51,10 +52,11 @@ pub struct ChatTrace {
     pub cost_usd: Option<f64>,
 }
 
-/// Where Claude Code keeps the sessions of a working folder: every other character becomes `-`.
-pub fn transcripts_dir(home: &Path, cwd: &Path) -> PathBuf {
+/// Where Claude Code, run with the config folder `config`, keeps the sessions of a working folder:
+/// every other character becomes `-`.
+pub fn transcripts_dir(config: &Path, cwd: &Path) -> PathBuf {
     let name: String = cwd.to_string_lossy().chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '-' }).collect();
-    home.join(".claude").join("projects").join(name)
+    config.join("projects").join(name)
 }
 
 fn millis(row: &Value) -> Option<i64> {
@@ -276,10 +278,11 @@ fn add_subagents(session: &Path, spans: &mut [TraceSpan]) {
 /// The trace of a chat that works in `cwd`. Several chats can share a project's folder, so a
 /// session belongs to the chat when it holds one of the chat's tool calls (`tool_ids`). With no
 /// `tool_ids` (a chat with a folder of its own that hasn't called a tool) every session counts.
-pub fn chat_trace(home: &Path, cwd: &Path, tool_ids: &HashSet<String>) -> ChatTrace {
+/// `configs` are the Claude config folders the chat's sessions may be in.
+pub fn chat_trace(configs: &[PathBuf], cwd: &Path, tool_ids: &HashSet<String>) -> ChatTrace {
     let mut trace = ChatTrace { supported: true, ..ChatTrace::default() };
-    let Ok(dir) = std::fs::read_dir(transcripts_dir(home, cwd)) else { return trace };
-    for entry in dir.flatten() {
+    let entries = configs.iter().filter_map(|c| std::fs::read_dir(transcripts_dir(c, cwd)).ok()).flat_map(|d| d.flatten());
+    for entry in entries {
         let path = entry.path();
         if path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
             continue;
@@ -384,7 +387,7 @@ not json at all
     fn a_subagent_adds_its_tokens_to_its_tool_call_and_turn() {
         let home = tempfile::tempdir().unwrap();
         let cwd = Path::new("/w/p");
-        let dir = transcripts_dir(home.path(), cwd);
+        let dir = transcripts_dir(&home.path().join(".claude"), cwd);
         let sub = dir.join("a").join("subagents");
         std::fs::create_dir_all(&sub).unwrap();
         std::fs::write(dir.join("a.jsonl"), FIXTURE).unwrap();
@@ -397,11 +400,27 @@ not json at all
 "#,
         )
         .unwrap();
-        let t = chat_trace(home.path(), cwd, &HashSet::from(["t1".to_string()]));
+        let t = chat_trace(&[home.path().join(".claude")], cwd, &HashSet::from(["t1".to_string()]));
         let find = |id: &str| t.spans.iter().find(|s| s.id == id).unwrap();
         assert_eq!((find("t1").input_tokens, find("t1").output_tokens, find("t1").cache_read_tokens), (2, 10, 40));
         assert_eq!(find("a:turn:1").output_tokens, 47);
         assert_eq!(find("m1").output_tokens, 30);
+    }
+
+    #[test]
+    fn sessions_are_read_from_tayangs_claude_folder_and_the_old_one() {
+        let home = tempfile::tempdir().unwrap();
+        let cwd = Path::new("/w/p");
+        let (tayang, old) = (home.path().join("tayang-claude"), home.path().join(".claude"));
+        std::fs::create_dir_all(transcripts_dir(&tayang, cwd)).unwrap();
+        std::fs::create_dir_all(transcripts_dir(&old, cwd)).unwrap();
+        std::fs::write(transcripts_dir(&tayang, cwd).join("new.jsonl"), FIXTURE).unwrap();
+        let before = FIXTURE.replace("\"t1\"", "\"x1\"").replace("\"m1\"", "\"y1\"");
+        std::fs::write(transcripts_dir(&old, cwd).join("old.jsonl"), before).unwrap();
+        let t = chat_trace(&[tayang.clone(), old], cwd, &HashSet::new());
+        assert!(t.spans.iter().any(|s| s.id == "t1"));
+        assert!(t.spans.iter().any(|s| s.id == "x1"));
+        assert!(chat_trace(&[tayang], cwd, &HashSet::new()).spans.iter().all(|s| s.id != "x1"));
     }
 
     #[test]
@@ -413,7 +432,7 @@ not json at all
 
     #[test]
     fn the_folder_name_replaces_every_other_character() {
-        let dir = transcripts_dir(Path::new("/h"), Path::new("/home/a/Tayang/.tayang/chats/c_1"));
+        let dir = transcripts_dir(Path::new("/h/.claude"), Path::new("/home/a/Tayang/.tayang/chats/c_1"));
         assert_eq!(dir, Path::new("/h/.claude/projects/-home-a-Tayang--tayang-chats-c-1"));
     }
 
@@ -421,21 +440,21 @@ not json at all
     fn a_session_belongs_to_the_chat_that_holds_its_tool_calls() {
         let home = tempfile::tempdir().unwrap();
         let cwd = Path::new("/w/p");
-        let dir = transcripts_dir(home.path(), cwd);
+        let dir = transcripts_dir(&home.path().join(".claude"), cwd);
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("a.jsonl"), FIXTURE).unwrap();
         std::fs::write(dir.join("notes.txt"), "skip").unwrap();
         let other = FIXTURE.replace("\"t1\"", "\"x1\"").replace("\"t2\"", "\"x2\"").replace("\"t3\"", "\"x3\"").replace("\"m1\"", "\"y1\"");
         std::fs::write(dir.join("b.jsonl"), other).unwrap();
 
-        let mine = chat_trace(home.path(), cwd, &HashSet::from(["t1".to_string()]));
+        let mine = chat_trace(&[home.path().join(".claude")], cwd, &HashSet::from(["t1".to_string()]));
         assert!(mine.spans.iter().any(|s| s.id == "t1"));
         assert!(!mine.spans.iter().any(|s| s.id == "x1"));
         assert_eq!(mine.cost_usd, Some(1.5));
 
-        assert!(chat_trace(home.path(), cwd, &HashSet::from(["nope".to_string()])).spans.is_empty());
-        assert_eq!(chat_trace(home.path(), cwd, &HashSet::new()).cost_usd, Some(3.0));
-        let none = chat_trace(home.path(), Path::new("/none"), &HashSet::new());
+        assert!(chat_trace(&[home.path().join(".claude")], cwd, &HashSet::from(["nope".to_string()])).spans.is_empty());
+        assert_eq!(chat_trace(&[home.path().join(".claude")], cwd, &HashSet::new()).cost_usd, Some(3.0));
+        let none = chat_trace(&[home.path().join(".claude")], Path::new("/none"), &HashSet::new());
         assert!(none.supported && none.spans.is_empty());
     }
 }
