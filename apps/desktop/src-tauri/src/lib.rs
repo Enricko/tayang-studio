@@ -54,6 +54,7 @@ pub fn run() {
             commands::allow_style_media(app.handle());
             media::sweep_study_dirs(std::path::Path::new(&working));
             app.manage(usage::UsageCache::default());
+            app.manage(commands::ClaudeSignIn::default());
             let api_url = styles_sync::effective_api_url(&settings);
             app.manage(AppState {
                 db,
@@ -97,6 +98,10 @@ pub fn run() {
             commands::system_locale,
             commands::detect_agents,
             commands::check_tools,
+            commands::claude_account,
+            commands::claude_sign_in,
+            commands::claude_sign_in_cancel,
+            commands::claude_sign_out,
             commands::get_settings,
             commands::update_settings,
             commands::pick_folder,

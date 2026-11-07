@@ -133,7 +133,6 @@ pub async fn sign_in(
         Err(e) => return SignInEnd::Failed(format!("Could not start Claude Code: {e}")),
     };
     let _stdin = child.stdin.take();
-    let mut tail = Vec::new();
     if let Some(stdout) = child.stdout.take() {
         let mut lines = BufReader::new(stdout).lines();
         let reader = async move {
@@ -151,8 +150,8 @@ pub async fn sign_in(
             }
             kept
         };
-        let waited = tokio::select! {
-            kept = reader => { tail = kept; child.wait().await.ok() }
+        let (tail, waited) = tokio::select! {
+            kept = reader => (kept, child.wait().await.ok()),
             _ = cancel => { let _ = child.kill().await; return SignInEnd::Cancelled; }
             _ = tokio::time::sleep(timeout) => { let _ = child.kill().await; return SignInEnd::TimedOut; }
         };

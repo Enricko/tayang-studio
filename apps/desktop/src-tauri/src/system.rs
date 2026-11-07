@@ -431,7 +431,8 @@ fn chrome_found(exec: &dyn Exec, os: OsKind) -> bool {
     }
 }
 
-pub fn check_tools(exec: &dyn Exec, agent: AgentId, home: &Path) -> Vec<ToolStatus> {
+/// `claude_config` is the Claude Code config folder Tayang runs Claude with.
+pub fn check_tools(exec: &dyn Exec, agent: AgentId, claude_config: &Path) -> Vec<ToolStatus> {
     let version_of = |bin: &str, arg: &str| -> Option<String> {
         exec.which(bin)?;
         exec.run(bin, &[arg]).and_then(|s| parse_version(&s))
@@ -487,7 +488,7 @@ pub fn check_tools(exec: &dyn Exec, agent: AgentId, home: &Path) -> Vec<ToolStat
     };
 
     let (el_found, el_detail) = if agent == AgentId::Claude {
-        let found = std::fs::read_to_string(home.join(".claude.json"))
+        let found = std::fs::read_to_string(claude_config.join(".claude.json"))
             .map(|s| elevenlabs_in_claude_config(&s))
             .unwrap_or(false);
         (found, "Adds a natural voice to your videos")

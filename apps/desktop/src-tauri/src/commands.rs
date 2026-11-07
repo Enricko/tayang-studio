@@ -77,9 +77,9 @@ pub async fn detect_agents() -> CmdResult<Vec<AgentInfo>> {
 }
 
 #[tauri::command]
-pub async fn check_tools(state: State<'_, AppState>, agent: AgentId) -> CmdResult<Vec<ToolStatus>> {
-    let home = state.home.clone();
-    tauri::async_runtime::spawn_blocking(move || system::check_tools(&RealExec, agent, &home))
+pub async fn check_tools(app: AppHandle, agent: AgentId) -> CmdResult<Vec<ToolStatus>> {
+    let claude = claude_config_dir(&app)?;
+    tauri::async_runtime::spawn_blocking(move || system::check_tools(&RealExec, agent, &claude))
         .await
         .map_err(err)
 }
@@ -1188,6 +1188,100 @@ fn session_options(agent: AgentId, plugin: Option<&Path>, skills: bool) -> crate
     crate::acp::SessionOptions { meta: Some(meta), env, auto: false, use_modes, mode_timeout: None, model: None, error_log: error_log(agent), usage_log: None }
 }
 
+/// Tayang's own Claude Code config folder (see `claude_account`), created on first use.
+pub fn claude_config_dir(app: &AppHandle) -> CmdResult<PathBuf> {
+    let dir = crate::claude_account::config_dir(&app.path().app_data_dir().map_err(err)?);
+    std::fs::create_dir_all(&dir).map_err(err)?;
+    Ok(dir)
+}
+
+/// `CLAUDE_CONFIG_DIR` for a Claude session: Tayang's own sign-in and a clean setup. Nothing for
+/// other agents.
+fn claude_env(app: &AppHandle, agent: AgentId) -> CmdResult<Vec<(String, String)>> {
+    if agent != AgentId::Claude {
+        return Ok(Vec::new());
+    }
+    let dir = claude_config_dir(app)?;
+    Ok(vec![(crate::claude_account::CONFIG_ENV.to_string(), dir.to_string_lossy().into_owned())])
+}
+
+fn claude_program() -> CmdResult<PathBuf> {
+    system::Exec::which(&RealExec, "claude").ok_or_else(|| "Can't find Claude Code on this computer".to_string())
+}
+
+/// The Claude sign-in that is waiting for the browser, so it can be cancelled.
+#[derive(Default)]
+pub struct ClaudeSignIn(pub std::sync::Mutex<Option<tokio::sync::oneshot::Sender<()>>>);
+
+/// The event with the sign-in page, for when the browser didn't open by itself.
+pub const CLAUDE_SIGN_IN_URL_EVENT: &str = "claude://sign-in-url";
+
+/// Who is signed in to Claude in Tayang.
+#[tauri::command]
+pub async fn claude_account(app: AppHandle) -> CmdResult<crate::claude_account::ClaudeAccount> {
+    let dir = claude_config_dir(&app)?;
+    let Ok(claude) = claude_program() else { return Ok(Default::default()) };
+    Ok(crate::claude_account::status(&claude, &dir).await)
+}
+
+/// Signs in to Claude for Tayang: Claude Code opens the browser and the user signs in there.
+/// Resolves with the account once they're done; an error when cancelled, timed out or refused.
+#[tauri::command]
+pub async fn claude_sign_in(
+    app: AppHandle,
+    pending: State<'_, ClaudeSignIn>,
+    usage: State<'_, crate::usage::UsageCache>,
+) -> CmdResult<crate::claude_account::ClaudeAccount> {
+    use crate::claude_account::{sign_in, status, SignInEnd, SIGN_IN_TIMEOUT};
+    let dir = claude_config_dir(&app)?;
+    let claude = claude_program()?;
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    // A new sign-in replaces one still waiting.
+    if let Some(old) = pending.0.lock().map_err(err)?.replace(tx) {
+        let _ = old.send(());
+    }
+    let emitter = app.clone();
+    let end = sign_in(&claude, &dir, SIGN_IN_TIMEOUT, rx, move |url| {
+        let _ = emitter.emit(CLAUDE_SIGN_IN_URL_EVENT, url);
+    })
+    .await;
+    *usage.0.lock().map_err(err)? = None;
+    match end {
+        SignInEnd::Done => {
+            let account = status(&claude, &dir).await;
+            if account.signed_in {
+                Ok(account)
+            } else {
+                Err("Claude didn't finish signing in. Try again".into())
+            }
+        }
+        SignInEnd::Cancelled => Err("cancelled".into()),
+        SignInEnd::TimedOut => Err("Signing in took too long. Try again".into()),
+        SignInEnd::Failed(why) => Err(why),
+    }
+}
+
+/// Stops a sign-in that is waiting for the browser.
+#[tauri::command]
+pub fn claude_sign_in_cancel(pending: State<'_, ClaudeSignIn>) -> CmdResult<()> {
+    if let Some(tx) = pending.0.lock().map_err(err)?.take() {
+        let _ = tx.send(());
+    }
+    Ok(())
+}
+
+/// Signs out of Claude in Tayang. Running Claude chats keep going until they end.
+#[tauri::command]
+pub async fn claude_sign_out(
+    app: AppHandle,
+    usage: State<'_, crate::usage::UsageCache>,
+) -> CmdResult<crate::claude_account::ClaudeAccount> {
+    let dir = claude_config_dir(&app)?;
+    let claude = claude_program()?;
+    *usage.0.lock().map_err(err)? = None;
+    Ok(crate::claude_account::sign_out(&claude, &dir).await)
+}
+
 /// Starts the chat's agent. Resolves `true` when Claude started without the Tayang
 /// plugin, so the caller must send the skills as text in the first prompt (other
 /// agents always get them that way).
@@ -1215,6 +1309,7 @@ pub async fn agent_start(
         None
     };
     let mut options = session_options(agent_id, plugin.as_deref(), skills);
+    options.env.extend(claude_env(&app, agent_id)?);
     options.auto = wants_auto(&chat_id, auto.unwrap_or(false));
     options.model = picked_model(&state, agent_id);
     options.usage_log = app.path().app_data_dir().ok().map(|dir| crate::acp::UsageLog {
@@ -1291,7 +1386,8 @@ pub async fn agent_models(app: AppHandle, state: State<'_, AppState>, agent_id: 
     let cwd = app.path().app_cache_dir().map_err(err)?.join("model-probe");
     std::fs::create_dir_all(&cwd).map_err(err)?;
     let probe = format!("models-{}", agent_key(agent_id));
-    let options = session_options(agent_id, None, false);
+    let mut options = session_options(agent_id, None, false);
+    options.env.extend(claude_env(&app, agent_id)?);
     state.acp.start_with(&probe, &command, &cwd, Arc::new(QuietSink), options).await.map_err(err)?;
     let models = state.acp.models(&probe).ok().flatten();
     let _ = state.acp.stop(&probe).await;
@@ -2602,6 +2698,7 @@ mod tests {
 
 #[tauri::command]
 pub async fn get_agent_usage(
+    app: AppHandle,
     state: State<'_, AppState>,
     cache: State<'_, crate::usage::UsageCache>,
     force: bool,
@@ -2613,11 +2710,11 @@ pub async fn get_agent_usage(
             }
         }
     }
-    let home = state.home.clone();
+    let claude = claude_config_dir(&app)?;
     let (agents, token) = tauri::async_runtime::spawn_blocking(move || {
         let agents = system::detect_agents(&RealExec);
         let token = if agents.iter().any(|a| a.installed && a.id == AgentId::Claude) {
-            crate::usage::read_claude_token(&RealExec, &home)
+            crate::usage::read_claude_token(&RealExec, &claude)
         } else {
             None
         };

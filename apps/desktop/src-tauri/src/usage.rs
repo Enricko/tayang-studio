@@ -18,16 +18,18 @@ fn token_from_json(json: &str) -> Option<String> {
     (!t.is_empty()).then(|| t.to_string())
 }
 
-/// Claude Code's OAuth token: the macOS keychain first, then `~/.claude/.credentials.json`
-/// (where Linux and Windows keep it). The caller must never log or return it.
-pub fn read_claude_token(exec: &dyn Exec, home: &Path) -> Option<String> {
+/// The OAuth token of Tayang's Claude sign-in (`claude_config`, see `claude_account`): the macOS
+/// Keychain item Claude Code keeps for that folder, else its `.credentials.json` (Linux, Windows).
+/// The caller must never log or return it.
+pub fn read_claude_token(exec: &dyn Exec, claude_config: &Path) -> Option<String> {
     if cfg!(target_os = "macos") {
-        let out = exec.run("security", &["find-generic-password", "-s", "Claude Code-credentials", "-w"]);
+        let service = crate::claude_account::keychain_service(&claude_config.to_string_lossy());
+        let out = exec.run("security", &["find-generic-password", "-s", &service, "-w"]);
         if let Some(t) = out.as_deref().and_then(token_from_json) {
             return Some(t);
         }
     }
-    let file = std::fs::read_to_string(home.join(".claude").join(".credentials.json")).ok()?;
+    let file = std::fs::read_to_string(claude_config.join(".credentials.json")).ok()?;
     token_from_json(&file)
 }
 
@@ -309,9 +311,8 @@ mod tests {
     #[test]
     fn token_from_credentials_file() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(dir.path().join(".claude")).unwrap();
         std::fs::write(
-            dir.path().join(".claude").join(".credentials.json"),
+            dir.path().join(".credentials.json"),
             r#"{"claudeAiOauth": {"accessToken": "tok-file"}}"#,
         )
         .unwrap();
