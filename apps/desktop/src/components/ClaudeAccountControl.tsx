@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { openUrl } from '@tauri-apps/plugin-opener';
+import { openUrl } from '@/lib/platform';
 import { Button } from '@/components/Button';
 import { useClaudeAccount } from '@/state/claudeAccount';
 

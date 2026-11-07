@@ -26,12 +26,37 @@ pnpm dev:desktop
 
 This starts Vite on port 1420 and the Tauri shell. The first Rust build takes a while. The desktop app keeps its data on this computer and doesn't need the API (your agent still needs its own internet connection).
 
+## Run the self-hosted web edition
+
+The browser edition uses the same frontend against `crates/tayang-server`; the shared backend lives
+in `crates/tayang-core` and is also used by the Tauri app. Start the server with a password and the
+browser origin, then Vite in web mode:
+
+```
+TAYANG_WEB_PASSWORD='a long passphrase' \
+TAYANG_PUBLIC_URL=http://localhost:5173 \
+TAYANG_DATA_DIR="$PWD/.data-web" \
+TAYANG_WORKSPACE_ROOT="$PWD/.data-web/workspaces" \
+pnpm server:dev
+
+# another terminal
+pnpm dev:web
+```
+
+Open http://localhost:5173. The Vite web config proxies `/api` (including SSE) to port 8787. The
+server has no Tauri, WebKit, GTK or display dependency. `pnpm build:web` makes the production bundle,
+and `pnpm server` runs the release binary. See [web.md](web.md) for Docker, reverse proxies, agents on
+a headless server, security boundaries, job orchestration and the feature/capability matrix.
+
 To check everything:
 
 ```
 pnpm test
 pnpm typecheck
 cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml
+cargo test -p tayang-core
+cargo test -p tayang-server
+pnpm build:web
 ```
 
 ## The API

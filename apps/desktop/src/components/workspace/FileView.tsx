@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { FolderOpen } from 'lucide-react';
-import { revealItemInDir } from '@tauri-apps/plugin-opener';
+import { capabilities, revealInFolder } from '@/lib/platform';
 import { assetUrl, readProjectFile, type ProjectFileContent } from '@/lib/ipc';
 import { highlight } from '@/lib/highlight';
 
@@ -47,7 +47,7 @@ export function FileView({ projectId, path, reloadKey }: { projectId: string; pa
     };
   }, [projectId, path, name, reloadKey, t]);
 
-  const reveal = () => file && void revealItemInDir(file.absPath).catch(() => {});
+  const reveal = () => file && void revealInFolder(file.absPath).catch(() => {});
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-[#101010]">
@@ -56,7 +56,7 @@ export function FileView({ projectId, path, reloadKey }: { projectId: string; pa
           {path}
         </span>
         {file && <span className="shrink-0 font-mono text-[11px] text-text-3">{formatSize(file.size)}</span>}
-        {file && (
+        {file && capabilities.revealInFolder && (
           <button
             type="button"
             aria-label={t('workspace.showInFolder')}

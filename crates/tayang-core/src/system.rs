@@ -746,3 +746,8 @@ mod tests {
         }
     }
 }
+
+/// Detection against the real server/desktop environment, for callers that don't already hold an Exec.
+pub fn detect_agents_standalone() -> Vec<AgentInfo> {
+    detect_agents(&RealExec)
+}

@@ -1,13 +1,20 @@
-import { invoke } from '@tauri-apps/api/core';
+import { isWeb } from '@/lib/platform';
+import { rpc } from '@/lib/webRpc';
 import type { BillingStatus, CheckoutResponse, PaidPlanId, UiLanguage } from '@tayang/shared';
 
 // Paid plans. Rust calls the API with the stored sign-in token; the webview only ever sees the
 // payment link and the plan state.
 
 /** Starts (or reuses) a QRIS payment and opens it in the browser. Rejects with `billing:<code>`. */
-export const billingCheckout = (plan: PaidPlanId) => invoke<CheckoutResponse>('billing_checkout', { plan });
+export const billingCheckout = (plan: PaidPlanId): Promise<CheckoutResponse> => {
+  if (isWeb) return Promise.reject(new Error('billing:unavailable'));
+  return import('@tauri-apps/api/core').then(({ invoke }) => invoke<CheckoutResponse>('billing_checkout', { plan }));
+};
 /** The signed-in account's plan and any payment in progress. Rejects with `billing:<code>`. */
-export const billingStatus = () => invoke<BillingStatus>('billing_status');
+export const billingStatus = (): Promise<BillingStatus> => {
+  if (isWeb) return rpc<BillingStatus>('billing_status');
+  return import('@tauri-apps/api/core').then(({ invoke }) => invoke<BillingStatus>('billing_status'));
+};
 
 export type BillingErrorCode =
   | 'signed-out'

@@ -1024,9 +1024,16 @@ mod tests {
 
     fn test_tools() -> Option<MediaTools> {
         let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        // The crate lives in crates/tayang-core; pnpm's binaries are in apps/desktop/node_modules.
+        let local_modules = manifest.join("../node_modules");
+        let node_modules = if local_modules.join("ffmpeg-static/ffmpeg").exists() {
+            local_modules
+        } else {
+            manifest.join("../../apps/desktop/node_modules")
+        };
         let ffmpeg = std::env::var_os("FFMPEG_PATH")
             .map(PathBuf::from)
-            .unwrap_or_else(|| manifest.join("../node_modules/ffmpeg-static/ffmpeg"));
+            .unwrap_or_else(|| node_modules.join("ffmpeg-static/ffmpeg"));
         let ffprobe = std::env::var_os("FFPROBE_PATH").map(PathBuf::from).unwrap_or_else(|| {
             let os = match std::env::consts::OS {
                 "macos" => "darwin",
@@ -1039,7 +1046,7 @@ mod tests {
                 a => a,
             };
             let exe = if cfg!(windows) { "ffprobe.exe" } else { "ffprobe" };
-            manifest.join("../node_modules/ffprobe-static/bin").join(os).join(arch).join(exe)
+            node_modules.join("ffprobe-static/bin").join(os).join(arch).join(exe)
         });
         if ffmpeg.exists() && ffprobe.exists() {
             Some(MediaTools { ffmpeg, ffprobe })

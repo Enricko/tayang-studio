@@ -1581,6 +1581,12 @@ impl AcpManager {
             let _ = self.stop(&id).await;
         }
     }
+
+    /// Whether this chat has a live agent session (used by the web server to make start idempotent
+    /// across browser tabs).
+    pub fn is_running(&self, chat_id: &str) -> bool {
+        self.sessions.lock().unwrap().contains_key(chat_id)
+    }
 }
 
 #[cfg(test)]

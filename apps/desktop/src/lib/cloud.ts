@@ -1,4 +1,5 @@
-import { invoke } from '@tauri-apps/api/core';
+import { isWeb } from '@/lib/platform';
+import { rpc } from '@/lib/webRpc';
 import type { CreatePostResponse, PostDetails, RedeemResponse, SocialAccount, SocialPlatform, UsageResponse } from '@tayang/shared';
 
 /** What a cloud call can fail with: the kebab-case `CloudError` from Rust, or `other`. */
@@ -36,17 +37,20 @@ export function cloudErrorCode(e: unknown): CloudErrorCode {
   return m && CODES.has(m[1] as CloudErrorCode) ? (m[1] as CloudErrorCode) : 'other';
 }
 
-export const cloudUsage = () => invoke<UsageResponse>('cloud_usage');
+function webUnavailable<T>(): Promise<T> {
+  return Promise.reject(new Error('cloud:unavailable'));
+}
+export const cloudUsage = (): Promise<UsageResponse> => isWeb ? webUnavailable() : import('@tauri-apps/api/core').then(({ invoke }) => invoke<UsageResponse>('cloud_usage'));
 /** Redeems a gift code for the signed-in account; Rust adds this computer's hashed id. */
-export const redeemGiftCode = (code: string) => invoke<RedeemResponse>('redeem_gift_code', { code });
-export const socialAccounts = () => invoke<{ accounts: SocialAccount[] }>('social_accounts').then((r) => r.accounts ?? []);
+export const redeemGiftCode = (code: string): Promise<RedeemResponse> => isWeb ? webUnavailable() : import('@tauri-apps/api/core').then(({ invoke }) => invoke<RedeemResponse>('redeem_gift_code', { code }));
+export const socialAccounts = (): Promise<SocialAccount[]> => isWeb ? webUnavailable() : import('@tauri-apps/api/core').then(({ invoke }) => invoke<{ accounts: SocialAccount[] }>('social_accounts').then((r) => r.accounts ?? []));
 /** Opens the platform's sign-in page in the browser. */
-export const socialConnect = (platform: SocialPlatform) => invoke<void>('social_connect', { platform });
-export const socialDisconnect = (id: string) => invoke<void>('social_disconnect', { id });
+export const socialConnect = (platform: SocialPlatform): Promise<void> => isWeb ? webUnavailable() : import('@tauri-apps/api/core').then(({ invoke }) => invoke<void>('social_connect', { platform }));
+export const socialDisconnect = (id: string): Promise<void> => isWeb ? webUnavailable() : import('@tauri-apps/api/core').then(({ invoke }) => invoke<void>('social_disconnect', { id }));
 /** Uploads the project's latest render and posts it; pass the same `clientRequestId` to retry. */
-export const socialPost = (o: { projectId: string; title?: string | null; caption: string; accountIds: string[]; scheduledAt: string | null; clientRequestId: string }) =>
-  invoke<CreatePostResponse>('social_post', o);
-export const socialPostStatus = (postId: string) => invoke<PostDetails>('social_post_status', { postId });
+export const socialPost = (o: { projectId: string; title?: string | null; caption: string; accountIds: string[]; scheduledAt: string | null; clientRequestId: string }): Promise<CreatePostResponse> =>
+  isWeb ? webUnavailable() : import('@tauri-apps/api/core').then(({ invoke }) => invoke<CreatePostResponse>('social_post', o));
+export const socialPostStatus = (postId: string): Promise<PostDetails> => isWeb ? webUnavailable() : import('@tauri-apps/api/core').then(({ invoke }) => invoke<PostDetails>('social_post_status', { postId }));
 
 export const PLATFORM_NAMES: Record<string, string> = {
   tiktok: 'TikTok',

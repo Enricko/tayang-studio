@@ -18,6 +18,9 @@ import {
   upsertJob,
 } from '@/lib/ipc';
 import { onAgentAction, onAgentUpdate, onPermission, onQuestion, type AgentAction } from '@/lib/events';
+import { chatLive } from '@/lib/liveChat';
+import { onCardPermissionResolved, onCardQuestionResolved } from '@/lib/cardEvents';
+import { isWeb } from '@/lib/platform';
 import { extractA2ui } from '@/a2ui/parse';
 import { agentErrorText, AGENT_NAMES } from '@/lib/agents';
 import { i18n, uiLanguage } from '@/i18n';
@@ -397,6 +400,9 @@ export const useChat = create<ChatState>((set, get) => {
   /** Persist a local message and swap in the stored one. Best effort. */
   const persist = async (chatId: string, m: ChatMessage) => {
     if (isScratchChat(chatId)) return;
+    // In the web edition the server persists the assistant message while it streams; persisting the
+    // local copy here too would duplicate it after a reload.
+    if (isWeb && m.role === 'agent') return;
     try {
       const saved = await addMessage(chatId, m.role, m.parts);
       if (!saved) return;
@@ -725,6 +731,33 @@ export const useChat = create<ChatState>((set, get) => {
       } catch {
         /* an empty chat is fine */
       }
+      // The web server owns in-flight turns and pending cards. Rebuild them after a reconnect so a
+      // refresh mid-answer shows the same stream, permission card and question card.
+      if (typeof chatLive !== 'function') {
+        await agent;
+        return;
+      }
+      try {
+        const live = await chatLive(chatId);
+        const current = get().messages[chatId] ?? [];
+        const hasMessage = live.message ? current.some((m) => m.id === live.message!.id) : true;
+        set((s) => ({
+          ...(live.sessionRunning ? { started: { ...s.started, [chatId]: true } } : {}),
+          ...(live.streaming
+            ? {
+                streaming: { ...s.streaming, [chatId]: true },
+                turnStartedAt: { ...s.turnStartedAt, [chatId]: Date.parse(live.turnStartedAt) || Date.now() },
+              }
+            : {}),
+          ...(live.message && !hasMessage ? { messages: { ...s.messages, [chatId]: [...current, live.message] } } : {}),
+          ...(live.permissions.length
+            ? { permissions: { ...s.permissions, [chatId]: live.permissions } }
+            : {}),
+          ...(live.questions.length ? { questions: { ...s.questions, [chatId]: live.questions } } : {}),
+        }));
+      } catch {
+        /* no live snapshot is fine (desktop, or an old server) */
+      }
       await agent;
     },
 
@@ -744,7 +777,10 @@ export const useChat = create<ChatState>((set, get) => {
       }));
       const user = localMessage(chatId, 'user', visible);
       append(chatId, user);
-      void persist(chatId, user);
+      // In the web edition the server owns the assistant turn; store the user's line first so the
+      // transcript's order cannot depend on two concurrent HTTP requests.
+      if (isWeb) await persist(chatId, user);
+      else void persist(chatId, user);
       try {
         const agent = opts?.agentId ?? chatAgent.get(chatId) ?? useApp.getState().settings?.defaultAgent ?? 'claude';
         chatAgent.set(chatId, agent);
@@ -904,6 +940,33 @@ export const useChat = create<ChatState>((set, get) => {
             permissions: { ...s.permissions, [req.chatId]: [...(s.permissions[req.chatId] ?? []), req] },
           }));
         }),
+        // Another tab answered a card: remove it here too, never send a second answer.
+        ...(typeof onCardPermissionResolved === 'function'
+          ? [
+              onCardPermissionResolved((requestId) =>
+                set((s) => {
+                  const permissions = { ...s.permissions };
+                  for (const [chat, list] of Object.entries(permissions)) {
+                    permissions[chat] = list.filter((r) => r.requestId !== requestId);
+                  }
+                  return { permissions };
+                }),
+              ),
+            ]
+          : []),
+        ...(typeof onCardQuestionResolved === 'function'
+          ? [
+              onCardQuestionResolved((requestId) =>
+                set((s) => {
+                  const questions = { ...s.questions };
+                  for (const [chat, list] of Object.entries(questions)) {
+                    questions[chat] = list.filter((q) => q.requestId !== requestId);
+                  }
+                  return { questions };
+                }),
+              ),
+            ]
+          : []),
       ];
     },
 

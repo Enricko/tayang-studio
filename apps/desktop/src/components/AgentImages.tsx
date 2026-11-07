@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronLeft, ChevronRight, FolderOpen, ImageOff } from 'lucide-react';
-import { revealItemInDir } from '@tauri-apps/plugin-opener';
+import { capabilities, revealInFolder } from '@/lib/platform';
 import type { MessagePart } from '@tayang/shared';
 import { Button } from '@/components/Button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
@@ -141,7 +141,7 @@ function Lightbox({
                   <ChevronLeft size={16} strokeWidth={1.5} />
                 </Button>
               )}
-              <Button variant="secondary" className="h-8 px-3 text-[13px]" onClick={() => void revealItemInDir(part.path).catch(() => {})}>
+              <Button variant="secondary" className="h-8 px-3 text-[13px]" onClick={() => void revealInFolder(part.path).catch(() => {})}>
                 <FolderOpen size={14} strokeWidth={1.5} aria-hidden="true" />
                 {t('chat.images.reveal')}
               </Button>

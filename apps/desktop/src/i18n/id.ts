@@ -208,6 +208,9 @@ export const id: Translations = {
   settings: {
     title: 'Pengaturan',
     sectionsAria: 'Bagian pengaturan',
+    webNotice: 'Edisi web mandiri. Proyek, agen, render, dan riwayat berjalan di server, jadi menutup tab ini tidak menghentikannya.',
+    webNoticeCloud: 'Masuk cloud Tayang, paket berbayar, posting sosial, gambar/suara AI, dan pembaruan aplikasi bukan bagian dari server mandiri ini.',
+    signOut: 'Keluar dari server ini',
     sections: { general: 'Umum', agents: 'Agen', video: 'Default video', render: 'Render', tools: 'Alat', usage: 'Pemakaian', archive: 'Arsip', account: 'Akun' },
     saveError: 'Belum tersimpan: {{message}}',
     language: 'Bahasa',
@@ -1012,6 +1015,7 @@ export const id: Translations = {
     keysFrame: 'frame',
     keysSecond: '1 detik',
     framesChecked: 'Frame sudah dicek',
+    download: 'Unduh video',
   },
   style: {
     title: 'Gaya',
@@ -1069,6 +1073,13 @@ export const id: Translations = {
     edit: 'Ubah',
     delete: 'Hapus',
     unsaved: 'Ada perubahan yang belum disimpan. Simpan atau batalkan dulu',
+  },
+  webLogin: {
+    title: 'Masuk ke ruang kerja Anda',
+    intro: 'Tayang Studio mandiri ini berjalan di server Anda: proyek, agen, render, dan riwayat tersimpan di sana.',
+    password: 'Kata sandi',
+    signIn: 'Masuk',
+    note: 'Ini kata sandi server, terpisah dari akun cloud Tayang yang opsional. Tanyakan ke pemilik server jika belum punya.',
   },
   stepBar: {
     aria: 'Progres',

@@ -8,6 +8,9 @@ dist/
 .env
 .env.*
 !.env.example
+!.env.web.example
+.data-web/
+data/
 coverage/
 .turbo/
 .claude/worktrees/

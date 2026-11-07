@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ChevronLeft, ChevronRight, Pause, Play, SquarePlus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download, Pause, Play, SquarePlus } from 'lucide-react';
 import { hasFramesChecked } from '@tayang/skills';
 import { formatTimecode, frameAt, secAt } from '@tayang/shared';
 import type { MediaInfo } from '@tayang/shared';
@@ -15,6 +15,7 @@ import {
   mediaRender,
   mediaThumbnails,
 } from '@/lib/ipc';
+import { capabilities } from '@/lib/platform';
 import { useElapsed } from '@/components/Activity';
 import { useChat } from '@/state/chat';
 import { useRender } from '@/state/render';
@@ -297,7 +298,22 @@ export function Preview({
           </span>
         </div>
 
-        <Scrubber durationSec={durationSec} fps={fps} frame={frame} thumbnails={thumbs} onSeek={seek} scenes={scenes} />
+        <div className="flex items-center gap-3">
+          <div className="min-w-0 flex-1">
+            <Scrubber durationSec={durationSec} fps={fps} frame={frame} thumbnails={thumbs} onSeek={seek} scenes={scenes} />
+          </div>
+          {capabilities.web && (
+            <a
+              href={`${assetUrl(videoPath)}&download=1&name=${encodeURIComponent(videoPath.split('/').pop() ?? 'video.mp4')}`}
+              download
+              aria-label={t('preview.download')}
+              title={t('preview.download')}
+              className="inline-flex size-8 shrink-0 items-center justify-center rounded-md border border-hairline text-text-2 hover:bg-raised hover:text-foreground"
+            >
+              <Download size={15} strokeWidth={1.5} aria-hidden="true" />
+            </a>
+          )}
+        </div>
 
         <div className="flex">
           <Button

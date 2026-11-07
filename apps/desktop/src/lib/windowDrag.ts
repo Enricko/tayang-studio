@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { getCurrentWindow } from '@tauri-apps/api/window';
+import { startWindowDrag, toggleMaximize } from '@/lib/platform';
 
 /** The window has no native title bar (titleBarStyle Overlay): this strip along the top drags it. */
 export const DRAG_EDGE_PX = 32;
@@ -29,11 +29,11 @@ export function useWindowDrag() {
       !(e.target instanceof Element && e.target.hasAttribute('data-tauri-drag-region'));
     const down = (e: MouseEvent) => {
       if (e.button !== 0 || e.detail > 1 || !ours(e)) return;
-      void getCurrentWindow().startDragging().catch(() => {});
+      void startWindowDrag().catch(() => {});
     };
     const dbl = (e: MouseEvent) => {
       if (e.button !== 0 || !ours(e)) return;
-      void getCurrentWindow().toggleMaximize().catch(() => {});
+      void toggleMaximize().catch(() => {});
     };
     document.addEventListener('mousedown', down);
     document.addEventListener('dblclick', dbl);

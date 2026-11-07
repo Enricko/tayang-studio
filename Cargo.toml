@@ -1,0 +1,8 @@
+[workspace]
+resolver = "2"
+members = ["apps/desktop/src-tauri", "crates/tayang-core", "crates/tayang-server"]
+
+[workspace.package]
+version = "0.0.4"
+edition = "2021"
+license = "MIT"

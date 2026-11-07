@@ -6,8 +6,8 @@ import { Sidebar, type SidebarKey } from '@/components/Sidebar';
 import { StatusBar } from '@/components/StatusBar';
 import { setUiLanguage } from '@/i18n';
 import { systemLanguage } from '@/lib/language';
-import { getSettings, getSystemInfo, syncStyles, updateSettings } from '@/lib/ipc';
-import { getVersion } from '@tauri-apps/api/app';
+import { getSettings, getSystemInfo, stopAutopilotSlot, syncStyles, updateSettings } from '@/lib/ipc';
+import { appVersion } from '@/lib/platform';
 import { startAnalytics } from '@/lib/analytics';
 import { runBillingReminder } from '@/lib/billingReminder';
 import { onTick, startScheduler } from '@/lib/scheduler';
@@ -15,6 +15,9 @@ import { recheckDoneBuildJobs, settleLateRenders } from '@/lib/buildJobs';
 import { backfillProjectStatus } from '@/lib/projectStatus';
 import { startAutopilot } from '@/state/autopilot';
 import { AUTOPILOT_ENABLED } from '@/lib/features';
+import { isWeb } from '@/lib/platform';
+import { onServerEvent } from '@/lib/events';
+import { notifyAutopilotChanged, setStopNowHandler } from '@/lib/autopilotHooks';
 import { ComingSoon } from '@/screens/ComingSoon';
 import { startUpdateChecks } from '@/state/updater';
 import { useWindowDrag } from '@/lib/windowDrag';
@@ -108,10 +111,12 @@ export default function App() {
   const installId = settings?.installId ?? '';
   const uiLanguage = settings?.uiLanguage ?? null;
   useEffect(() => {
-    if (share === undefined) return;
+    // Product analytics is a desktop behavior. The self-hosted web edition does not send install
+    // stats or usage to a third party from the browser; server owners control their own telemetry.
+    if (isWeb || share === undefined) return;
     let alive = true;
     void Promise.all([
-      Promise.resolve().then(() => getVersion()).catch(() => undefined),
+      Promise.resolve().then(() => appVersion()).catch(() => undefined),
       Promise.resolve().then(() => getSystemInfo()).then((s) => s.os).catch(() => undefined),
     ]).then(([appVersion, os]) => {
       if (alive) startAnalytics({ share, installId, appVersion, os, uiLanguage });
@@ -124,6 +129,30 @@ export default function App() {
   // Release builds look for a new version shortly after launch and every few hours.
   useEffect(() => startUpdateChecks(), []);
 
+  // The web server owns scheduling and jobs. Its state-change events refresh the same stores the
+  // desktop frontend used to refresh itself.
+  useEffect(() => {
+    if (!isWeb) return;
+    const offProjects = onServerEvent('projects://changed', () => {
+      useApp.getState().bumpProjects();
+      void refreshJobs().catch(() => {});
+    });
+    const offJobs = onServerEvent('jobs://changed', () => void refreshJobs().catch(() => {}));
+    const offAutopilots = onServerEvent('autopilot://changed', () => notifyAutopilotChanged());
+    // The web engine lives on the server; wire its "Stop now" to the same control the desktop
+    // engine uses. Pausing only affects future slots.
+    const offStop = setStopNowHandler(async (slot) => {
+      await stopAutopilotSlot(slot.id);
+      notifyAutopilotChanged();
+    });
+    return () => {
+      offProjects();
+      offJobs();
+      offAutopilots();
+      offStop();
+    };
+  }, []);
+
   // Once set up, the scheduler listens for the Rust tick (reminders and the autopilot engine). The engine
   // registers first, so the scheduler's first pass already runs it.
   const onboarded = settings?.onboarded ?? false;
@@ -132,11 +161,11 @@ export default function App() {
     let off: (() => void) | undefined;
     let gone = false;
     // Autopilot is coming soon: its engine stays off (see lib/features).
-    const stopEngine = AUTOPILOT_ENABLED ? startAutopilot() : () => {};
-    // Startup and every tick: build jobs whose video arrived late become done.
-    const stopLate = onTick(() => settleLateRenders());
-    // "Your plan ends in 3 days", once per period.
-    const stopPlanReminder = onTick((now) => runBillingReminder(now));
+    const stopEngine = !isWeb && AUTOPILOT_ENABLED ? startAutopilot() : () => {};
+    // These are desktop client-orchestration hooks. In web the server reconciles render/job state
+    // and billing is unavailable, so there is nothing to run per tick here.
+    const stopLate = isWeb ? () => {} : onTick(() => settleLateRenders());
+    const stopPlanReminder = isWeb ? () => {} : onTick((now) => runBillingReminder(now));
     startScheduler()
       .then((un) => (gone ? un() : (off = un)))
       .catch(() => {});

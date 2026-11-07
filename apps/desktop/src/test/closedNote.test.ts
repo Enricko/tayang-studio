@@ -13,7 +13,7 @@ describe('closed-app note', () => {
 
 describe('auto-run note', () => {
   it('matches the line Rust writes for a command it approved itself', () => {
-    const rust = readFileSync(resolve(__dirname, '../../src-tauri/src/acp.rs'), 'utf8');
+    const rust = readFileSync(resolve(__dirname, '../../../../crates/tayang-core/src/acp.rs'), 'utf8');
     expect(rust).toContain(`format!("${en.chat.ranWithoutAsking.replace('{{what}}', '{what}')}")`);
   });
 });

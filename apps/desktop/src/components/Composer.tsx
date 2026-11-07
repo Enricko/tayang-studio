@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { open as openDialog } from '@tauri-apps/plugin-dialog';
-import { getCurrentWebview } from '@tauri-apps/api/webview';
+import { onFileDrop, pickUploadFiles, type PickedFile } from '@/lib/platform';
 import { ArrowUp, AtSign, Check, ChevronDown, File as FileIcon, Palette, Paperclip, Square, X, Zap } from 'lucide-react';
 import type { AgentId, AgentInfo, MessagePart, Project, Style } from '@tayang/shared';
 import { AgentLogo } from '@/components/AgentLogo';
@@ -322,7 +321,7 @@ export function Composer({
   const [dragging, setDragging] = useState(false);
   const [attachError, setAttachError] = useState<string | null>(null);
 
-  const attachPaths = async (paths: string[]) => {
+  const attachPaths = async (paths: PickedFile[]) => {
     if (paths.length === 0) return;
     setAttachError(null);
     try {
@@ -345,44 +344,28 @@ export function Composer({
 
   const pickFiles = async () => {
     try {
-      const picked = await openDialog({ multiple: true, directory: false });
-      if (!picked) return;
-      await attachPaths(Array.isArray(picked) ? picked : [picked]);
+      const picked = await pickUploadFiles();
+      await attachPaths(picked);
     } catch (e) {
       setAttachError(errorText(e));
     }
   };
 
   useEffect(() => {
-    let off: (() => void) | undefined;
-    let gone = false;
-    const over = (pos: { x: number; y: number }) => {
+    const over = (pos: { x: number; y: number; dpr: number }) => {
       const r = box.current?.getBoundingClientRect();
       if (!r) return false;
-      const x = pos.x / window.devicePixelRatio;
-      const y = pos.y / window.devicePixelRatio;
+      const x = pos.x / (pos.dpr || 1);
+      const y = pos.y / (pos.dpr || 1);
       return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
     };
-    try {
-      getCurrentWebview()
-        .onDragDropEvent((e) => {
-          const p = e.payload;
-          if (p.type === 'leave') setDragging(false);
-          else if (p.type === 'drop') {
-            const hit = over(p.position);
-            setDragging(false);
-            if (hit && !disabledRef.current) void attachRef.current(p.paths);
-          } else setDragging(over(p.position) && !disabledRef.current);
-        })
-        .then((fn) => (gone ? fn() : (off = fn)))
-        .catch(() => {});
-    } catch {
-      /* not running inside Tauri */
-    }
-    return () => {
-      gone = true;
-      off?.();
-    };
+    return onFileDrop(
+      (files, pos) => {
+        setDragging(false);
+        if (over(pos) && !disabledRef.current) void attachRef.current(files);
+      },
+      (isOver) => setDragging(isOver && !disabledRef.current),
+    );
   }, []);
   useEffect(() => {
     if (autoFocus && !disabled) ref.current?.focus();

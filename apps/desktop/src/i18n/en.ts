@@ -206,6 +206,9 @@ export const en = {
   settings: {
     title: 'Settings',
     sectionsAria: 'Settings sections',
+    webNotice: 'Self-hosted web edition. Projects, agents, renders and history run on the server, so closing this tab does not stop them.',
+    webNoticeCloud: 'Tayang cloud sign-in, paid plans, social posting, AI images/voice and app updates are not part of the self-hosted server.',
+    signOut: 'Sign out of this server',
     sections: { general: 'General', agents: 'Agents', video: 'Video defaults', render: 'Rendering', tools: 'Tools', usage: 'Usage', archive: 'Archive', account: 'Account' },
     saveError: "Couldn't save: {{message}}",
     language: 'Language',
@@ -1018,6 +1021,7 @@ export const en = {
     keysFrame: 'frame',
     keysSecond: '1 s',
     framesChecked: 'Frames checked',
+    download: 'Download video',
   },
   style: {
     title: 'Style',
@@ -1075,6 +1079,13 @@ export const en = {
     edit: 'Edit',
     delete: 'Delete',
     unsaved: 'You have unsaved changes. Save or cancel first',
+  },
+  webLogin: {
+    title: 'Sign in to your workspace',
+    intro: 'This self-hosted Tayang Studio runs on your server: projects, agents, renders and history stay there.',
+    password: 'Password',
+    signIn: 'Sign in',
+    note: 'This is the server password, separate from any optional Tayang cloud account. Ask the server owner if you do not have it.',
   },
   stepBar: {
     aria: 'Progress',

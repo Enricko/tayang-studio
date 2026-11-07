@@ -13,7 +13,7 @@ import {
   Star,
   type LucideIcon,
 } from 'lucide-react';
-import { openUrl } from '@tauri-apps/plugin-opener';
+import { openUrl } from '@/lib/platform';
 import { i18n } from '@/i18n';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';

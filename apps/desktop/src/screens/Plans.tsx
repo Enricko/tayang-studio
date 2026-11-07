@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ArrowLeft, QrCode } from 'lucide-react';
 import { Spinner } from '@/components/Loading';
-import { openUrl } from '@tauri-apps/plugin-opener';
+import { openUrl } from '@/lib/platform';
 import { PLANS, findPlan, isLowerPlan, nextPeriod, type PaidPlanId, type Plan } from '@tayang/shared';
 import logo from '@/assets/brand/tayang-horizontal-reversed-color.svg';
 import { SignInDialog } from '@/components/Account';

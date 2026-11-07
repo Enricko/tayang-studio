@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { RefreshCw } from 'lucide-react';
-import { getVersion } from '@tauri-apps/api/app';
-import { disable as disableAutostart, enable as enableAutostart } from '@tauri-apps/plugin-autostart';
+import { appVersion, capabilities, setAutostart } from '@/lib/platform';
 import { DEFAULT_SETTINGS, type AgentInfo, type Settings as SettingsT, type SystemInfo, type ToolId } from '@tayang/shared';
 import { AccountSection } from '@/components/Account';
 import { ArchiveSection } from '@/components/ArchiveSection';
@@ -24,6 +23,8 @@ const TRAY_UNAVAILABLE = 'tray-unavailable';
 import { LANGUAGES, LANGUAGE_NAMES, uiLanguage } from '@/i18n';
 import { chooseLanguage } from '@/lib/language';
 import { sendTestNotification } from '@/lib/scheduler';
+import { clearEventCursor, disconnectEvents } from '@/lib/events';
+import { logout as webLogout } from '@/lib/webRpc';
 import { useApp } from '@/state/app';
 import { cn } from '@/lib/utils';
 import { useInstall } from '@/state/install';
@@ -52,7 +53,7 @@ function UpdatesRow({ dev = import.meta.env.DEV }: { dev?: boolean }) {
   const [current, setCurrent] = useState<string | null>(null);
   useEffect(() => {
     let gone = false;
-    getVersion()
+    appVersion()
       .then((v) => !gone && setCurrent(v))
       .catch(() => {});
     return () => {
@@ -224,7 +225,7 @@ export function Settings() {
   const changeBackground = async (on: boolean) => {
     if (!on && settings?.openAtLogin) {
       try {
-        await disableAutostart();
+        await setAutostart(false);
       } catch (e) {
         setError(t('settings.backgroundError', { message: e instanceof Error ? e.message : String(e) }));
         return;
@@ -236,7 +237,7 @@ export function Settings() {
   };
   const changeOpenAtLogin = async (on: boolean) => {
     try {
-      await (on ? enableAutostart() : disableAutostart());
+      await (on ? setAutostart(true) : setAutostart(false));
     } catch (e) {
       setError(t('settings.backgroundError', { message: e instanceof Error ? e.message : String(e) }));
       return;
@@ -297,6 +298,28 @@ export function Settings() {
       </div>
 
       <div className="flex max-w-[720px] min-w-0 flex-[999_1_460px] flex-col gap-8">
+        {capabilities.web && (
+          <div role="note" className="flex flex-col gap-2 rounded-xl border border-border bg-card px-4 py-3 text-[13px] text-text-2">
+            <span className="font-medium text-foreground">{t('settings.webNotice')}</span>
+            <span className="text-xs text-text-3">{t('settings.webNoticeCloud')}</span>
+            <Button
+              variant="secondary"
+              className="h-8 self-start rounded-sm px-2 text-xs"
+              onClick={() => {
+                void webLogout()
+                  .catch(() => {})
+                  .finally(() => {
+                    disconnectEvents();
+                    clearEventCursor();
+                    window.location.reload();
+                  });
+              }}
+            >
+              {t('settings.signOut')}
+            </Button>
+          </div>
+        )}
+
         {error && (
           <p role="alert" className="m-0 text-[13px] text-orange-light">
             {error}
@@ -315,7 +338,7 @@ export function Settings() {
                   onChange={(l) => void chooseLanguage(l)}
                 />
               </Row>
-              <UpdatesRow />
+              {!capabilities.web && <UpdatesRow />}
             </Card>
           </section>
         )}
@@ -396,6 +419,7 @@ export function Settings() {
               <Switch
                 id="background-mode"
                 checked={settings.backgroundMode}
+                disabled={!capabilities.desktopWindow}
                 aria-label={t('settings.background')}
                 onCheckedChange={(v) => void changeBackground(v)}
               />
@@ -410,7 +434,7 @@ export function Settings() {
               <Switch
                 id="open-at-login"
                 checked={settings.backgroundMode && settings.openAtLogin}
-                disabled={!settings.backgroundMode}
+                disabled={!settings.backgroundMode || !capabilities.autostart}
                 aria-label={t('settings.openAtLogin')}
                 onCheckedChange={(v) => void changeOpenAtLogin(v)}
               />
@@ -486,9 +510,11 @@ export function Settings() {
                 <span className="max-w-[220px] truncate font-mono text-xs text-[#D9D9D9]" title={settings.workingFolder}>
                   {settings.workingFolder}
                 </span>
-                <Button variant="secondary" className="h-7 rounded-sm px-2 text-xs" onClick={() => void changeFolder()}>
-                  {t('settings.change')}
-                </Button>
+                {capabilities.folderPicker && (
+                  <Button variant="secondary" className="h-7 rounded-sm px-2 text-xs" onClick={() => void changeFolder()}>
+                    {t('settings.change')}
+                  </Button>
+                )}
               </Row>
               <Row label={t('settings.whereToRender')} hint={t('settings.whereToRenderHint')}>
                 <Segmented
@@ -555,9 +581,9 @@ export function Settings() {
         {tab === 'account' && (
           <section id="account" role="tabpanel" aria-labelledby="settings-tab-account" className="flex flex-col gap-3">
             <h2 className="m-0 text-base font-medium">{t('settings.sections.account')}</h2>
-            <AccountSection />
-            <GiftCode />
-            <SocialLink />
+            {capabilities.tayangCloud ? <AccountSection /> : <p className="m-0 rounded-xl border border-border bg-card px-4 py-3 text-[13px] text-text-2">{t('settings.webNoticeCloud')}</p>}
+            {capabilities.tayangCloud && <GiftCode />}
+            {capabilities.tayangCloud && <SocialLink />}
             <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3">
               <div className="mr-auto flex flex-col gap-1">
                 <label htmlFor="share-install-stats" className="text-sm font-medium">

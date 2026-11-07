@@ -283,6 +283,21 @@ impl Db {
         self.conn.lock().unwrap_or_else(|e| e.into_inner())
     }
 
+    /// Runs `f` on the shared connection. Used by the web server for its own tables; keeps one
+    /// connection (and one write lock) for the whole process.
+    pub fn with_conn<T>(&self, f: impl FnOnce(&Connection) -> std::result::Result<T, rusqlite::Error>) -> Result<T> {
+        f(&self.conn()).map_err(DbError::from)
+    }
+
+    /// Runs `f` in a transaction, committing only when it returns Ok.
+    pub fn with_tx<T>(&self, f: impl FnOnce(&rusqlite::Transaction<'_>) -> std::result::Result<T, rusqlite::Error>) -> Result<T> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        let out = f(&tx)?;
+        tx.commit()?;
+        Ok(out)
+    }
+
     // ---- settings ----
 
     fn default_settings(home: &Path) -> Value {
@@ -644,6 +659,15 @@ impl Db {
             self.set_thread_archived(chat_id, false)?;
         }
         Ok(msg)
+    }
+
+    /// Replaces a stored message's parts (the web server persists an agent turn while it streams).
+    pub fn update_message_parts(&self, id: &str, parts: &[MessagePart]) -> Result<()> {
+        self.conn().execute(
+            "UPDATE messages SET parts = ?1 WHERE id = ?2",
+            rusqlite::params![serde_json::to_string(parts)?, id],
+        )?;
+        Ok(())
     }
 
     pub fn list_messages(&self, chat_id: &str) -> Result<Vec<ChatMessage>> {
@@ -1092,6 +1116,11 @@ impl Db {
         let (from, to) = (utc(from)?, utc(to)?);
         let sql = format!("{SLOT_SELECT} WHERE due_at >= ?1 AND due_at <= ?2 ORDER BY due_at, rowid");
         query_as(&self.conn(), &sql, &[&from, &to])
+    }
+
+    pub fn get_slot(&self, id: &str) -> Result<Option<AutopilotSlot>> {
+        let sql = format!("{SLOT_SELECT} WHERE id = ?1");
+        Ok(query_as::<AutopilotSlot>(&self.conn(), &sql, &[&id])?.into_iter().next())
     }
 
     /// Makes sure a planned slot exists for (autopilot, dueAt) and returns it. A slot that already

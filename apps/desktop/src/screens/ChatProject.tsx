@@ -21,6 +21,7 @@ import { styleContext } from '@/lib/mentions';
 import { getChat, listProjects, mediaProbe, mediaRender, renderCommand, updateProject, type RenderCommand } from '@/lib/ipc';
 import { LANGUAGE_NAMES } from '@/i18n';
 import { projectSendOptions } from '@/lib/openProject';
+import { capabilities } from '@/lib/platform';
 import { useApp } from '@/state/app';
 import { headPermission, headQuestion, useChat, type SendOpts } from '@/state/chat';
 import { useUsage } from '@/state/usage';
@@ -196,7 +197,7 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
             {t('schedule.action')}
           </Button>
         )}
-        {project && (
+        {project && capabilities.tayangCloud && (
           <Button
             variant="secondary"
             disabled={project.status !== 'rendered' && !project.socialPostId}
@@ -233,7 +234,7 @@ export function ChatProject({ chatId, draft }: { chatId: string; draft?: string 
         )}
       </header>
       <ScheduleDialog open={scheduling} onOpenChange={setScheduling} project={project} onSaved={setProject} />
-      {project && (
+      {project && capabilities.tayangCloud && (
         <PostDialog
           open={posting}
           onOpenChange={setPosting}

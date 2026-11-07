@@ -24,6 +24,35 @@ Both install the latest release and open it. Installed copies update themselves.
 
 Options: `TAYANG_VERSION=0.0.2` installs that version. `TAYANG_INSTALL_DIR` sets the macOS folder. `TAYANG_LINUX_PACKAGE=deb|rpm|appimage` picks the Linux package. `TAYANG_NO_LAUNCH=1` skips opening the app. Or download an installer from [Releases](https://github.com/Maru-Yasa/tayang-studio/releases).
 
+## Self-hosted web edition
+
+The same interface also runs in a browser against a headless Linux server. AI agents, SQLite,
+project files, ffmpeg renders and scheduling run on the server; the browser needs no desktop app.
+It is a single-user deployment (no team roles) with a separate server password.
+
+Docker quick start:
+
+```
+cp .env.web.example .env.web    # set the password and public URL
+docker compose up -d --build
+```
+
+Then put an HTTPS reverse proxy in front of `127.0.0.1:8787`. Development:
+
+```
+TAYANG_WEB_PASSWORD='a long passphrase' \
+TAYANG_PUBLIC_URL=http://localhost:5173 \
+TAYANG_DATA_DIR="$PWD/.data-web" \
+TAYANG_WORKSPACE_ROOT="$PWD/.data-web/workspaces" \
+pnpm server:dev
+pnpm dev:web
+```
+
+See [docs/web.md](docs/web.md) for production start, Docker volumes, agent installation and
+authentication on a headless server, reverse-proxy settings for SSE/uploads/video seeking, security
+boundaries, capabilities that require the private Tayang cloud API, and the verification report.
+The desktop app is unchanged: `pnpm dev:desktop` still works.
+
 ## Run it from source
 
 ```
@@ -40,11 +69,15 @@ On Linux the app runs on WebKitGTK 2.40 or later. On older versions it still wor
 ```
 tayang-desktop/
 ├── apps/
-│   └── desktop/   @tayang/desktop  Tauri + React desktop app
+│   └── desktop/   @tayang/desktop  Tauri + React desktop and web frontend
+├── crates/
+│   ├── tayang-core/    Shared Rust backend (SQLite, ACP, files, media)
+│   └── tayang-server/  Headless Axum web server
 ├── packages/
 │   ├── shared/    @tayang/shared   Types and schemas shared across apps
 │   └── skills/    @tayang/skills   Agent skills bundled with Tayang
-├── docs/                           Spec and implementation plan
+├── docs/                           Development, web deployment and specs
+├── Dockerfile, docker-compose.yml
 ├── package.json
 ├── pnpm-workspace.yaml
 └── tsconfig.base.json
@@ -57,6 +90,10 @@ tayang-desktop/
 | `pnpm test` | `pnpm -r test` | Run tests in every workspace package |
 | `pnpm typecheck` | `pnpm -r typecheck` | Type-check every workspace package |
 | `pnpm dev:desktop` | `pnpm --filter @tayang/desktop tauri dev` | Run the desktop app in dev mode |
+| `pnpm dev:web` | `pnpm --filter @tayang/desktop dev:web` | Run the browser UI in dev mode |
+| `pnpm build:web` | `pnpm --filter @tayang/desktop build:web` | Build the browser bundle |
+| `pnpm server:dev` | `cargo run -p tayang-server` | Run the headless server |
+| `pnpm server` | `cargo run --release -p tayang-server` | Run the release server |
 
 ## How it works
 

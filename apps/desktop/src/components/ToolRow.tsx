@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AlertTriangle, Check, Download } from 'lucide-react';
 import type { SystemInfo, ToolId, ToolStatus } from '@tayang/shared';
-import { openUrl } from '@tauri-apps/plugin-opener';
+import { openUrl } from '@/lib/platform';
 import { installCommands, manualInstallUrl } from '@tayang/skills';
 import sleepy from '@/assets/brand/oyen-expr-sleepy.svg';
 import { AgentLogo } from '@/components/AgentLogo';

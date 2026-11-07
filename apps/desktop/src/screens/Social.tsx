@@ -11,6 +11,7 @@ import { SmallPoster, useVideoThumb } from '@/components/VideoPoster';
 import { locale } from '@/i18n';
 import { socialPostStatus } from '@/lib/cloud';
 import { listProjects } from '@/lib/ipc';
+import { capabilities } from '@/lib/platform';
 import { openProjectChat } from '@/lib/openProject';
 import { useApp } from '@/state/app';
 import { useAuth } from '@/state/auth';
@@ -60,7 +61,12 @@ export function Social() {
         <span className="text-sm text-text-2">{t('social.subtitle')}</span>
       </div>
 
-      {!signedIn ? (
+      {!capabilities.tayangCloud ? (
+        <div className="flex flex-col items-center gap-4 py-16 text-center">
+          <Oyen mood="sleepy" size={56} />
+          <span className="text-base font-medium">{t('settings.webNoticeCloud')}</span>
+        </div>
+      ) : !signedIn ? (
         <div className="flex flex-col items-center gap-4 py-16 text-center">
           <Oyen mood="wink" size={56} />
           <span className="text-base font-medium">{t('social.signedOutTitle')}</span>

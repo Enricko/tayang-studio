@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { openUrl } from '@tauri-apps/plugin-opener';
+import { openUrl } from '@/lib/platform';
 import type { Account, AuthErrorCode } from '@tayang/shared';
 import { Button } from '@/components/Button';
 import { Spinner } from '@/components/Loading';

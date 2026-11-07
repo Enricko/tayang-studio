@@ -4,7 +4,7 @@ import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
 import { useTranslation } from 'react-i18next';
 import { Check, Copy } from 'lucide-react';
-import { openUrl } from '@tauri-apps/plugin-opener';
+import { openUrl } from '@/lib/platform';
 
 /** Agent prose may carry links from pages it read: only https and mail open, like A2UI's https rule. */
 const SAFE_LINK = /^(https:|mailto:)/i;

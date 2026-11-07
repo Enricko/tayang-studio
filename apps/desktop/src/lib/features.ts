@@ -1,5 +1,7 @@
 /**
- * Autopilot (videos made and posted on a schedule) is coming soon: its screens say so, and its
- * engine doesn't run, so autopilots made before stay as they were until it is turned back on.
+ * Autopilot screens: enabled in the self-hosted web edition, where the server runs the engine.
+ * The desktop app keeps this feature hidden until its own client-side engine ships again.
  */
-export const AUTOPILOT_ENABLED = false;
+import { isWeb } from '@/lib/platform';
+
+export const AUTOPILOT_ENABLED = isWeb;

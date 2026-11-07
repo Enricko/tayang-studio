@@ -12,7 +12,11 @@
     "typecheck": "pnpm -r typecheck",
     "dev:desktop": "pnpm --filter @tayang/desktop tauri dev --config src-tauri/tauri.dev.conf.json",
     "version:set": "node scripts/version.mjs",
-    "usage": "node scripts/usage-report.mjs"
+    "usage": "node scripts/usage-report.mjs",
+    "dev:web": "pnpm --filter @tayang/desktop dev:web",
+    "build:web": "pnpm --filter @tayang/desktop build:web",
+    "server:dev": "cargo run -p tayang-server",
+    "server": "cargo run --release -p tayang-server"
   },
   "devDependencies": {
     "typescript": "^5",

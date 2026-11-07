@@ -25,10 +25,18 @@ json('package.json');
 json('apps/desktop/package.json');
 json('apps/desktop/src-tauri/tauri.conf.json');
 
-// Only the [package] version, the first `version =` line of Cargo.toml.
-const cargo = join(root, 'apps/desktop/src-tauri/Cargo.toml');
-writeFileSync(cargo, readFileSync(cargo, 'utf8').replace(/^version = ".*"$/m, `version = "${version}"`));
-// Cargo.lock records the app's own version too.
-execFileSync('cargo', ['update', '--workspace', '--offline'], { cwd: dirname(cargo), stdio: 'inherit' });
+// Only the [package] version, the first `version =` line of each Cargo.toml.
+for (const rel of [
+  'apps/desktop/src-tauri/Cargo.toml',
+  'crates/tayang-core/Cargo.toml',
+  'crates/tayang-server/Cargo.toml',
+]) {
+  const file = join(root, rel);
+  writeFileSync(file, readFileSync(file, 'utf8').replace(/^version = ".*"$/m, `version = "${version}"`));
+}
+// The shared workspace version and Cargo.lock record it too.
+const workspace = join(root, 'Cargo.toml');
+writeFileSync(workspace, readFileSync(workspace, 'utf8').replace(/^version = ".*"$/m, `version = "${version}"`));
+execFileSync('cargo', ['update', '--workspace', '--offline'], { cwd: root, stdio: 'inherit' });
 
 console.log(`Version set to ${version}. Next: git commit -am "Release v${version}" && git tag v${version} && git push origin main v${version}`);

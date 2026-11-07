@@ -1,4 +1,3 @@
-import { listen } from '@tauri-apps/api/event';
 import type { AgentId, AgentUpdate, Autopilot, AutopilotSlot, MessagePart } from '@tayang/shared';
 import {
   AUTOPILOT_RENDER_NOW,
@@ -450,7 +449,11 @@ export function startAutopilot(): () => void {
         return undefined;
       });
   const offUpdates = later(() => onAgentUpdate(({ chatId, update }) => onUpdate(chatId, update)));
-  const offPause = later(() => listen(PAUSE_ALL_EVENT, () => void pauseAll().catch((e) => console.error('Tayang: pause all failed', e))));
+  const offPause = later(() =>
+    import('@tauri-apps/api/event').then(({ listen }) =>
+      listen(PAUSE_ALL_EVENT, () => void pauseAll().catch((e) => console.error('Tayang: pause all failed', e))),
+    ),
+  );
   const offTick = onTick(pass);
   const offStop = setStopNowHandler(stopSlot);
   const stop = () => {

@@ -5,6 +5,7 @@ import { Button } from '@/components/Button';
 import { OnboardingHeader } from '@/components/OnboardingHeader';
 import { SignInDialog, initials } from '@/components/Account';
 import { updateSettings } from '@/lib/ipc';
+import { capabilities } from '@/lib/platform';
 import { useApp } from '@/state/app';
 import { useAuth } from '@/state/auth';
 import { track } from '@/lib/analytics';
@@ -67,7 +68,11 @@ export function AccountStep() {
           ))}
         </ul>
 
-        {account ? (
+        {!capabilities.tayangCloud ? (
+          <p role="note" className="m-0 rounded-xl border border-border bg-card p-4 text-[13px] leading-relaxed text-text-2">
+            {t('settings.webNoticeCloud')}
+          </p>
+        ) : account ? (
           <div role="status" className="flex items-center gap-4 rounded-xl border border-border bg-card p-4">
             <div aria-hidden="true" className="flex size-10 items-center justify-center rounded-full bg-raised text-sm font-semibold">
               {initials(account)}

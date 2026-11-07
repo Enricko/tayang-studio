@@ -1,5 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
-import { isPermissionGranted } from '@tauri-apps/plugin-notification';
+import { canNotify, notify } from '@/lib/platform';
 import { i18n } from '@/i18n';
 import { listRecentChats } from '@/lib/ipc';
 import { useApp } from '@/state/app';
@@ -32,11 +31,11 @@ async function chatName(chatId: string): Promise<string | null> {
 export async function notifyAgent(chatId: string, event: AgentEvent): Promise<void> {
   if (watching(chatId)) return;
   try {
-    if (!(await isPermissionGranted())) return;
+    if (!(await canNotify())) return;
     const name = (await chatName(chatId)) ?? i18n.t('agentNotify.aChat');
     const title = i18n.t(`agentNotify.${event}.title`);
     const body = i18n.t(`agentNotify.${event}.body`, { name });
-    await invoke('plugin:notification|notify', { options: { title, body } });
+    await notify(title, body);
   } catch {
     /* a missed notification is not worth an error */
   }

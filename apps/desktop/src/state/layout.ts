@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { create } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
-import { getCurrentWindow } from '@tauri-apps/api/window';
+import { isWeb } from '@/lib/platform';
 
 /** The left app sidebar: dragging it below `snap` collapses it to the `rail`. */
 export const SIDEBAR = { min: 200, max: 360, default: 232, rail: 64, snap: 140 } as const;
@@ -33,13 +33,8 @@ const DEFAULTS: SavedLayout = {
 
 /** Widths are kept per window: each window has its own key. */
 export function layoutKey(): string {
-  let label = 'main';
-  try {
-    label = getCurrentWindow().label || label;
-  } catch {
-    /* not inside Tauri (tests, a plain browser) */
-  }
-  return `tayang.layout.${label}`;
+  // One window per app in both editions. Keeping the desktop key as `main` preserves saved layouts.
+  return `tayang.layout.${isWeb ? 'web' : 'main'}`;
 }
 
 export function loadLayout(): SavedLayout {
