@@ -11,7 +11,8 @@
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
     "dev:desktop": "pnpm --filter @tayang/desktop tauri dev --config src-tauri/tauri.dev.conf.json",
-    "version:set": "node scripts/version.mjs"
+    "version:set": "node scripts/version.mjs",
+    "usage": "node scripts/usage-report.mjs"
   },
   "devDependencies": {
     "typescript": "^5",
