@@ -80,7 +80,7 @@ const writeOwn = () => userEvent.click(screen.getByRole('tab', { name: 'Write my
 async function toSchedule() {
   await userEvent.type(screen.getByLabelText('Name'), 'Kopi');
   await writeOwn();
-  await userEvent.click(screen.getByRole('button', { name: 'Home coffee brewing tips' }));
+  await userEvent.type(screen.getByLabelText('Your niche'), 'Home coffee brewing tips');
   await userEvent.click(next());
   await userEvent.click(await screen.findByRole('radio', { name: /Atlas/ }));
   await userEvent.click(next());
@@ -101,7 +101,7 @@ describe('Autopilot wizard', () => {
     expect(screen.getByText('Pick a niche')).toBeInTheDocument();
     await writeOwn();
     expect(screen.getByText('Say what the videos are about')).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Home coffee brewing tips' }));
+    await userEvent.type(screen.getByLabelText('Your niche'), 'Home coffee brewing tips');
     expect(screen.getByLabelText('Your niche')).toHaveValue('Home coffee brewing tips');
     expect(screen.getByText('Give it a name')).toBeInTheDocument();
     await userEvent.type(screen.getByLabelText('Name'), 'Kopi');

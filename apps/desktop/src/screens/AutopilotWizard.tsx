@@ -410,18 +410,6 @@ export function AutopilotWizard({ id, draft, now = new Date() }: { id?: string; 
               {t('autopilot.form.nicheCustomLabel')}
               <Textarea value={form.niche} rows={3} placeholder={t('autopilot.form.nichePlaceholder')} onChange={(e) => writeNiche(e.target.value)} />
             </label>
-            <div role="group" aria-label={t('autopilot.form.examples')} className="flex flex-wrap gap-2">
-              {(['example1', 'example2', 'example3'] as const).map((k) => (
-                <button
-                  key={k}
-                  type="button"
-                  onClick={() => writeNiche(t(`autopilot.form.${k}`))}
-                  className="cursor-pointer rounded-full border border-border bg-card px-3 py-1 text-xs text-text-2 hover:text-foreground"
-                >
-                  {t(`autopilot.form.${k}`)}
-                </button>
-              ))}
-            </div>
           </TabsContent>
         </Tabs>
         <label className={label}>
