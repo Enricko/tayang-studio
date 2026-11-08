@@ -371,7 +371,7 @@ verification depends on one installed and authenticated CLI on the server; see a
 
 ## What was verified in this environment
 
-- `pnpm test`: 1,077 tests passed across shared, skills and desktop (67 Vitest files; plus the extra
+- `pnpm test`: 1,078 tests passed across shared, skills and desktop (67 Vitest files; plus the extra
   server-feature-focused browser smoke run).
 - `pnpm typecheck`: passed.
 - `cargo test -p tayang-core`: 171 tests passed (media tests included; ffmpeg/ffprobe from pnpm).

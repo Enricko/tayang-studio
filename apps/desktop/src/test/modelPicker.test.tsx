@@ -36,6 +36,8 @@ const picker = (chatId: string | null = null) =>
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(ipc.agentModels).mockReset();
+  vi.mocked(ipc.setAgentModel).mockReset();
   localStorage.clear();
   useModels.setState({ byChat: {}, byAgent: {}, loading: {}, failed: {} });
   useApp.setState({ settings: settings() });
@@ -66,6 +68,19 @@ describe('ModelPicker', () => {
     await userEvent.type(screen.getByPlaceholderText('Find a model'), 'free');
     await waitFor(() => expect(screen.queryByRole('option', { name: 'Big Pickle' })).not.toBeInTheDocument());
     expect(screen.getByRole('option', { name: 'Nemotron 3 Ultra Free' })).toBeInTheDocument();
+  });
+
+  it('offers models from the refreshed catalog that an older session did not report', async () => {
+    const old = [{ value: 'opencode/deepseek-v4.1-flash-free', name: 'DeepSeek Free' }];
+    const fresh = [...old, { value: 'opencode-go/deepseek-v4.1-flash', name: 'DeepSeek Go' }];
+    act(() => {
+      useChat.setState({ rows: { c1: { id: 'c1', projectId: null, agentId: 'opencode', title: 't', createdAt: '' } } } as never);
+      useModels.setState({ byChat: { c1: { current: old[0]!.value, options: old } }, byAgent: { opencode: { current: old[0]!.value, options: fresh } } });
+    });
+    vi.mocked(ipc.agentModels).mockResolvedValue({ current: old[0]!.value, options: fresh });
+    picker('c1');
+    await userEvent.click(screen.getByRole('button', { name: 'Model: DeepSeek Free' }));
+    expect(await screen.findByRole('option', { name: 'DeepSeek Go' })).toBeInTheDocument();
   });
 
   it('shows what the running session uses and switches that chat', async () => {

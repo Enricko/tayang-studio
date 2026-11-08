@@ -88,7 +88,17 @@ export const useModels = create<ModelsState>((set, get) => ({
 
 const NO_OPTIONS: ModelChoice[] = [];
 
-/** The options to pick from for an agent: the chat's live session first, else the last list seen. */
+/**
+ * The options to pick from for an agent. A running session's list comes first, then anything the
+ * refreshed catalog knows that the session did not report: a session started before a provider
+ * login (or before OpenCode Go was configured) would otherwise keep hiding the newly available
+ * models for the rest of that chat.
+ */
 export function modelOptions(s: Pick<ModelsState, 'byChat' | 'byAgent'>, agent: AgentId, chatId: string | null): ModelChoice[] {
-  return (chatId ? s.byChat[chatId]?.options : undefined) ?? s.byAgent[agent]?.options ?? NO_OPTIONS;
+  const live = chatId ? s.byChat[chatId]?.options : undefined;
+  const cached = s.byAgent[agent]?.options ?? NO_OPTIONS;
+  if (!live?.length) return cached;
+  const seen = new Set(live.map((o) => o.value));
+  const extra = cached.filter((o) => !seen.has(o.value));
+  return extra.length ? [...live, ...extra] : live;
 }
