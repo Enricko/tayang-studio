@@ -33,7 +33,12 @@ export function useVideoThumb(project: Project) {
     };
   }, [project.id, project.updatedAt, rendering]);
 
-  const raw = thumb ? `${assetUrl(thumb.path)}?v=${encodeURIComponent(thumb.modifiedAt)}` : null;
+  const raw = thumb
+    ? (() => {
+        const base = assetUrl(thumb.path);
+        return `${base}${base.includes('?') ? '&' : '?'}v=${encodeURIComponent(thumb.modifiedAt)}`;
+      })()
+    : null;
   const src = raw && broken !== raw ? raw : null;
   const durationSec = thumb?.durationSec ?? project.durationSec ?? null;
   return { rendering, src, durationSec, markBroken: () => setBroken(raw) };

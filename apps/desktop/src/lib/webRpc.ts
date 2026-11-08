@@ -97,8 +97,9 @@ export async function uploadFile<T>(path: string, form: FormData): Promise<T> {
 }
 
 /** `/api/assets?path=...`, which the server range-serves and authorization-checks. */
-export function assetUrl(path: string): string {
-  return `/api/assets?path=${encodeURIComponent(path)}`;
+export function assetUrl(path: string, version?: string | null): string {
+  const base = `/api/assets?path=${encodeURIComponent(path)}`;
+  return version ? `${base}&v=${encodeURIComponent(version)}` : base;
 }
 
 export async function getCapabilities<T>(): Promise<T> {

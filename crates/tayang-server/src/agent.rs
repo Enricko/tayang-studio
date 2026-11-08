@@ -10,6 +10,7 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, Weak};
+use std::time::{Duration, Instant};
 use tayang_core::acp::{AcpSink, PromptPart};
 use tayang_core::types::*;
 
@@ -19,7 +20,14 @@ struct LiveTurn {
     streaming: bool,
     started_at: String,
     image_since: DateTime<Utc>,
+    /// Last time the whole turn was written to SQLite. Full writes are cheap for short turns and
+    /// expensive for a 30-minute build, so the live SSE stream must not wait for every one of them.
+    last_persist: Instant,
 }
+
+/// How often the durable copy of a running turn is refreshed. `chat_live` holds the exact current
+/// state, and a terminal update always persists, so a sub-second window is enough.
+const PERSIST_EVERY: Duration = Duration::from_millis(750);
 
 #[derive(Default)]
 pub struct AgentHub {
@@ -89,6 +97,7 @@ impl AgentHub {
             streaming: true,
             started_at: Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
             image_since: Utc::now() - chrono::Duration::seconds(1),
+            last_persist: Instant::now(),
         };
         state.agent.turns.lock().unwrap_or_else(|e| e.into_inner()).insert(chat_id.to_string(), turn);
         message
@@ -111,6 +120,7 @@ impl AgentHub {
             return;
         }
         let terminal = matches!(&update, AgentUpdate::Done { .. } | AgentUpdate::Error { .. });
+        let mut persist_now = terminal;
         {
             let mut turns = state.agent.turns.lock().unwrap_or_else(|e| e.into_inner());
             let stale = turns.get(chat_id).map(|t| !t.streaming).unwrap_or(true);
@@ -175,6 +185,10 @@ impl AgentHub {
                     }
                     AgentUpdate::Models { .. } => {}
                 }
+                if !terminal && turn.last_persist.elapsed() >= PERSIST_EVERY {
+                    turn.last_persist = Instant::now();
+                    persist_now = true;
+                }
             }
         }
         if terminal {
@@ -185,7 +199,7 @@ impl AgentHub {
             Self::persist(state, chat_id);
             web_db::resolve_all_for_chat(&state.db, chat_id);
             Self::finish_job(state, chat_id, &update);
-        } else {
+        } else if persist_now {
             Self::persist(state, chat_id);
         }
         emit_update(state, chat_id, &update);
@@ -310,6 +324,24 @@ impl AgentHub {
     }
 }
 
+/// Before shutdown: keep the latest words, tools and images of every running turn. The in-memory
+/// turn is ahead of SQLite because writes are throttled; without this a deploy would lose the tail.
+pub fn persist_all(state: &AppState) {
+    let ids: Vec<String> = state
+        .agent
+        .turns
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .iter()
+        .filter(|(_, turn)| turn.streaming)
+        .map(|(id, _)| id.clone())
+        .collect();
+    for chat_id in ids {
+        AgentHub::append_images(state, &chat_id);
+        AgentHub::persist(state, &chat_id);
+    }
+}
+
 fn emit_update(state: &AppState, chat_id: &str, update: &AgentUpdate) {
     state.events.emit(
         &state.db,
@@ -359,6 +391,8 @@ pub struct AgentModels {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LiveChat {
+    /// This snapshot is authoritative (the web server owns turns). The desktop stub says false.
+    pub available: bool,
     pub streaming: bool,
     pub session_running: bool,
     pub turn_started_at: String,
@@ -500,7 +534,7 @@ pub fn live(state: &AppState, chat_id: &str) -> LiveChat {
             questions.push(q);
         }
     }
-    LiveChat { streaming, session_running: state.acp.is_running(chat_id), turn_started_at, message, permissions, questions }
+    LiveChat { available: true, streaming, session_running: state.acp.is_running(chat_id), turn_started_at, message, permissions, questions }
 }
 
 pub async fn stop_all(state: &AppState) {

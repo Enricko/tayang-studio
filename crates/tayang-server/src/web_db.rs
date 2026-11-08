@@ -3,6 +3,7 @@
 use rusqlite::OptionalExtension;
 use serde_json::Value;
 use tayang_core::db::Db;
+use tayang_core::types::{MessagePart, MessageRole};
 
 pub const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS web_sessions (
@@ -233,6 +234,15 @@ pub fn release_claim(db: &Db, key: &str) {
 
 pub fn mark_interrupted(db: &Db, note: &str) {
     let now = crate::auth::now_text();
+    // Chats whose turn was still running when the process ended: give the reopened chat an honest
+    // line instead of letting the last partial answer look finished.
+    let active: Vec<String> = db
+        .with_conn(|conn| {
+            let mut stmt = conn.prepare("SELECT chat_id FROM web_turns WHERE streaming = 1")?;
+            let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+            rows.collect::<rusqlite::Result<Vec<_>>>()
+        })
+        .unwrap_or_default();
     // No agent survives a server restart: pending cards would wait forever.
     let _ = db.with_conn(|conn| {
         conn.execute("UPDATE web_pending SET resolved_at = ?1 WHERE resolved_at IS NULL", [&now])?;
@@ -258,6 +268,10 @@ pub fn mark_interrupted(db: &Db, note: &str) {
         }
     }
     let _ = db.fail_stale_jobs(note);
+    for chat_id in active {
+        let text = format!("{note}. Send your message again to continue.");
+        let _ = db.add_message(&chat_id, MessageRole::System, &[MessagePart::Text { text }]);
+    }
 }
 
 #[cfg(test)]
@@ -381,6 +395,11 @@ mod interrupted_tests {
 
         assert!(pending_for_chat(&state.db, "c1").is_empty());
         assert!(!load_turn(&state.db, "c1").unwrap().streaming);
+        let messages = state.db.list_messages("c1").unwrap();
+        assert!(messages.iter().any(|m| {
+            m.role == MessageRole::System
+                && m.parts.iter().any(|p| matches!(p, MessagePart::Text { text } if text.contains("Send your message again")))
+        }));
         let after = state.db.get_slot(&slot.id).unwrap().unwrap();
         assert_eq!(after.status, SlotStatus::Failed);
         assert_eq!(after.error.as_deref(), Some("Tayang server restarted while this was running"));

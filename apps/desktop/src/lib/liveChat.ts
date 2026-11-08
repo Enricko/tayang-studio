@@ -2,6 +2,8 @@ import type { AgentQuestion, PermissionRequest, ChatMessage } from '@tayang/shar
 import { rpc } from './webRpc';
 
 export interface ChatLive {
+  /** The server owns turns and this snapshot can clear stale browser state. */
+  available?: boolean;
   streaming: boolean;
   sessionRunning: boolean;
   turnStartedAt: string;

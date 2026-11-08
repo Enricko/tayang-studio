@@ -880,7 +880,10 @@ pub async fn health(State(state): State<Arc<AppState>>) -> Json<Value> {
 
 /// Programmatic shutdown hook used by tests and graceful shutdown.
 pub async fn shutdown(state: Arc<AppState>) {
+    // The browser sees streaming updates before SQLite does; flush them before the process exits.
+    agent::persist_all(&state);
     agent::stop_all(&state).await;
+    agent::persist_all(&state);
     web_db::mark_interrupted(&state.db, "Tayang was stopped while this was running");
     orchestrator::settle_late_renders(&state, Utc::now()).await;
 }

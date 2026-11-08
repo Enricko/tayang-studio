@@ -282,7 +282,9 @@ or a VM as the real boundary; do not mount the Docker socket or unrelated secret
   cancel them.
 - `agent_start` is idempotent for a chat: a second tab cannot restart and cancel a live session.
 - Each event is stored with an id. SSE reconnects replay after `Last-Event-ID` (and the UI's saved
-  cursor), so a refreshed tab rebuilds the stream and pending cards.
+  cursor), so a refreshed tab rebuilds the stream and pending cards. Durable writes are throttled
+  while a turn runs; after a reconnect the browser merges the authoritative live snapshot over the
+  database copy and clears stale streaming/session state if the server restarted.
 - Permission and question requests are stored until answered. Answering one tab broadcasts a
   resolved event; other tabs remove the card instead of answering twice.
 - Every agent session gets `TAYANG_AI_URL` and a per-session `TAYANG_AI_TOKEN`. The loopback
@@ -400,7 +402,7 @@ verification depends on one installed and authenticated CLI on the server; see a
 
 ## What was verified in this environment
 
-- `pnpm test`: 1,081 tests passed across shared, skills and desktop (68 Vitest files; plus the extra
+- `pnpm test`: 1,084 tests passed across shared, skills and desktop (70 Vitest files; plus the extra
   server-feature-focused browser smoke run).
 - `pnpm typecheck`: passed.
 - `cargo test -p tayang-core`: 171 tests passed (media tests included; ffmpeg/ffprobe from pnpm).

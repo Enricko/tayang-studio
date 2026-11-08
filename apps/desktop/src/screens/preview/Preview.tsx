@@ -106,7 +106,7 @@ export function Preview({
     setInfo(probe);
     setFrame(0);
     setPlaying(false);
-    setThumbs(path && probe ? (await mediaThumbnails(projectId, THUMBS)).map(assetUrl) : []);
+    setThumbs(path && probe ? (await mediaThumbnails(projectId, THUMBS)).map((p) => assetUrl(p)) : []);
   }, [projectId]);
 
   useEffect(() => {

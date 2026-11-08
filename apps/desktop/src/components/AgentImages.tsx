@@ -15,7 +15,10 @@ const VISIBLE = 8;
 export const isImagePart = (p: MessagePart): p is ImagePart => p.type === 'file' && p.mime.startsWith('image/');
 
 /** The file's URL, new again whenever the file was rewritten. */
-const srcOf = (p: ImagePart) => `${assetUrl(p.path)}${p.modifiedAt ? `?v=${encodeURIComponent(p.modifiedAt)}` : ''}`;
+const srcOf = (p: ImagePart) => {
+  const base = assetUrl(p.path);
+  return p.modifiedAt ? `${base}${base.includes('?') ? '&' : '?'}v=${encodeURIComponent(p.modifiedAt)}` : base;
+};
 
 /**
  * The image's URL and whether it is gone. A file still being written can fail to decode, so a failed

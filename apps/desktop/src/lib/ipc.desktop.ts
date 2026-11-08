@@ -193,7 +193,10 @@ export const writeBrief = (projectId: string, brief: string) => invoke<void>('wr
 export const mediaRender = (projectId: string) => invoke<string>('media_render', { projectId });
 
 /** URL the webview can load for a file on disk. */
-export const assetUrl = (path: string): string => convertFileSrc(path);
+export const assetUrl = (path: string, version?: string | null): string => {
+  const base = convertFileSrc(path);
+  return version ? `${base}${base.includes('?') ? '&' : '?'}v=${encodeURIComponent(version)}` : base;
+};
 
 // ---- attachments ----
 export const attachFile = (chatId: string, sourcePath: string) =>

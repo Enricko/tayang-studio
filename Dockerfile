@@ -10,7 +10,9 @@ COPY scripts ./scripts
 COPY apps/desktop/package.json apps/desktop/tsconfig.json apps/desktop/index.html apps/desktop/vite.config.ts apps/desktop/vitest.config.ts ./apps/desktop/
 COPY apps/desktop/src ./apps/desktop/src
 COPY apps/desktop/public ./apps/desktop/public
-RUN pnpm install --frozen-lockfile
+# Dev-only binaries (ffmpeg-static/ffprobe-static) are not needed to build the web bundle, and
+# their postinstall downloads make the image build depend on GitHub releases being up.
+RUN pnpm install --frozen-lockfile --ignore-scripts
 RUN pnpm build:web
 
 # ---- 2. The headless Rust server (no WebKit, GTK, or display server) ----

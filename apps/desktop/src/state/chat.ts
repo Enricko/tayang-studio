@@ -95,7 +95,7 @@ interface ChatState {
   setDraft(key: string, draft: Draft): void;
   /** A new chat just got its id: it takes over the draft's Auto choice. */
   adoptPendingAuto(chatId: string): void;
-  load(chatId: string): Promise<void>;
+  load(chatId: string, force?: boolean): Promise<void>;
   /** Resolves to an error message when the agent could not be reached, otherwise null. */
   send(chatId: string, parts: MessagePart[], opts?: SendOpts): Promise<string | null>;
   respondPermission(chatId: string, optionId: string | null): Promise<void>;
@@ -712,7 +712,7 @@ export const useChat = create<ChatState>((set, get) => {
       set((s) => ({ auto: { ...s.auto, [chatId]: pending }, pendingAuto: null }));
     },
 
-    async load(chatId) {
+    async load(chatId, force = false) {
       if (isScratchChat(chatId)) return;
       tracked.add(chatId);
       const agent = (async () => {
@@ -726,8 +726,11 @@ export const useChat = create<ChatState>((set, get) => {
       })();
       try {
         const list = await listMessages(chatId);
-        // Never clobber a conversation that is already live in memory.
-        if (!get().messages[chatId]?.length) set((s) => ({ messages: { ...s.messages, [chatId]: list } }));
+        // Never clobber a conversation that is already live in memory, unless a reconnect asks for
+        // the durable copy: the live turn is merged below.
+        if (force || !get().messages[chatId]?.length) {
+          set((s) => ({ messages: { ...s.messages, [chatId]: list } }));
+        }
       } catch {
         /* an empty chat is fine */
       }
@@ -739,22 +742,42 @@ export const useChat = create<ChatState>((set, get) => {
       }
       try {
         const live = await chatLive(chatId);
-        const current = get().messages[chatId] ?? [];
-        const hasMessage = live.message ? current.some((m) => m.id === live.message!.id) : true;
-        set((s) => ({
-          ...(live.sessionRunning ? { started: { ...s.started, [chatId]: true } } : {}),
-          ...(live.streaming
-            ? {
-                streaming: { ...s.streaming, [chatId]: true },
-                turnStartedAt: { ...s.turnStartedAt, [chatId]: Date.parse(live.turnStartedAt) || Date.now() },
-              }
-            : {}),
-          ...(live.message && !hasMessage ? { messages: { ...s.messages, [chatId]: [...current, live.message] } } : {}),
-          ...(live.permissions.length
-            ? { permissions: { ...s.permissions, [chatId]: live.permissions } }
-            : {}),
-          ...(live.questions.length ? { questions: { ...s.questions, [chatId]: live.questions } } : {}),
-        }));
+        set((s) => {
+          const current = s.messages[chatId] ?? [];
+          let messages = current;
+          if (live.message) {
+            const at = current.findIndex((m) => m.id === live.message!.id);
+            if (at >= 0) {
+              // The live snapshot is ahead of SQLite (writes are throttled), so replace the stored
+              // copy rather than keeping an older, shorter answer.
+              messages = current.map((m) => (m.id === live.message!.id ? live.message! : m));
+            } else if (live.streaming && current.at(-1)?.role === 'agent' && isLocal(current.at(-1)!)) {
+              // The same turn already has a local message in this tab; keep its React key.
+              const local = current.at(-1)!;
+              clientKeys.set(live.message.id, local.id);
+              messages = [...current.slice(0, -1), live.message];
+            } else {
+              messages = [...current, live.message];
+            }
+          }
+          const turnStartedAt = { ...s.turnStartedAt };
+          if (live.streaming) turnStartedAt[chatId] = Date.parse(live.turnStartedAt) || Date.now();
+          else if (live.available) delete turnStartedAt[chatId];
+          return {
+            messages: { ...s.messages, [chatId]: messages },
+            ...(live.available
+              ? {
+                  streaming: { ...s.streaming, [chatId]: live.streaming },
+                  turnStartedAt,
+                  permissions: { ...s.permissions, [chatId]: live.permissions },
+                  questions: { ...s.questions, [chatId]: live.questions },
+                  started: { ...s.started, [chatId]: live.sessionRunning },
+                }
+              : live.streaming
+                ? { turnStartedAt }
+                : {}),
+          };
+        });
       } catch {
         /* no live snapshot is fine (desktop, or an old server) */
       }
@@ -920,7 +943,12 @@ export const useChat = create<ChatState>((set, get) => {
 
     listen() {
       if (unlisten.length) return;
+      const recover = () => {
+        for (const chatId of tracked) void get().load(chatId, true).catch(() => {});
+      };
+      window.addEventListener('tayang:reconnected', recover);
       unlisten = [
+        Promise.resolve(() => window.removeEventListener('tayang:reconnected', recover)),
         onAgentUpdate(({ chatId, update }) => onUpdate(chatId, update)),
         onAgentAction((a) => {
           if (!tracked.has(a.chatId)) return;

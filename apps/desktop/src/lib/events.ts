@@ -57,6 +57,14 @@ function open(lastEventId: number) {
   for (const kind of EVENT_KINDS) {
     source.addEventListener(kind, (e) => dispatch(kind, (e as MessageEvent).data));
   }
+  let reconnected = false;
+  source.onopen = () => {
+    if (!reconnected) return;
+    reconnected = false;
+    // The server may have restarted while the EventSource was down: ask the chat store to reload
+    // the live snapshot instead of leaving a stale "still working" turn on screen.
+    window.dispatchEvent(new CustomEvent('tayang:reconnected'));
+  };
   source.addEventListener('resync', () => {
     // Too much history to replay within a live connection: reload. Durable chat/state is in the
     // database, and a fresh connection starts at the newest id.
@@ -64,6 +72,7 @@ function open(lastEventId: number) {
     window.location.reload();
   });
   source.onerror = () => {
+    reconnected = true;
     // EventSource reconnects by itself with its native Last-Event-ID. If the session expired, tell
     // the login gate.
     void fetch('/api/auth/me', { credentials: 'same-origin' })
