@@ -152,7 +152,7 @@ Compose starts two services on the shared `tayang-data` volume:
 
 - `tayang`: the web server and UI.
 - `tts`: a CPU-only FastAPI sidecar with Pocket TTS (Indonesian community model, zero-shot voice
-  cloning from a 10–30 second reference clip) and Kokoro (built-in voices). It is not published on
+  cloning from a 10–15 second reference clip) and Kokoro (built-in voices). It is not published on
   a host port; only the app container reaches it at `http://tts:8000`. The first narration may take
   a while while the models download into `/data/hf-cache`. The Indonesian Pocket TTS model is
   [anak10thn/pocket-tts-indonesian](https://huggingface.co/anak10thn/pocket-tts-indonesian)
@@ -165,9 +165,11 @@ Portuguese; Pocket TTS has four Indonesian voices plus unlimited cloned voices. 
 Kokoro is marked **no Indonesian** here; use Pocket TTS for Indonesian videos.
 
 For voice cloning, the page shows a short Indonesian script to read. You can record it directly in
-the browser (up to 30 seconds, converted to WAV before upload) or upload a WAV/MP3 recorded from the
-same script; the uploaded clip becomes the default Pocket reference voice. The choice is stored in
-`/data/voices/config.json`, is handed to new agent sessions as `TAYANG_TTS_ENGINE`/`TAYANG_TTS_VOICE`,
+the browser (up to 16 seconds, converted to WAV before upload) or upload a WAV/MP3 recorded from the
+same script; the uploaded clip becomes the default Pocket reference voice. Uploads are trimmed to
+the first 16 seconds, have leading/trailing silence removed, are normalised to -20 LUFS with a -2 dB
+peak, and are stored as mono 24 kHz WAV so quiet or clipped phone recordings clone more reliably.
+The choice is stored in `/data/voices/config.json`, is handed to new agent sessions as `TAYANG_TTS_ENGINE`/`TAYANG_TTS_VOICE`,
 and is read by the sidecar. Uploads are limited to 20 MB and WAV/MP3/FLAC/OGG/M4A. The server never
 exposes the internal TTS token to the browser.
 

@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Mic, Square } from 'lucide-react';
 import { Button } from '@/components/Button';
 
-const MAX_SECONDS = 30;
+const MAX_SECONDS = 16;
 const MIN_SECONDS = 5;
 
 /** PCM WAV from the decoded microphone recording, because the cloner accepts normal audio files. */
@@ -88,9 +88,16 @@ export function VoiceRecorder({ disabled, onRecorded }: { disabled: boolean; onR
       return;
     }
     try {
-      const media = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const media = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+      });
       stream.current = media;
-      const next = new MediaRecorder(media);
+      let next: MediaRecorder;
+      try {
+        next = new MediaRecorder(media, { audioBitsPerSecond: 192000 });
+      } catch {
+        next = new MediaRecorder(media);
+      }
       recorder.current = next;
       chunks.current = [];
       next.ondataavailable = (event) => {

@@ -13,6 +13,7 @@ use axum::response::{IntoResponse, Response};
 use axum::Json;
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -239,26 +240,61 @@ pub async fn upload(State(state): State<Arc<AppState>>, mut multipart: Multipart
     if let Err(e) = std::fs::create_dir_all(&dir) {
         return error(StatusCode::INTERNAL_SERVER_ERROR, "server", &e.to_string());
     }
-    // Never overwrite a clip: a second upload with the same name gets -2, -3, …
-    let mut name = format!("{stem}.{ext}");
-    let mut n = 2;
-    while dir.join(&name).exists() {
-        name = format!("{stem}-{n}.{ext}");
-        n += 1;
+    let tmp = state.data_dir.join("tmp");
+    match tokio::task::spawn_blocking(move || prepare_and_store(&dir, &tmp, &stem, &ext, &bytes)).await {
+        Ok(Ok(voice)) => (StatusCode::OK, Json(voice)).into_response(),
+        Ok(Err(message)) => error(StatusCode::BAD_REQUEST, "invalid-voice", &message),
+        Err(e) => error(StatusCode::INTERNAL_SERVER_ERROR, "server", &e.to_string()),
     }
-    let path = dir.join(&name);
-    if let Err(e) = std::fs::write(&path, &bytes) {
-        return error(StatusCode::INTERNAL_SERVER_ERROR, "server", &e.to_string());
-    }
-    (
-        StatusCode::OK,
-        Json(json!({
+}
+
+/// Convert any accepted recording to the best reference Pocket TTS can use: mono 24 kHz PCM,
+/// trimmed to a short natural clip, with silence removed and loudness normalised. A long or quiet
+/// phone recording otherwise makes the cloned voice unstable.
+fn prepare_and_store(dir: &Path, tmp: &Path, stem: &str, ext: &str, bytes: &[u8]) -> Result<Value, String> {
+    let work = tmp.join(format!("voice-{}", uuid::Uuid::new_v4().simple()));
+    std::fs::create_dir_all(&work).map_err(|e| e.to_string())?;
+    let source = work.join(format!("source.{ext}"));
+    let cleaned = work.join("clean.wav");
+    let result = (|| {
+        std::fs::write(&source, bytes).map_err(|e| e.to_string())?;
+        let filter = "highpass=f=70,silenceremove=start_periods=1:start_silence=0.1:start_threshold=-45dB,areverse,silenceremove=start_periods=1:start_silence=0.1:start_threshold=-45dB,areverse,loudnorm=I=-20:TP=-2:LRA=7";
+        let output = Command::new("ffmpeg")
+            .args(["-y", "-hide_banner", "-loglevel", "error", "-i"])
+            .arg(&source)
+            .args(["-af", filter, "-t", "16", "-ac", "1", "-ar", "24000", "-c:a", "pcm_s16le"])
+            .arg(&cleaned)
+            .output()
+            .map_err(|e| format!("Can't run ffmpeg to prepare the recording: {e}"))?;
+        if !output.status.success() {
+            return Err("That recording couldn't be read. Try a WAV or MP3 with clear speech.".into());
+        }
+        let probe = Command::new("ffprobe")
+            .args(["-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1"])
+            .arg(&cleaned)
+            .output()
+            .map_err(|e| format!("Can't read the prepared recording: {e}"))?;
+        let seconds: f64 = String::from_utf8_lossy(&probe.stdout).trim().parse().unwrap_or(0.0);
+        if seconds < 5.0 {
+            return Err("The recording is shorter than 5 seconds after trimming silence. Read the script once and try again.".into());
+        }
+        // Never overwrite a clip: a second upload with the same name gets -2, -3, …
+        let mut name = format!("{stem}.wav");
+        let mut n = 2;
+        while dir.join(&name).exists() {
+            name = format!("{stem}-{n}.wav");
+            n += 1;
+        }
+        std::fs::rename(&cleaned, dir.join(&name)).map_err(|e| e.to_string())?;
+        Ok(json!({
             "id": name,
             "name": Path::new(&name).file_stem().and_then(|s| s.to_str()).unwrap_or(&name),
-            "custom": true
-        })),
-    )
-        .into_response()
+            "custom": true,
+            "durationSec": (seconds * 10.0).round() / 10.0
+        }))
+    })();
+    let _ = std::fs::remove_dir_all(&work);
+    result
 }
 
 fn audio_extension(name: &str) -> Option<String> {
