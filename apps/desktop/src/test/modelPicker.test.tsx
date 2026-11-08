@@ -36,6 +36,8 @@ const picker = (chatId: string | null = null) =>
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(ipc.agentModels).mockReset();
+  vi.mocked(ipc.setAgentModel).mockReset();
   localStorage.clear();
   useModels.setState({ byChat: {}, byAgent: {}, loading: {}, failed: {} });
   useApp.setState({ settings: settings() });
@@ -52,10 +54,27 @@ describe('ModelPicker', () => {
     await userEvent.click(await screen.findByRole('option', { name: 'Big Pickle' }));
     expect(ipc.setAgentModel).toHaveBeenCalledWith('opencode', 'opencode/big-pickle', null);
     expect(await screen.findByRole('button', { name: 'Model: Big Pickle' })).toBeInTheDocument();
-    // Kept for next time: the list isn't asked for again.
+    // Kept for an instant menu next time, but every open refreshes the provider catalog so a
+    // newly configured provider account appears without clearing storage.
     expect(JSON.parse(localStorage.getItem('tayang.agentModels')!).opencode.options).toHaveLength(3);
     await userEvent.click(screen.getByRole('button', { name: 'Model: Big Pickle' }));
-    expect(ipc.agentModels).toHaveBeenCalledTimes(1);
+    expect(ipc.agentModels).toHaveBeenCalledTimes(2);
+  });
+
+  it('offers models from the refreshed catalog that an older session did not report', async () => {
+    const old = [{ value: 'opencode/deepseek-v4.1-flash-free', name: 'DeepSeek Free' }];
+    const fresh = [...old, { value: 'opencode-go/deepseek-v4.1-flash', name: 'DeepSeek Go' }];
+    act(() => {
+      useChat.setState({ rows: { c1: { id: 'c1', projectId: null, agentId: 'opencode', title: 't', createdAt: '' } } } as never);
+      useModels.setState({
+        byChat: { c1: { current: old[0]!.value, options: old } },
+        byAgent: { opencode: { current: old[0]!.value, options: fresh } },
+      });
+    });
+    vi.mocked(ipc.agentModels).mockResolvedValue({ current: old[0]!.value, options: fresh });
+    picker('c1');
+    await userEvent.click(screen.getByRole('button', { name: 'Model: DeepSeek Free' }));
+    expect(await screen.findByRole('option', { name: 'DeepSeek Go' })).toBeInTheDocument();
   });
 
   it('filters by name, so the free ones are easy to find', async () => {

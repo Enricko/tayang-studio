@@ -24,6 +24,7 @@ import { cn } from '@/lib/utils';
 import { useApp } from '@/state/app';
 import { autoOn, useChat, type StyleRef } from '@/state/chat';
 import { modelOptions, useModels } from '@/state/models';
+import { useShallow } from 'zustand/react/shallow';
 import { track } from '@/lib/analytics';
 
 export const QUICK_CHIPS = ['faster', 'bigger', 'colors', 'music', 'short'] as const;
@@ -168,7 +169,7 @@ export function ModelPicker({ agent, chatId, disabled }: { agent: AgentId; chatI
   const [error, setError] = useState<string | null>(null);
   const picked = useApp((s) => s.settings?.agentModels?.[agent] ?? null);
   const live = useModels((s) => (chatId ? (s.byChat[chatId]?.current ?? null) : null));
-  const options = useModels((s) => modelOptions(s, agent, chatId));
+  const options = useModels(useShallow((s) => modelOptions(s, agent, chatId)));
   const loading = useModels((s) => !!s.loading[agent]);
   const failed = useModels((s) => s.failed[agent] ?? null);
   useEffect(() => useModels.getState().listen(), []);
@@ -179,7 +180,9 @@ export function ModelPicker({ agent, chatId, disabled }: { agent: AgentId; chatI
   const onOpenChange = (o: boolean) => {
     setOpen(o);
     setError(null);
-    if (o) void useModels.getState().load(agent);
+    // Refresh on every open: credentials or provider catalogs can change on the server while this
+    // app still has a cached list. The cached options keep the menu instant; the live list replaces them.
+    if (o) void useModels.getState().load(agent, true);
   };
 
   const choose = async (value: string | null) => {
@@ -212,9 +215,12 @@ export function ModelPicker({ agent, chatId, disabled }: { agent: AgentId; chatI
         <Command>
           <CommandInput placeholder={t('composer.findModel')} />
           <CommandList className="max-h-72">
-            {loading && !options.length ? (
-              <p className="m-0 px-3 py-3 text-xs text-text-3">{t('composer.loadingModels', { agent: AGENT_NAMES[agent] })}</p>
-            ) : (
+            {loading && (
+              <p role="status" className="m-0 px-3 py-2 text-xs text-text-3">
+                {t('composer.loadingModels', { agent: AGENT_NAMES[agent] })}
+              </p>
+            )}
+            {loading && !options.length ? null : (
               <>
                 <CommandEmpty>{t('composer.noModelMatch')}</CommandEmpty>
                 {!options.length && <p className="m-0 px-3 pt-3 pb-1 text-xs text-text-3">{t('composer.noModels')}</p>}
