@@ -32,8 +32,8 @@ export const FOREGROUND_RULE =
   "Never end your turn by saying what you will do next (\"I'll render it again\"): do it in the same turn. End your turn only when the work is done, or when you need the user to answer or allow something. Run installs, renders and pipelines in the foreground and wait for them to finish before you reply. Never start a long job in the background and end your turn: you can't message the user after your turn ends, and Tayang shows the user that you're still working while your turn runs. If a command needs more than a few minutes, say so first, then run it and wait. Keep command output short: use the command's quiet flag, or end a long install or render with `2>&1 | tail -n 30` and read those last lines for errors; progress bars and install logs only fill your context.";
 
 /**
- * Voice-over and pictures for a project. The self-hosted edition has no cloud AI assets or credits:
- * the server's local TTS sidecar narrates, and everything visual is built in code.
+ * Voice-over and pictures for a project. The self-hosted edition has no cloud AI assets: the
+ * server's local TTS sidecar narrates, and everything visual is built in code.
  */
 export const AI_ASSETS_RULE =
   'A voice-over comes from the local text-to-speech endpoint when the session has `$TAYANG_TTS_URL`: ' +
@@ -41,7 +41,7 @@ export const AI_ASSETS_RULE =
   'It saves the audio inside the project folder and answers with the path and duration. `$TAYANG_TTS_ENGINE` and `$TAYANG_TTS_VOICE` are the engine and voice the user chose in Settings › Voice (Pocket TTS speaks Indonesian and can use the user\'s own uploaded voice; Kokoro has built-in English and other voices). Use them by default: send no engine or voice to use the saved default, or send `"engine":"kokoro","voice":"af_heart"` for English. ' +
   'For the Pocket engine, spell numbers as words in the video language (`lima belas`, not `15`); capitalisation and punctuation are fine. If `$TAYANG_TTS_URL` is unset or the call fails, use another text-to-speech already installed here, such as the system voice; never drop the voice-over unless the user asked for none, and say once in one short line if the local voice failed. ' +
   'Pictures you cannot build in code are still built in code: shapes, gradients, illustrations, charts and maps. Do not download stock photos or images from the web. ' +
-  'Never mention credits, paid plans or a cloud account: this self-hosted edition has none.';
+  'Everything needed for the video runs locally on this server.';
 
 /** Tayang's preview and status read the render from renders/; a template pipeline may write it elsewhere. */
 export const RENDERS_RULE =

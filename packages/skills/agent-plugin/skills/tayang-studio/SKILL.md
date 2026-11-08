@@ -48,7 +48,7 @@ When a video is finished, and whenever the user asks for a post, write `post.jso
 
 ## Voice-over
 
-Every session in the self-hosted edition has `$TAYANG_TTS_URL` and `$TAYANG_TTS_TOKEN`. `$TAYANG_TTS_ENGINE` and `$TAYANG_TTS_VOICE` are the engine and voice the user picked in Settings › Voice: Pocket TTS speaks Indonesian and can use the user's own uploaded voice, while Kokoro has built-in English and other voices. There are no Tayang credits, paid plans or cloud AI assets; never mention them.
+Every session in the self-hosted edition has `$TAYANG_TTS_URL` and `$TAYANG_TTS_TOKEN`. `$TAYANG_TTS_ENGINE` and `$TAYANG_TTS_VOICE` are the engine and voice the user picked in Settings › Voice: Pocket TTS speaks Indonesian and can use the user's own uploaded voice, while Kokoro has built-in English and other voices. There is no cloud AI service in this edition; everything the video needs runs locally on the server.
 
 1. Use the local engine for every voice-over when `$TAYANG_TTS_URL` is set. It runs on the server and costs nothing.
 2. Make the narration with:
