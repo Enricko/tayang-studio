@@ -923,6 +923,8 @@ export const en = {
     noResult: 'No result',
   },
   autopilot: {
+    pickingTopic: 'Oyen is picking a topic…',
+    topicLater: 'The topic is picked automatically when it is time',
     title: 'Autopilot',
     subtitle: 'Tayang makes videos for you on a schedule. You stay in charge: pause any time.',
     emptyLine: 'An autopilot picks a topic in your niche, makes the video in your style and puts it on your calendar.',

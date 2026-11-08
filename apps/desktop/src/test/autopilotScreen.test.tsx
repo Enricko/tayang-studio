@@ -230,9 +230,9 @@ describe('Autopilot detail', () => {
     const rows = await screen.findAllByTestId('upcoming-slot');
     expect(rows.map((r) => r.textContent)).toEqual([
       'Wed 4 Nov 08:00Skipped',
-      'Wed 4 Nov 12:00Making',
+      'Wed 4 Nov 12:00MakingOyen is picking a topic…',
       'Wed 4 Nov 19:00FailedNo video file was renderedTry again',
-      'Thu 5 Nov 12:00Planned',
+      'Thu 5 Nov 12:00PlannedThe topic is picked automatically when it is time',
     ]);
     expect(screen.getByText('Kopi')).toBeInTheDocument();
     expect(screen.queryByText('Other')).toBeNull();

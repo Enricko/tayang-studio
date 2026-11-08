@@ -917,6 +917,8 @@ export const id: Translations = {
     noResult: 'Tanpa hasil',
   },
   autopilot: {
+    pickingTopic: 'Oyen sedang memilih topik…',
+    topicLater: 'Topik dipilih otomatis saat waktunya tiba',
     title: 'Autopilot',
     subtitle: 'Tayang membuatkan video sesuai jadwal. Kamu tetap pegang kendali: jeda kapan saja.',
     emptyLine: 'Autopilot memilih topik sesuai niche kamu, membuat videonya dengan gaya kamu, lalu menaruhnya di kalender.',

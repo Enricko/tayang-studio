@@ -313,6 +313,14 @@ function Detail({ a, data, now, onError }: { a: AutopilotT; data: Data; now: Dat
                     <span className={cn('w-[132px] shrink-0 text-[13px] tabular-nums', s.status === 'skipped' ? 'text-text-3' : 'text-foreground')}>{slotTime(at)}</span>
                     <SlotChip status={s.status} />
                     {project && <span className="min-w-0 truncate text-xs text-text-2">{project.title}</span>}
+                    {!project && s.status === 'making' && (
+                      // The agent is picking this slot's topic right now.
+                      <span role="status" className="flex min-w-0 flex-1 items-center gap-2">
+                        <span aria-hidden="true" className="h-2.5 w-24 shrink-0 animate-pulse rounded-full bg-raised motion-reduce:animate-none" />
+                        <span className="truncate text-xs text-text-2">{t('autopilot.pickingTopic')}</span>
+                      </span>
+                    )}
+                    {!project && s.status === 'planned' && <span className="min-w-0 truncate text-xs text-text-3">{t('autopilot.topicLater')}</span>}
                     {(s.status === 'failed' || s.status === 'done') && s.error && <span className="min-w-0 truncate text-xs text-orange-light">{localized(s.error)}</span>}
                     {s.status === 'failed' && at.getTime() > now.getTime() && (
                       <Button
