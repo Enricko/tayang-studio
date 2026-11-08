@@ -6,8 +6,11 @@ import { createChat, listNiches, listStyles, listVoices } from '@/lib/ipc';
 import { useApp } from '@/state/app';
 import { useChat } from '@/state/chat';
 
-/** Opens a new chat where the agent sets up an autopilot with the user. A list that can't load is left empty. */
-export async function startAutopilotChat(settings: Settings): Promise<void> {
+/**
+ * Opens a new chat where the agent sets up an autopilot with the user. A list that can't load is left
+ * empty. `notes` is what the user already asked for in another chat (an agent's POST /autopilot-chat).
+ */
+export async function startAutopilotChat(settings: Settings, notes = ''): Promise<void> {
   const agent: AgentId = settings.defaultAgent;
   const [niches, voices, styles, accounts] = await Promise.all([
     listNiches().catch(() => []),
@@ -17,7 +20,9 @@ export async function startAutopilotChat(settings: Settings): Promise<void> {
   ]);
   const chat = await createChat(null, agent, i18n.t('autopilot.chat.title'));
   useChat.getState().rememberChat(chat);
-  void useChat.getState().send(chat.id, [{ type: 'text', text: i18n.t('autopilot.chat.firstMessage') }], {
+  const asked = notes.trim();
+  const first = asked ? `${i18n.t('autopilot.chat.firstMessage')}: ${asked}` : i18n.t('autopilot.chat.firstMessage');
+  void useChat.getState().send(chat.id, [{ type: 'text', text: first }], {
     agentId: agent,
     promptParts: [
       {

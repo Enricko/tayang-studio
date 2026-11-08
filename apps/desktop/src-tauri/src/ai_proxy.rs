@@ -102,6 +102,12 @@ pub fn parse_action(path: &str, b: &Value) -> Option<Result<(&'static str, Value
             }
             Ok(("create_autopilot", b.clone()))
         })()),
+        // From any chat: Tayang opens its autopilot setup chat, which knows the niches, styles,
+        // voices and accounts to pick from. `notes` is what the user already said.
+        "/autopilot-chat" => Some(Ok((
+            "start_autopilot_chat",
+            json!({ "notes": text("notes").map(|n| n.chars().take(600).collect::<String>()).unwrap_or_default() }),
+        ))),
         _ => None,
     }
 }
@@ -208,6 +214,8 @@ async fn serve(mut s: tokio::net::TcpStream, proxy: &AiProxy, folder_for: &(dyn 
                     act(&chat, name, context);
                     let message = if name == "pick_topic" {
                         "Tayang is starting this video in its own chat. End your turn now: the video is made there."
+                    } else if name == "start_autopilot_chat" {
+                        "Tayang is opening its autopilot setup chat with what the user said. End your turn now; the autopilot is set up there."
                     } else if name == "create_autopilot" {
                         "Tayang is showing the user this autopilot to check and start. End your turn now; never say it is running until the user starts it."
                     } else {
@@ -412,6 +420,9 @@ mod tests {
         assert!(parse_job("/voice", &json!({ "text": "x", "out": "a.wav" })).is_err());
         assert_eq!(parse_action("/autopilot", &json!({ "name": "Kopi" })).unwrap().unwrap().0, "create_autopilot");
         assert!(parse_action("/autopilot", &json!({})).unwrap().is_err());
+        let (name, ctx) = parse_action("/autopilot-chat", &json!({ "notes": " sejarah dunia, Instagram " })).unwrap().unwrap();
+        assert_eq!((name, ctx), ("start_autopilot_chat", json!({ "notes": "sejarah dunia, Instagram" })));
+        assert_eq!(parse_action("/autopilot-chat", &json!({})).unwrap().unwrap().1, json!({ "notes": "" }));
         assert!(parse_action("/autopilot", &json!({ "name": "Kopi", "niche": "x".repeat(9000) })).unwrap().is_err());
         assert!(parse_job("/video", &json!({})).is_err());
         assert_eq!(nth_path(Path::new("a/b.jpg"), 0), PathBuf::from("a/b.jpg"));

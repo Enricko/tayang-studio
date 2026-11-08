@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentUpdate, PermissionRequest, Settings, Style } from '@tayang/shared';
 
+vi.mock('@/lib/autopilotChat', () => ({ startAutopilotChat: vi.fn().mockResolvedValue(undefined) }));
 vi.mock('@/lib/ipc', () => ({
   listAutopilots: vi.fn().mockResolvedValue([]),
   listSlots: vi.fn().mockResolvedValue([]),
@@ -407,6 +408,21 @@ describe('topic ideas in a new chat', () => {
     expect(useApp.getState().route.name).not.toBe('autopilot-wizard');
     await act(async () => emit({ kind: 'done', stopReason: 'end_turn' }));
     await waitFor(() => expect(useApp.getState().route).toEqual({ name: 'autopilot-wizard', draft: context }));
+    expect(useChat.getState().actions['chat-1']).toEqual([]);
+  });
+
+  it('opens the autopilot setup chat with what the user asked, once the turn of POST /autopilot-chat is over', async () => {
+    const { startAutopilotChat } = await import('@/lib/autopilotChat');
+    render(<ChatRoute />);
+    await userEvent.click(screen.getByRole('button', { name: /From a topic/ }));
+    await waitFor(() => expect(ipc.agentPrompt).toHaveBeenCalled());
+    await act(async () => {
+      emit({ kind: 'text', text: 'Siap.' });
+      for (const f of actionHandlers) f({ chatId: 'chat-1', name: 'start_autopilot_chat', context: { notes: 'sejarah dunia untuk Instagram' } });
+    });
+    expect(startAutopilotChat).not.toHaveBeenCalled();
+    await act(async () => emit({ kind: 'done', stopReason: 'end_turn' }));
+    await waitFor(() => expect(startAutopilotChat).toHaveBeenCalledWith(expect.objectContaining({ defaultAgent: settings.defaultAgent }), 'sejarah dunia untuk Instagram'));
     expect(useChat.getState().actions['chat-1']).toEqual([]);
   });
 

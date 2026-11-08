@@ -1,3 +1,4 @@
+import { startAutopilotChat } from '@/lib/autopilotChat';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { AgentId, ChatMessage, MessagePart, Project } from '@tayang/shared';
@@ -156,6 +157,15 @@ export function ChatThread({ chatId, draft, styleId: routeStyleId }: { chatId: s
     const a = useChat.getState().takeAction(chatId, 'create_autopilot');
     if (a) useApp.getState().navigate({ name: 'autopilot-wizard', draft: a.context });
   }, [pendingAutopilot, streaming, chatId]);
+
+  // The agent asked for an autopilot (POST /autopilot-chat): once its turn is over, open the setup chat.
+  const pendingAutopilotChat = useChat((s) => (s.actions[chatId] ?? []).some((a) => a.name === 'start_autopilot_chat'));
+  useEffect(() => {
+    if (!pendingAutopilotChat || streaming) return;
+    const a = useChat.getState().takeAction(chatId, 'start_autopilot_chat');
+    const settings = useApp.getState().settings;
+    if (a && settings) void startAutopilotChat(settings, typeof a.context?.notes === 'string' ? a.context.notes : '');
+  }, [pendingAutopilotChat, streaming, chatId]);
 
   const onA2uiAction = (a: A2uiAction) => {
     if (a.name !== 'pick_topic') return false;

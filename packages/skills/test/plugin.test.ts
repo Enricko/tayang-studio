@@ -113,6 +113,12 @@ describe('agent plugin', () => {
     expect(buildSessionPreamble()).toContain('never build it here');
   });
 
+  it('sends an autopilot request to Tayang\'s setup chat instead of scheduling videos', () => {
+    const skill = read('skills/tayang-studio/SKILL.md');
+    expect(skill).toContain('$TAYANG_AI_URL/autopilot-chat');
+    expect(skill).toContain('never plan or schedule the videos yourself');
+  });
+
   it('has the agent look at one contact sheet of the stills, not each still, wherever it gets its instructions', () => {
     expect(SHEET_STEP).toContain('tile=4x3');
     expect(SHEET_STEP).toContain('stills/scene-%02d.png');
