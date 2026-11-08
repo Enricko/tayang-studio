@@ -34,7 +34,7 @@ export const MOTION_RULES = [
 ];
 export const FACTS_RULE = '- Facts must be real and checkable. No made-up numbers.';
 
-/** How the agent starts a picked video: Tayang's local endpoint (see the desktop's ai_proxy.rs). */
+/** How the agent starts a picked video: Tayang's local action endpoint on desktop or the web server. */
 export const VIDEO_CALL =
   `curl -s -X POST "$TAYANG_AI_URL/video" -H "Authorization: Bearer $TAYANG_AI_TOKEN" -d '{"title":"<the idea title>","kind":"<kind>","lengthSec":<seconds>,"styleId":"<style id or empty>","notes":"<or empty>"}'`;
 

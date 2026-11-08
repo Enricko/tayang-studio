@@ -7,6 +7,7 @@ import { AccountSection } from '@/components/Account';
 import { ArchiveSection } from '@/components/ArchiveSection';
 import { GiftCode } from '@/components/GiftCode';
 import { UsageTab } from '@/components/UsageTab';
+import { VoiceTab } from '@/components/VoiceTab';
 import { ClaudeAccountControl } from '@/components/ClaudeAccountControl';
 import { AgentLogo } from '@/components/AgentLogo';
 import { Button } from '@/components/Button';
@@ -31,7 +32,7 @@ import { cn } from '@/lib/utils';
 import { useInstall } from '@/state/install';
 import { useUpdater } from '@/state/updater';
 
-const SECTIONS = ['general', 'agents', 'video', 'render', 'tools', 'usage', 'account', 'archive'] as const;
+const SECTIONS = ['general', 'agents', 'video', 'voice', 'render', 'tools', 'usage', 'account', 'archive'] as const;
 export type SettingsTab = (typeof SECTIONS)[number];
 
 function isHttpUrl(v: string): boolean {
@@ -140,15 +141,21 @@ const TAB_KEY = 'tayang.settingsTab';
 const isTab = (v: unknown): v is SettingsTab => typeof v === 'string' && (SECTIONS as readonly string[]).includes(v);
 
 /** The tab Settings opens on: the one asked for, else the one last used, else General. */
+function usableTab(id: string | undefined | null): SettingsTab | null {
+  if (!isTab(id)) return null;
+  // Local voice is served by the web edition's TTS sidecar.
+  if (id === 'voice' && !capabilities.web) return null;
+  return id;
+}
+
 function startTab(asked: string | undefined): SettingsTab {
-  if (isTab(asked)) return asked;
+  let saved: string | null = null;
   try {
-    const saved = localStorage.getItem(TAB_KEY);
-    if (isTab(saved)) return saved;
+    saved = localStorage.getItem(TAB_KEY);
   } catch {
     /* storage off: General */
   }
-  return 'general';
+  return usableTab(asked) ?? usableTab(saved) ?? 'general';
 }
 
 export function Settings() {
@@ -165,7 +172,8 @@ export function Settings() {
   const askedTab = useApp((s) => (s.route.name === 'settings' ? s.route.tab : undefined));
   const [tab, setTab] = useState<SettingsTab>(() => startTab(askedTab));
   useEffect(() => {
-    if (isTab(askedTab)) setTab(askedTab);
+    const next = usableTab(askedTab);
+    if (next) setTab(next);
   }, [askedTab]);
   const pickTab = (id: SettingsTab) => {
     setTab(id);
@@ -279,7 +287,7 @@ export function Settings() {
       </h1>
 
       <div role="tablist" aria-orientation="vertical" aria-label={t('settings.sectionsAria')} className="flex flex-[0_0_180px] flex-col gap-1">
-        {SECTIONS.map((id) => (
+        {SECTIONS.filter((id) => id !== 'voice' || capabilities.web).map((id) => (
           <button
             key={id}
             id={`settings-tab-${id}`}
@@ -496,11 +504,26 @@ export function Settings() {
                   onChange={(v) => void save({ fps: Number(v) })}
                 />
               </Row>
-              <Row label={t('settings.voiceover')}>
-                <span className="text-xs text-text-3">{t('settings.withPlan')}</span>
-                <span className="text-sm text-[#D9D9D9]">{t('settings.off')}</span>
+              <Row label={t('settings.voiceover')} hint={capabilities.web ? t('settings.voiceoverLocalHint') : undefined}>
+                {capabilities.web ? (
+                  <>
+                    <span className="text-sm text-[#D9D9D9]">{t('settings.localVoice')}</span>
+                    <Button variant="secondary" className="h-7 rounded-sm px-2 text-xs" onClick={() => pickTab('voice')}>
+                      {t('settings.change')}
+                    </Button>
+                  </>
+                ) : (
+                  <span className="text-sm text-[#D9D9D9]">{t('settings.off')}</span>
+                )}
               </Row>
             </Card>
+          </section>
+        )}
+
+        {tab === 'voice' && capabilities.web && (
+          <section id="voice" role="tabpanel" aria-labelledby="settings-tab-voice" className="flex flex-col gap-3">
+            <h2 className="m-0 text-base font-medium">{t('settings.sections.voice')}</h2>
+            <VoiceTab />
           </section>
         )}
 

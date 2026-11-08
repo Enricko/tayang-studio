@@ -37,7 +37,7 @@ COPY --from=rust /src/target/release/tayang-server /usr/local/bin/tayang-server
 COPY --from=web /src/apps/desktop/dist /app/dist
 COPY packages/skills/agent-plugin /app/agent-plugin
 
-RUN mkdir -p /data/workspaces /data/home /data/tmp /data/thumbs /data/style-media /data/style-refs /data/templates \
+RUN mkdir -p /data/workspaces /data/home /data/tmp /data/thumbs /data/style-media /data/style-refs /data/templates /data/voices /data/hf-cache \
     && chown -R tayang:tayang /data /app
 
 # Default agents for the self-hosted edition. opencode's free models work without an account;

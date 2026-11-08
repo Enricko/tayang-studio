@@ -248,6 +248,16 @@ pub async fn rpc(State(state): State<Arc<AppState>>, Json(body): Json<RpcBody>) 
             let force = args.get("force").and_then(Value::as_bool).unwrap_or(false);
             value(agent_usage(state.clone(), force).await?)
         }
+        "tts_voices" => crate::voices::list(&state).await,
+        "tts_set_default" => {
+            let engine: String = arg(&args, "engine")?;
+            let voice: String = arg(&args, "voice")?;
+            crate::voices::set_default(&state, &engine, &voice)
+        }
+        "tts_delete_voice" => {
+            let voice: String = arg(&args, "voice")?;
+            crate::voices::delete(&state, &voice)
+        }
 
         // ---- projects ----
         "list_projects" => value(state.db.list_projects().map_err(err)?),
@@ -838,6 +848,11 @@ pub async fn capabilities(State(state): State<Arc<AppState>>) -> Json<Value> {
             "backgroundMode": false,
             "openAtLogin": false,
             "autoUpdate": false
+        },
+        "tts": {
+            "enabled": state.config.tts_service_url.is_some(),
+            "engines": ["pocket", "kokoro"],
+            "default": crate::voices::read_default(&state)
         },
         "workspace": state.config.workspace_root.to_string_lossy(),
         "jobs": "server",

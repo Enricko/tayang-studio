@@ -29,6 +29,7 @@ import type {
   ToolStatus,
 } from '@tayang/shared';
 import { assetUrl, rpc, uploadFile } from './webRpc';
+import type { TtsVoice, TtsVoiceList } from './tts';
 
 export { assetUrl };
 
@@ -45,6 +46,17 @@ export const pickFolder = () => rpc<string | null>('pick_folder');
 
 // ---- usage ----
 export const getAgentUsage = (force: boolean) => rpc<AgentUsage[]>('get_agent_usage', { force });
+
+// ---- local voice ----
+export const listVoices = () => rpc<TtsVoiceList>('tts_voices');
+export const setDefaultVoice = (engine: string, voice: string) =>
+  rpc<{ engine: string; voice: string }>('tts_set_default', { engine, voice });
+export const deleteVoice = (voice: string) => rpc<{ ok: boolean }>('tts_delete_voice', { voice });
+export const uploadVoice = async (file: File): Promise<TtsVoice> => {
+  const form = new FormData();
+  form.append('file', file, file.name);
+  return uploadFile<TtsVoice>('/api/voices/upload', form);
+};
 
 // ---- projects ----
 export const listProjects = () => rpc<Project[]>('list_projects');

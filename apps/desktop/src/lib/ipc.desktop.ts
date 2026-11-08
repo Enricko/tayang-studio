@@ -1,4 +1,5 @@
 import { convertFileSrc, invoke } from '@tauri-apps/api/core';
+import type { TtsVoice, TtsVoiceList } from './tts';
 import type {
   AgentId,
   AgentInfo,
@@ -40,6 +41,20 @@ export const pickFolder = () => invoke<string | null>('pick_folder');
 
 // ---- usage ----
 export const getAgentUsage = (force: boolean) => invoke<AgentUsage[]>('get_agent_usage', { force });
+
+// ---- local voice (web edition only) ----
+export const listVoices = async (): Promise<TtsVoiceList> => {
+  throw new Error('Local voice is part of the self-hosted web edition');
+};
+export const setDefaultVoice = async (_engine: string, _voice: string): Promise<{ engine: string; voice: string }> => {
+  throw new Error('Local voice is part of the self-hosted web edition');
+};
+export const deleteVoice = async (_voice: string): Promise<{ ok: boolean }> => {
+  throw new Error('Local voice is part of the self-hosted web edition');
+};
+export const uploadVoice = async (_file: File): Promise<TtsVoice> => {
+  throw new Error('Local voice is part of the self-hosted web edition');
+};
 
 // ---- projects ----
 export const listProjects = () => invoke<Project[]>('list_projects');

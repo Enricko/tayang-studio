@@ -44,10 +44,11 @@ Tauri imports there are dynamic and only run on desktop; the web entry point loa
 | Image/file attachments, project file browser | Yes (browser upload / read-only file viewer) |
 | Renders, preview, frame seeking, thumbnails, download | Yes (HTTP Range) |
 | Scheduling, reminders, autopilots | Yes, server-side |
-| Agent asks to start/schedule a video from chat | Yes, via the local action endpoint; AI images/voice remain unavailable |
+| Agent asks to start/schedule a video from chat | Yes, via the local action endpoint |
+| Voice-over | Yes, local Pocket TTS (Indonesian, custom voice cloning) and Kokoro (built-in voices) |
 | Multi-tab access to the same account | Yes (SSE replay, idempotent start, resolved-card events) |
 | Tayang cloud billing / paid plans | Removed from the UI (`BILLING_ENABLED = false`) |
-| Tayang cloud sign-in, social posting, AI images/voice | No; explicit `unavailable` capability and UI notice |
+| Tayang cloud sign-in, social posting, cloud AI images | No; explicit `unavailable` capability and UI notice |
 | Desktop folder picker, background tray, autostart, in-app updates | No; server workspace and deployment updates |
 | Built-in style sync | Yes, through the public API; cached styles work offline |
 
@@ -116,6 +117,8 @@ sudo -u tayang env \
   TAYANG_WEB_PASSWORD='a long random passphrase' \
   TAYANG_COOKIE_SECURE=true \
   TAYANG_TRUST_PROXY=true \
+  TAYANG_TTS_SERVICE_URL=http://127.0.0.1:8000 \
+  TAYANG_TTS_TOKEN='a random internal token' \
   "$PWD/target/release/tayang-server"
 ```
 
@@ -138,10 +141,27 @@ curl -fsS http://127.0.0.1:8787/api/health
 ```bash
 cp .env.example .env            # host port mapping (default 8787)
 cp .env.web.example .env.web    # password, TAYANG_PUBLIC_URL, optionally hash
-# edit both files, then:
+# Generate the internal token shared by the app and the TTS sidecar:
+#   openssl rand -hex 32
+# then put it in TAYANG_TTS_TOKEN and keep TAYANG_TTS_SERVICE_URL=http://tts:8000.
 docker compose up -d --build
-docker compose logs -f tayang
+docker compose logs -f tayang tts
 ```
+
+Compose starts two services on the shared `tayang-data` volume:
+
+- `tayang`: the web server and UI.
+- `tts`: a CPU-only FastAPI sidecar with Pocket TTS (Indonesian community model, zero-shot voice
+  cloning from a 10–30 second reference clip) and Kokoro (built-in voices). It is not published on
+  a host port; only the app container reaches it at `http://tts:8000`. The first narration may take
+  a while while the models download into `/data/hf-cache`. The Indonesian Pocket TTS model is
+  [anak10thn/pocket-tts-indonesian](https://huggingface.co/anak10thn/pocket-tts-indonesian)
+  (CC BY 4.0), built on Kyutai's Pocket TTS.
+
+Choose the default engine/voice, or upload your own reference recording, in **Settings › Voice**.
+The choice is stored in `/data/voices/config.json`, is handed to new agent sessions as
+`TAYANG_TTS_ENGINE`/`TAYANG_TTS_VOICE`, and is read by the sidecar. Uploads are limited to 20 MB and
+WAV/MP3/FLAC/OGG/M4A. The server never exposes the internal TTS token to the browser.
 
 `TAYANG_HTTP_PORT` in `.env` is a Compose variable for the host port. If 8787 is already used, set
 another loopback port there and point the reverse proxy at it. The container always listens on 8787.
@@ -266,9 +286,12 @@ or a VM as the real boundary; do not mount the Docker socket or unrelated secret
 - Permission and question requests are stored until answered. Answering one tab broadcasts a
   resolved event; other tabs remove the card instead of answering twice.
 - Every agent session gets `TAYANG_AI_URL` and a per-session `TAYANG_AI_TOKEN`. The loopback
-  endpoint accepts the bundled skill's `curl -d` JSON for `/video` and `/schedule`; image/voice calls
-  return an explicit cloud-unavailable answer. The action is delivered to the open chat tab, which
-  starts the project.
+  endpoint accepts the bundled skill's `curl -d` JSON for `/video` and `/schedule`; the action is
+  delivered to the open chat tab, which starts the project.
+- When the TTS sidecar is configured, the same session also gets `TAYANG_TTS_URL`,
+  `TAYANG_TTS_TOKEN`, `TAYANG_TTS_ENGINE` and `TAYANG_TTS_VOICE`. `/speak` validates the output path
+  inside that chat's project folder before forwarding the narration to the sidecar, so an agent
+  cannot write audio anywhere else on the server.
 - Autopilot slots are claimed with an atomic `planned → making` SQL update. A second engine pass or
   process cannot start the same slot twice. "Stop now" cancels the server's running turn and only
   marks a slot failed while it is still `making` (a late success cannot overwrite the stop).
@@ -377,11 +400,11 @@ verification depends on one installed and authenticated CLI on the server; see a
 
 ## What was verified in this environment
 
-- `pnpm test`: 1,078 tests passed across shared, skills and desktop (67 Vitest files; plus the extra
+- `pnpm test`: 1,081 tests passed across shared, skills and desktop (68 Vitest files; plus the extra
   server-feature-focused browser smoke run).
 - `pnpm typecheck`: passed.
 - `cargo test -p tayang-core`: 171 tests passed (media tests included; ffmpeg/ffprobe from pnpm).
-- `cargo test -p tayang-server`: 22 tests passed.
+- `cargo test -p tayang-server`: 26 tests passed (auth/session/CSRF/origin, path and symlink boundaries, event replay, pending cards, turn persistence, restart recovery, duplicate slot claims, planning/reminders, action tokens, voice upload names).
 - `cargo test -p tayang-studio`: 114 unit tests and 47 ACP integration tests passed with
   WebKitGTK/GTK system libs installed.
 - `cargo clippy --all-targets -- -D warnings` for core, server and desktop: clean.

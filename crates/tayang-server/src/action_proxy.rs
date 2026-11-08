@@ -2,8 +2,9 @@
 //! already exposes the same thing as `ai_proxy`; the web server must provide it too, otherwise the
 //! bundled skill cannot start a project from a chat.
 //!
-//! Only actions and a clear "cloud assets unavailable" answer are exposed here. Image/voice
-//! generation belongs to the optional Tayang cloud account and is not available in this edition.
+//! Actions are delivered to the chat tab. Voice-over is forwarded to the local TTS sidecar with the
+//! output path confined to the chat's own project folder. Cloud image generation is not part of
+//! this edition, so `/image` and the old `/voice` route answer with an explicit error.
 
 use axum::extract::{DefaultBodyLimit, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -27,21 +28,41 @@ pub struct AgentAction {
 pub struct ActionProxy {
     port: u16,
     tokens: Arc<Mutex<HashMap<String, String>>>,
+    chats: Arc<Mutex<HashMap<String, std::path::PathBuf>>>,
     actions: mpsc::UnboundedSender<AgentAction>,
+    tts_url: Option<String>,
+    tts_token: Option<String>,
+    client: reqwest::Client,
 }
 
 impl ActionProxy {
-    pub async fn start(actions: mpsc::UnboundedSender<AgentAction>) -> std::io::Result<Arc<Self>> {
+    pub async fn start(
+        actions: mpsc::UnboundedSender<AgentAction>,
+        tts_url: Option<String>,
+        tts_token: Option<String>,
+    ) -> std::io::Result<Arc<Self>> {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
         let port = listener.local_addr()?.port();
-        let proxy = Arc::new(Self { port, tokens: Arc::default(), actions });
+        let proxy = Arc::new(Self {
+            port,
+            tokens: Arc::default(),
+            chats: Arc::default(),
+            actions,
+            tts_url,
+            tts_token,
+            client: reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(10 * 60))
+                .build()
+                .unwrap_or_default(),
+        });
         let router = Router::new()
             .route("/video", post(video))
             .route("/schedule", post(schedule))
             .route("/usage", get(usage))
+            .route("/speak", post(speak))
             .route("/image", post(cloud_unavailable))
             .route("/voice", post(cloud_unavailable))
-            .layer(DefaultBodyLimit::max(64 * 1024))
+            .layer(DefaultBodyLimit::max(1024 * 1024))
             .with_state(proxy.clone());
         tokio::spawn(async move {
             if let Err(e) = axum::serve(listener, router).await {
@@ -52,17 +73,31 @@ impl ActionProxy {
     }
 
     /// A fresh token for this chat's agent process. Older tokens of the chat stop working.
-    pub fn session_env(&self, chat_id: &str) -> Vec<(String, String)> {
+    pub fn session_env(&self, chat_id: &str, cwd: &std::path::Path, tts_engine: &str, tts_voice: &str) -> Vec<(String, String)> {
         let token = format!("tai_{}", uuid::Uuid::new_v4().simple());
         {
             let mut tokens = self.tokens.lock().unwrap_or_else(|e| e.into_inner());
             tokens.retain(|_, chat| chat != chat_id);
             tokens.insert(token.clone(), chat_id.to_string());
+            self.chats.lock().unwrap_or_else(|e| e.into_inner()).insert(chat_id.to_string(), cwd.to_path_buf());
         }
-        vec![
-            ("TAYANG_AI_URL".to_string(), format!("http://127.0.0.1:{}", self.port)),
-            ("TAYANG_AI_TOKEN".to_string(), token),
-        ]
+        let base = format!("http://127.0.0.1:{}", self.port);
+        let mut env = vec![
+            ("TAYANG_AI_URL".to_string(), base.clone()),
+            ("TAYANG_AI_TOKEN".to_string(), token.clone()),
+            ("TAYANG_TTS_URL".to_string(), base),
+            ("TAYANG_TTS_TOKEN".to_string(), token),
+            ("TAYANG_TTS_ENGINE".to_string(), tts_engine.to_string()),
+            ("TAYANG_TTS_VOICE".to_string(), tts_voice.to_string()),
+        ];
+        if self.tts_url.is_none() {
+            env.retain(|(k, _)| !k.starts_with("TAYANG_TTS_"));
+        }
+        env
+    }
+
+    fn cwd_for(&self, chat_id: &str) -> Option<std::path::PathBuf> {
+        self.chats.lock().unwrap_or_else(|e| e.into_inner()).get(chat_id).cloned()
     }
 
     fn chat_for(&self, headers: &HeaderMap) -> Option<String> {
@@ -126,19 +161,80 @@ async fn schedule(State(proxy): State<Arc<ActionProxy>>, headers: HeaderMap, bod
     Json(json!({ "ok": true })).into_response()
 }
 
+#[derive(serde::Deserialize)]
+struct SpeakBody {
+    text: String,
+    #[serde(default)]
+    engine: Option<String>,
+    #[serde(default)]
+    voice: Option<String>,
+    #[serde(default)]
+    language: Option<String>,
+    out: String,
+}
+
+async fn speak(State(proxy): State<Arc<ActionProxy>>, headers: HeaderMap, body: String) -> Response {
+    let Some(chat_id) = proxy.authorized(&headers) else {
+        return unauthorized();
+    };
+    let Some(tts_url) = proxy.tts_url.as_deref() else {
+        return (StatusCode::SERVICE_UNAVAILABLE, Json(json!({
+            "error": "tts-unavailable",
+            "message": "Local TTS is not configured on this server. Use a system text-to-speech voice or add the tts service."
+        }))).into_response();
+    };
+    let body: SpeakBody = match serde_json::from_str(&body) {
+        Ok(v) => v,
+        Err(_) => return (StatusCode::BAD_REQUEST, Json(json!({ "error": "body must be JSON" }))).into_response(),
+    };
+    if body.text.trim().is_empty() {
+        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "text is required" }))).into_response();
+    }
+    let Some(cwd) = proxy.cwd_for(&chat_id) else {
+        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "unknown chat folder" }))).into_response();
+    };
+    let out = cwd.join(&body.out);
+    if !tayang_core::projects::ensure_inside(&cwd, &out) {
+        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "out must stay inside the chat folder" }))).into_response();
+    }
+    let mut payload = json!({
+        "text": body.text,
+        "language": body.language.as_deref().unwrap_or("id"),
+        "out": out,
+    });
+    if let Some(engine) = body.engine.as_deref().filter(|e| matches!(*e, "pocket" | "kokoro")) {
+        payload["engine"] = json!(engine);
+    }
+    if let Some(voice) = body.voice.as_deref().filter(|v| !v.trim().is_empty()) {
+        payload["voice"] = json!(voice);
+    }
+    let mut req = proxy.client.post(format!("{}/speak", tts_url.trim_end_matches('/'))).json(&payload);
+    if let Some(token) = &proxy.tts_token {
+        req = req.bearer_auth(token);
+    }
+    match req.send().await {
+        Ok(res) => {
+            let status = res.status();
+            let body = res.text().await.unwrap_or_default();
+            (StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::BAD_GATEWAY), body).into_response()
+        }
+        Err(e) => (StatusCode::BAD_GATEWAY, Json(json!({ "error": "tts-unavailable", "message": format!("Local TTS is not reachable: {e}") }))).into_response(),
+    }
+}
+
 async fn usage(State(proxy): State<Arc<ActionProxy>>, headers: HeaderMap) -> Response {
     if proxy.authorized(&headers).is_none() {
         return unauthorized();
     }
-    // The skill checks credits before planning. Saying honestly that this server has no cloud
-    // assets lets it continue with the local video workflow instead of treating 404 as success.
+    // Kept for older bundled skills that ask before planning. The current skill goes straight to
+    // `/speak`. Say plainly that this server has no cloud assets, and point at the local engine.
     Json(json!({
         "signedIn": false,
         "credits": 0,
         "imagesAffordable": 0,
         "voiceMinutesAffordable": 0,
         "posts": 0,
-        "message": "AI images and voice are not available in the self-hosted web edition. Build the video with local assets."
+        "message": "This self-hosted server has no AI credits, paid plans or cloud assets. Narrate with the local voice at $TAYANG_TTS_URL/speak and build pictures in code."
     }))
     .into_response()
 }
@@ -165,11 +261,20 @@ mod tests {
     fn tokens_are_scoped_to_one_chat_and_rotate() {
         let (tx, _rx) = mpsc::unbounded_channel();
         // Constructing directly avoids opening a listener in this unit test.
-        let proxy = ActionProxy { port: 1, tokens: Arc::default(), actions: tx };
-        let first = proxy.session_env("chat-a");
+        let proxy = ActionProxy {
+            port: 1,
+            tokens: Arc::default(),
+            chats: Arc::default(),
+            actions: tx,
+            tts_url: None,
+            tts_token: None,
+            client: reqwest::Client::new(),
+        };
+        let cwd = std::path::Path::new("/tmp");
+        let first = proxy.session_env("chat-a", cwd, "pocket", "pocket-id-1");
         let token = first.iter().find(|(k, _)| k == "TAYANG_AI_TOKEN").unwrap().1.clone();
         assert_eq!(proxy.tokens.lock().unwrap().get(&token).map(String::as_str), Some("chat-a"));
-        let second = proxy.session_env("chat-a");
+        let second = proxy.session_env("chat-a", cwd, "pocket", "pocket-id-1");
         let new = second.iter().find(|(k, _)| k == "TAYANG_AI_TOKEN").unwrap().1.clone();
         assert_ne!(token, new);
         assert!(!proxy.tokens.lock().unwrap().contains_key(&token));

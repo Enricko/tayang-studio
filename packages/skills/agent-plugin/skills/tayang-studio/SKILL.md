@@ -20,7 +20,7 @@ Tayang Studio is a desktop app that turns a topic into a short motion video. You
 - Good topics: explainers, "why" and "how" questions, data and comparisons, history and geography, science what-ifs, product or promo messages told with type and illustration.
 - Pick topics that fit one of the installed styles (Atlas journey for places, routes, borders and trade; Cartoon 3D world for short true stories; Cartoon 3D what-if for "What if you…" escalations) or a plain kinetic-type explainer.
 - Facts must be real and checkable. No made-up numbers.
-- When you suggest topics: start with one short, friendly sentence in the user's video language. Then ask the user to pick one with your tool for asking the user (Claude Code: AskUserQuestion; opencode: question; Codex: request_user_input): one question, one option per idea, the idea's title as the option and one line on why it works as a motion video as its description. Without such a tool, list the ideas numbered and ask the user to reply with a number. When the user picks one (or writes their own), start it with `curl -s -X POST "$TAYANG_AI_URL/video" -H "Authorization: Bearer $TAYANG_AI_TOKEN" -d '{"title":"<the idea title>","kind":"<kind>","lengthSec":<seconds>,"styleId":"<style id or empty>","notes":"<only what the user said that the title does not say, or empty>"}'`, then end your turn: Tayang makes the video in a new chat. Put in `notes` only what the user said in this chat that the title doesn't say, in their words (a fact to include, the tone, something to leave out); the new chat only sees what you send, so anything left out is lost. Never put your own choices or limits there (credits, length, voice): it reads as the user's request. Leave it empty when the user said nothing more. For `styleId`, use the exact Tayang style id you were given (the user's mentioned style says "Its Tayang style id is …"); never invent one from the style's name. If the user mentioned a style, every idea uses that style's id.
+- When you suggest topics: start with one short, friendly sentence in the user's video language. Then ask the user to pick one with your tool for asking the user (Claude Code: AskUserQuestion; opencode: question; Codex: request_user_input): one question, one option per idea, the idea's title as the option and one line on why it works as a motion video as its description. Without such a tool, list the ideas numbered and ask the user to reply with a number. When the user picks one (or writes their own), start it with `curl -s -X POST "$TAYANG_AI_URL/video" -H "Authorization: Bearer $TAYANG_AI_TOKEN" -d '{"title":"<the idea title>","kind":"<kind>","lengthSec":<seconds>,"styleId":"<style id or empty>","notes":"<only what the user said that the title does not say, or empty>"}'`, then end your turn: Tayang makes the video in a new chat. Put in `notes` only what the user said in this chat that the title doesn't say, in their words (a fact to include, the tone, something to leave out); the new chat only sees what you send, so anything left out is lost. Never put your own choices or limits there (length, voice, style): it reads as the user's request. Leave it empty when the user said nothing more. For `styleId`, use the exact Tayang style id you were given (the user's mentioned style says "Its Tayang style id is …"); never invent one from the style's name. If the user mentioned a style, every idea uses that style's id.
 
 ## A new video always starts as a Tayang video
 
@@ -46,23 +46,24 @@ When the video is finished, make sure the final mp4 is in the project's renders/
 
 When a video is finished, and whenever the user asks for a post, write `post.json` in the project folder: {"title": "<up to 100 characters, a hook in the video's language>", "description": "<1 to 3 short lines in the video's language, no hashtags>", "hashtags": ["<3 to 5, without #>"], "scheduledAt": "<ISO 8601 with the user's UTC offset: the next good slot (11:00-13:00 or 19:00-21:00 local time) at least an hour from now; check the time with date>"}. Tayang's Post dialog fills its fields from it, and the user reviews it there. Never post yourself.
 
-## AI images and voice
+## Voice-over
 
-Tayang makes AI images and voice-overs with the user's Tayang credits. Every session has `$TAYANG_AI_URL` and `$TAYANG_AI_TOKEN`.
+Every session in the self-hosted edition has `$TAYANG_TTS_URL` and `$TAYANG_TTS_TOKEN`. `$TAYANG_TTS_ENGINE` and `$TAYANG_TTS_VOICE` are the engine and voice the user picked in Settings › Voice: Pocket TTS speaks Indonesian and can use the user's own uploaded voice, while Kokoro has built-in English and other voices. There are no Tayang credits, paid plans or cloud AI assets; never mention them.
 
-1. When you plan a video (not when you only suggest topics), check the credits: `curl -s "$TAYANG_AI_URL/usage" -H "Authorization: Bearer $TAYANG_AI_TOKEN"`. It answers like `{"signedIn":true,"credits":28,"imagesAffordable":28,"voiceMinutesAffordable":4,"posts":5}`.
-2. With enough credits, Tayang's API is the source for these:
-   - A voice-over comes from `/voice`, not another text-to-speech (macOS `say`, edge-tts, Piper, a pipeline's own TTS, an API key of your own).
-   - A picture you can't build in code (an illustrated scene, a character, a background, a texture) comes from `/image`, not stock photos, other image generators or images from the web.
-3. Without enough credits (or signed out), make the video the way you would without Tayang: a free voice such as the system's text-to-speech, and pictures built in code. Tell the user once, in one short line, that Tayang's AI voice and images come with credits (Settings › Account has the plans and a gift code field). Never drop the voice-over because of credits.
-4. The user's wishes come first: no voice-over only when they asked for none, and no images where shapes and type do the job. Text, charts and maps are always built in code.
+1. Use the local engine for every voice-over when `$TAYANG_TTS_URL` is set. It runs on the server and costs nothing.
+2. Make the narration with:
 
-The two calls:
+   ```sh
+   curl -s -X POST "$TAYANG_TTS_URL/speak" \
+     -H "Authorization: Bearer $TAYANG_TTS_TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{"text":"<the narration>","language":"id","out":"audio/<name>.mp3"}'
+   ```
 
-- Image (1 credit each): `curl -s -X POST "$TAYANG_AI_URL/image" -H "Authorization: Bearer $TAYANG_AI_TOKEN" -d '{"prompt":"<what to draw, in English>","aspect":"9:16","out":"assets/<name>.jpg"}'`. `aspect` is 9:16, 16:9 or 1:1; `"count"` makes up to 4 (`<name>-2.jpg`…).
-- Voice (about 7 credits a minute): `curl -s -X POST "$TAYANG_AI_URL/voice" -H "Authorization: Bearer $TAYANG_AI_TOKEN" -d '{"text":"<the narration>","language":"id","out":"audio/<name>.mp3"}'`.
-
-The answer lists the saved files (inside your folder) and `creditsLeft`. If it is an error (`signed-out`, `plan-required`, `quota-exceeded`), finish the video without that asset and say so once, in one short line.
+   The answer lists the saved file (inside your project folder) and its duration. With no `engine`/`voice`, the user's saved default is used. For English send `"engine":"kokoro","voice":"af_heart"` (or another Kokoro voice). For Pocket TTS, spell numbers as words in the video language (`lima belas`, not `15`); capitalisation and punctuation are fine. Split a long narration into a few calls and join the files with ffmpeg.
+3. If `$TAYANG_TTS_URL` is unset or the call fails, use a text-to-speech already installed here, such as the system voice. Never drop the voice-over unless the user asked for none; tell the user once, in one short line, that the local voice failed.
+4. Pictures you cannot build in code are still built in code: shapes, gradients, illustrations, charts and maps. Do not download stock photos or images from the web.
+5. The user's wishes come first: no voice-over only when they asked for none. Text, charts and maps are always built in code.
 
 ## Check the frames
 

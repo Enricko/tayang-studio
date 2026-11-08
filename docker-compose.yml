@@ -13,8 +13,28 @@ services:
       # Database, workspaces, generated media, Claude/opencode/codex config and agent credentials.
       - tayang-data:/data
     restart: unless-stopped
+    depends_on:
+      - tts
     # The image runs as UID/GID 10001. If you use a bind mount instead of the named volume, chown it:
     #   sudo chown -R 10001:10001 ./data
+    security_opt:
+      - no-new-privileges:true
+
+  tts:
+    build:
+      context: .
+      dockerfile: tts/Dockerfile
+    image: tayang-studio-tts:local
+    env_file:
+      - .env.web
+    environment:
+      TAYANG_WORKSPACE_ROOT: /data/workspaces
+      TAYANG_VOICES_DIR: /data/voices
+      HF_HOME: /data/hf-cache
+    volumes:
+      - tayang-data:/data
+    restart: unless-stopped
+    user: "10001:10001"
     security_opt:
       - no-new-privileges:true
 

@@ -28,6 +28,28 @@ pub struct AgentHub {
     start_locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
 }
 
+/// The server owner's selected local TTS default, shared with the tts sidecar.
+fn voice_defaults(data_dir: &std::path::Path) -> (String, String) {
+    let path = data_dir.join("voices").join("config.json");
+    let value = std::fs::read_to_string(path)
+        .ok()
+        .and_then(|s| serde_json::from_str::<Value>(&s).ok());
+    let engine = value
+        .as_ref()
+        .and_then(|v| v.get("engine"))
+        .and_then(Value::as_str)
+        .filter(|v| matches!(*v, "pocket" | "kokoro"))
+        .unwrap_or("pocket")
+        .to_string();
+    let voice = value
+        .as_ref()
+        .and_then(|v| v.get("voice"))
+        .and_then(Value::as_str)
+        .unwrap_or("pocket-id-1")
+        .to_string();
+    (engine, voice)
+}
+
 fn agent_key(agent: AgentId) -> String {
     serde_json::to_value(agent).ok().and_then(|v| v.as_str().map(str::to_string)).unwrap_or_default()
 }
@@ -366,7 +388,8 @@ pub async fn start(state: Arc<AppState>, chat_id: String, agent_id: AgentId, aut
         return Err("The chat's working folder is outside the server workspace".into());
     }
     if let Some(proxy) = &state.action_proxy {
-        prepared.options.env.extend(proxy.session_env(&chat_id));
+        let (engine, voice) = voice_defaults(&state.data_dir);
+        prepared.options.env.extend(proxy.session_env(&chat_id, &prepared.cwd, &engine, &voice));
     }
     let sink = Arc::new(ServerSink { state: Arc::downgrade(&state) });
     state

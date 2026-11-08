@@ -10,6 +10,7 @@ mod paths;
 mod sse;
 mod state;
 mod upload;
+mod voices;
 mod web_db;
 
 use axum::extract::{DefaultBodyLimit, Request};
@@ -54,6 +55,8 @@ fn prepare_workspace(state: &state::AppState) -> Result<(), String> {
         state.data_dir.join("tmp"),
         state.data_dir.join("model-probe"),
         state.data_dir.join("claude"),
+        state.data_dir.join("voices"),
+        state.data_dir.join("hf-cache"),
     ] {
         std::fs::create_dir_all(&dir).map_err(|e| format!("Can't create {}: {e}", dir.display()))?;
     }
@@ -139,7 +142,7 @@ async fn main() {
     web_db::prune_events(&db, 7);
     let usage = tayang_core::usage::UsageCache::default();
     let (action_tx, mut action_rx) = tokio::sync::mpsc::unbounded_channel();
-    let action_proxy = match action_proxy::ActionProxy::start(action_tx).await {
+    let action_proxy = match action_proxy::ActionProxy::start(action_tx, config.tts_service_url.clone(), config.tts_token.clone()).await {
         Ok(proxy) => Some(proxy),
         Err(e) => {
             tracing::error!("agent action endpoint couldn't start: {e}");
@@ -196,6 +199,10 @@ async fn main() {
         .route(
             "/api/projects/upload",
             post(upload::upload_project).layer(DefaultBodyLimit::max(config.max_upload + 1024 * 1024)),
+        )
+        .route(
+            "/api/voices/upload",
+            post(voices::upload).layer(DefaultBodyLimit::max(20 * 1024 * 1024 + 1024 * 1024)),
         )
         .route("/api/events/latest", get(sse::latest))
         .route("/api/events", get(sse::events))
@@ -323,6 +330,8 @@ pub mod test_support {
             max_upload: 50 * 1024 * 1024,
             password_hash: crate::auth::hash_password("correct horse battery staple").unwrap(),
             tick_secs: 30,
+            tts_service_url: None,
+            tts_token: None,
         };
         let db = tayang_core::db::Db::open(&data.join("tayang.db")).unwrap();
         crate::web_db::init(&db).unwrap();

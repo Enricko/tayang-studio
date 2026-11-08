@@ -17,6 +17,8 @@ pub struct Config {
     pub max_upload: usize,
     pub password_hash: String,
     pub tick_secs: u64,
+    pub tts_service_url: Option<String>,
+    pub tts_token: Option<String>,
 }
 
 fn env_path(key: &str, default: PathBuf) -> PathBuf {
@@ -114,6 +116,8 @@ impl Config {
             max_upload: max_mb * 1024 * 1024,
             password_hash,
             tick_secs,
+            tts_service_url: std::env::var("TAYANG_TTS_SERVICE_URL").ok().map(|v| v.trim().trim_end_matches('/').to_string()).filter(|v| !v.is_empty()),
+            tts_token: read_secret("TAYANG_TTS_TOKEN"),
         })
     }
 

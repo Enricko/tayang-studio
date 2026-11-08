@@ -28,7 +28,9 @@ Options: `TAYANG_VERSION=0.0.2` installs that version. `TAYANG_INSTALL_DIR` sets
 
 The same interface also runs in a browser against a headless Linux server. AI agents, SQLite,
 project files, ffmpeg renders and scheduling run on the server; the browser needs no desktop app.
-It is a single-user deployment (no team roles) with a separate server password.
+It is a single-user deployment (no team roles) with a separate server password. Compose also starts
+a CPU-only TTS sidecar with Pocket TTS (Indonesian, including a voice cloned from your own recording)
+and Kokoro, configured in Settings › Voice.
 
 Docker quick start:
 
