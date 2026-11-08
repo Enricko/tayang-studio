@@ -374,7 +374,7 @@ verification depends on one installed and authenticated CLI on the server; see a
 - `pnpm test`: 1,077 tests passed across shared, skills and desktop (67 Vitest files; plus the extra
   server-feature-focused browser smoke run).
 - `pnpm typecheck`: passed.
-- `cargo test -p tayang-core`: 170 tests passed (media tests included; ffmpeg/ffprobe from pnpm).
+- `cargo test -p tayang-core`: 171 tests passed (media tests included; ffmpeg/ffprobe from pnpm).
 - `cargo test -p tayang-server`: 21 tests passed.
 - `cargo test -p tayang-studio`: 114 unit tests and 47 ACP integration tests passed with
   WebKitGTK/GTK system libs installed.

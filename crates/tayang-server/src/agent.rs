@@ -439,10 +439,7 @@ pub async fn models(state: Arc<AppState>, agent_id: AgentId) -> Result<Option<Ag
 }
 
 pub async fn set_model(state: &AppState, agent_id: AgentId, model: Option<String>, chat_id: Option<String>) -> Result<Settings, String> {
-    let settings = state
-        .db
-        .update_settings(json!({ "agentModels": { agent_key(agent_id): model.clone() } }))
-        .map_err(|e| e.to_string())?;
+    let settings = tayang_core::service::set_agent_model(&state.db, &state.home, agent_id, model.clone())?;
     if let (Some(chat), Some(value)) = (chat_id.as_deref(), model.as_deref()) {
         if state.acp.is_running(chat) {
             state.acp.set_model(chat, value).await.map_err(|e| e.to_string())?;

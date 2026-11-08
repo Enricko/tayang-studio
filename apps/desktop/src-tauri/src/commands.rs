@@ -1355,10 +1355,8 @@ pub async fn set_agent_model(
     model: Option<String>,
     chat_id: Option<String>,
 ) -> CmdResult<Settings> {
-    let settings = state
-        .db
-        .update_settings(serde_json::json!({ "agentModels": { agent_key(agent_id): model } }))
-        .map_err(err)?;
+    let settings = tayang_core::service::set_agent_model(&state.db, &state.home, agent_id, model.clone())
+        .map_err(|e| e)?;
     if let (Some(chat), Some(value)) = (chat_id.as_deref(), model.as_deref()) {
         // No session yet is fine: it starts on the picked model.
         if state.acp.models(chat).is_ok() {

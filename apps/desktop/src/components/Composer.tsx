@@ -178,7 +178,9 @@ export function ModelPicker({ agent, chatId, disabled }: { agent: AgentId; chatI
   const onOpenChange = (o: boolean) => {
     setOpen(o);
     setError(null);
-    if (o) void useModels.getState().load(agent);
+    // Refresh on every open: credentials or provider catalogs can change on the server while this
+    // browser still has a cached list. The cached options keep the menu instant; the live list replaces them.
+    if (o) void useModels.getState().load(agent, true);
   };
 
   const choose = async (value: string | null) => {

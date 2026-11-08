@@ -52,10 +52,11 @@ describe('ModelPicker', () => {
     await userEvent.click(await screen.findByRole('option', { name: 'Big Pickle' }));
     expect(ipc.setAgentModel).toHaveBeenCalledWith('opencode', 'opencode/big-pickle', null);
     expect(await screen.findByRole('button', { name: 'Model: Big Pickle' })).toBeInTheDocument();
-    // Kept for next time: the list isn't asked for again.
+    // Kept for an instant menu next time, but every open refreshes the provider catalog so a
+    // newly configured server account (for example OpenCode Go) appears without clearing storage.
     expect(JSON.parse(localStorage.getItem('tayang.agentModels')!).opencode.options).toHaveLength(3);
     await userEvent.click(screen.getByRole('button', { name: 'Model: Big Pickle' }));
-    expect(ipc.agentModels).toHaveBeenCalledTimes(1);
+    expect(ipc.agentModels).toHaveBeenCalledTimes(2);
   });
 
   it('filters by name, so the free ones are easy to find', async () => {

@@ -295,6 +295,22 @@ pub fn picked_model(db: &Db, home: &Path, agent: AgentId) -> Option<String> {
     db.get_settings(home).agent_models.get(&agent_key(agent)).cloned()
 }
 
+/// Persists one agent's model choice without replacing the choices of the other agents.
+/// `None` removes the choice so the agent uses its own default.
+pub fn set_agent_model(db: &Db, home: &Path, agent: AgentId, model: Option<String>) -> Result<Settings> {
+    let mut models = db.get_settings(home).agent_models;
+    let key = agent_key(agent);
+    match model {
+        Some(value) => {
+            models.insert(key, value);
+        }
+        None => {
+            models.remove(&key);
+        }
+    }
+    db.update_settings(serde_json::json!({ "agentModels": models })).map_err(err)
+}
+
 pub fn error_log(agent: AgentId, home: &Path, xdg_data_home: Option<&str>) -> Option<PathBuf> {
     if agent != AgentId::Opencode {
         return None;
@@ -670,4 +686,24 @@ pub fn study_dir(working: &Path, study_id: &str) -> Result<PathBuf> {
         return Err("That study is outside your working folder".into());
     }
     Ok(dir)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn setting_one_agent_model_keeps_the_others() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Db::open_in_memory().unwrap();
+        let home = tmp.path();
+        let settings = set_agent_model(&db, home, AgentId::Opencode, Some("opencode-go/deepseek-v4.1-flash".into())).unwrap();
+        assert_eq!(settings.agent_models.get("opencode").map(String::as_str), Some("opencode-go/deepseek-v4.1-flash"));
+        let settings = set_agent_model(&db, home, AgentId::Codex, Some("gpt-6.1-sol".into())).unwrap();
+        assert_eq!(settings.agent_models.get("opencode").map(String::as_str), Some("opencode-go/deepseek-v4.1-flash"));
+        assert_eq!(settings.agent_models.get("codex").map(String::as_str), Some("gpt-6.1-sol"));
+        let settings = set_agent_model(&db, home, AgentId::Opencode, None).unwrap();
+        assert!(!settings.agent_models.contains_key("opencode"));
+        assert_eq!(settings.agent_models.get("codex").map(String::as_str), Some("gpt-6.1-sol"));
+    }
 }
