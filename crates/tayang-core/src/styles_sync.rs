@@ -83,7 +83,7 @@ fn resolve_api_url(env: Option<String>, settings: &crate::types::Settings) -> St
 
 /// `path` (e.g. `/v1/styles`) under the API base. The base may carry a path
 /// (`https://studio.tayang.app/api`); it is kept, minus one trailing slash.
-pub(crate) fn endpoint(api_url: &str, path: &str) -> String {
+pub fn endpoint(api_url: &str, path: &str) -> String {
     let base = api_url.trim();
     format!("{}{}", base.strip_suffix('/').unwrap_or(base), path)
 }

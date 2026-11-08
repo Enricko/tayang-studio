@@ -1,22 +1,16 @@
-pub mod acp;
 pub mod ai_proxy;
 pub mod auth;
-pub mod claude_account;
 pub mod billing;
 pub mod cloud;
 pub mod commands;
-pub mod db;
 pub mod device;
-pub mod files;
-pub mod media;
-pub mod projects;
 pub mod scheduler;
-pub mod styles_sync;
-pub mod system;
 pub mod telemetry;
-pub mod types;
 pub mod trace;
-pub mod usage;
+
+// The platform-independent backend lives in a shared crate; the rest of this crate keeps using
+// `crate::db`, `crate::types` and friends through these re-exports.
+pub use tayang_core::{acp, claude_account, db, files, media, projects, styles_sync, system, types, usage};
 
 use commands::AppState;
 use tauri::Manager;
