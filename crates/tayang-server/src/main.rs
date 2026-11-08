@@ -32,7 +32,7 @@ async fn security_headers(req: Request, next: Next) -> Response {
     h.insert("referrer-policy", HeaderValue::from_static("no-referrer"));
     h.insert("x-frame-options", HeaderValue::from_static("DENY"));
     h.insert("cross-origin-resource-policy", HeaderValue::from_static("same-origin"));
-    h.insert("permissions-policy", HeaderValue::from_static("camera=(), microphone=(), geolocation=()"));
+    h.insert("permissions-policy", HeaderValue::from_static("camera=(), microphone=(self), geolocation=()"));
     h.insert(
         "content-security-policy",
         HeaderValue::from_static(

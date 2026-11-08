@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Check, Loader2, Pause, Play, RefreshCw, Trash2, Upload } from 'lucide-react';
+import { Check, Copy, Loader2, Pause, Play, RefreshCw, Search, Trash2, Upload } from 'lucide-react';
 import { Button } from '@/components/Button';
+import { Input } from '@/components/ui/input';
+import { VoiceRecorder } from '@/components/VoiceRecorder';
 import { assetUrl, deleteVoice, listVoices, setDefaultVoice, ttsPreview, uploadVoice } from '@/lib/ipc';
 import { pickUploadFiles } from '@/lib/platform';
 import type { TtsVoiceList } from '@/lib/tts';
@@ -27,6 +29,7 @@ export function VoiceTab() {
   const [notice, setNotice] = useState<string | null>(null);
   const [previewing, setPreviewing] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const load = useCallback(async () => {
@@ -93,17 +96,11 @@ export function VoiceTab() {
     }
   };
 
-  const addVoice = async () => {
+  const saveVoice = async (file: File) => {
     setNotice(null);
     try {
-      const [picked] = await pickUploadFiles();
-      if (!picked) return;
-      if (!(picked instanceof File)) {
-        setError(t('settings.voiceUploadWebOnly'));
-        return;
-      }
       setUploading(true);
-      const voice = await uploadVoice(picked);
+      const voice = await uploadVoice(file);
       const saved = await setDefaultVoice('pocket', voice.id);
       setData((current) => (current ? { ...current, default: saved } : current));
       setEngine('pocket');
@@ -114,6 +111,21 @@ export function VoiceTab() {
       setError(t('settings.voiceUploadFailed', { message: message(e) }));
     } finally {
       setUploading(false);
+    }
+  };
+
+  const addVoice = async () => {
+    setNotice(null);
+    try {
+      const [picked] = await pickUploadFiles();
+      if (!picked) return;
+      if (!(picked instanceof File)) {
+        setError(t('settings.voiceUploadWebOnly'));
+        return;
+      }
+      await saveVoice(picked);
+    } catch (e) {
+      setError(t('settings.voiceUploadFailed', { message: message(e) }));
     }
   };
 
@@ -132,6 +144,10 @@ export function VoiceTab() {
 
   const current = data?.engines.find((e) => e.id === engine) ?? data?.engines[0];
   const custom = data?.engines.find((e) => e.id === 'pocket')?.voices.filter((v) => v.custom) ?? [];
+  const visibleVoices = current?.voices.filter((v) => {
+    const needle = query.trim().toLowerCase();
+    return !needle || v.name.toLowerCase().includes(needle) || v.id.toLowerCase().includes(needle);
+  }) ?? [];
 
   return (
     <div className="flex flex-col gap-3">
@@ -181,7 +197,10 @@ export function VoiceTab() {
                     role="tab"
                     aria-selected={e.id === current.id}
                     disabled={saving}
-                    onClick={() => setEngine(e.id)}
+                    onClick={() => {
+                      setEngine(e.id);
+                      setQuery('');
+                    }}
                     className={cn(
                       'h-7 cursor-pointer rounded px-2.5 text-xs font-medium transition-colors',
                       e.id === current.id ? 'bg-raised text-foreground' : 'text-text-2 hover:text-foreground',
@@ -193,8 +212,21 @@ export function VoiceTab() {
               </div>
             </div>
 
+            {current.voices.length > 8 && (
+              <div className="relative border-b border-border px-4 py-2">
+                <Search size={14} strokeWidth={1.5} aria-hidden="true" className="pointer-events-none absolute top-1/2 left-7 -translate-y-1/2 text-text-3" />
+                <Input
+                  type="search"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder={t('settings.voiceSearch')}
+                  aria-label={t('settings.voiceSearch')}
+                  className="h-8 bg-background pl-8 text-[13px]"
+                />
+              </div>
+            )}
             <ul className="m-0 flex list-none flex-col p-0">
-              {current.voices.map((voice) => {
+              {visibleVoices.map((voice) => {
                 const selected = data.default.engine === current.id && data.default.voice === voice.id;
                 return (
                   <li key={voice.id} className="border-b border-border last:border-b-0">
@@ -256,21 +288,44 @@ export function VoiceTab() {
                   </li>
                 );
               })}
+              {visibleVoices.length === 0 && (
+                <li className="px-4 py-4 text-[13px] text-text-3">{t('settings.voiceNoMatch')}</li>
+              )}
             </ul>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card px-4 py-3">
-            <div className="mr-auto flex min-w-[240px] flex-1 flex-col gap-1">
-              <span className="text-sm font-medium">{t('settings.voiceUpload')}</span>
-              <span className="text-xs leading-normal text-text-3">{t('settings.voiceUploadHint')}</span>
-              {custom.length === 0 && (
-                <span className="text-xs text-text-3">{t('settings.voiceUploadFirst')}</span>
-              )}
+          <div className="flex flex-col gap-3 rounded-xl border border-border bg-card px-4 py-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="mr-auto flex min-w-[240px] flex-1 flex-col gap-1">
+                <span className="text-sm font-medium">{t('settings.voiceUpload')}</span>
+                <span className="text-xs leading-normal text-text-3">{t('settings.voiceUploadHint')}</span>
+                {custom.length === 0 && (
+                  <span className="text-xs text-text-3">{t('settings.voiceUploadFirst')}</span>
+                )}
+              </div>
+              <Button variant="secondary" className="gap-2" disabled={uploading} onClick={() => void addVoice()}>
+                <Upload size={14} strokeWidth={1.5} aria-hidden="true" />
+                {uploading ? t('settings.voiceUploading') : t('settings.voiceUploadAction')}
+              </Button>
             </div>
-            <Button variant="secondary" className="gap-2" disabled={uploading} onClick={() => void addVoice()}>
-              <Upload size={14} strokeWidth={1.5} aria-hidden="true" />
-              {uploading ? t('settings.voiceUploading') : t('settings.voiceUploadAction')}
-            </Button>
+            <div className="flex flex-col gap-2 rounded-md border border-border bg-background p-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="mr-auto text-[13px] font-medium text-[#D9D9D9]">{t('settings.voiceCloneScriptTitle')}</span>
+                <Button
+                  variant="ghost"
+                  className="h-7 gap-1.5 px-2 text-xs"
+                  onClick={() => {
+                    void navigator.clipboard?.writeText(t('settings.voiceCloneScript')).then(() => setNotice(t('settings.voiceCloneCopied'))).catch(() => {});
+                  }}
+                >
+                  <Copy size={13} strokeWidth={1.5} aria-hidden="true" />
+                  {t('settings.voiceCloneCopy')}
+                </Button>
+              </div>
+              <p className="m-0 text-[13px] leading-normal text-[#D9D9D9]">{t('settings.voiceCloneScript')}</p>
+              <span className="text-xs leading-normal text-text-3">{t('settings.voiceCloneScriptHint')}</span>
+            </div>
+            <VoiceRecorder disabled={uploading} onRecorded={saveVoice} />
           </div>
 
           <p className="m-0 text-xs leading-normal text-text-3">{t('settings.voiceApplyHint')}</p>

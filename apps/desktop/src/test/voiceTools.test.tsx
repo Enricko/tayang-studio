@@ -51,7 +51,7 @@ describe('Settings › Tools › local voices', () => {
 
   it('marks Kokoro as English only', async () => {
     render(<VoiceTools />);
-    expect(await screen.findByText('English and several other languages, without Indonesian')).toBeInTheDocument();
-    expect(screen.getAllByText(/Kokoro does not speak Indonesian/).length).toBeGreaterThan(0);
+    expect(await screen.findByText('English, Spanish, French, Hindi, Italian and Portuguese, without Indonesian')).toBeInTheDocument();
+    expect(screen.getAllByText(/Kokoro supports English, Spanish/).length).toBeGreaterThan(0);
   });
 });

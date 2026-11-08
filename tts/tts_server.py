@@ -48,16 +48,54 @@ POCKET_BUILTINS = {
     "pocket-id-4": "hf://anak10thn/pocket-tts-indonesian/voices/common_voice_id_22918082.mp3@382fe85ca848546efb04bf1b7fdba78c6396e2ce",
 }
 KOKORO_VOICES = [
+    # American English
     ("af_heart", "Heart (US English)"),
+    ("af_alloy", "Alloy (US English)"),
+    ("af_aoede", "Aoede (US English)"),
     ("af_bella", "Bella (US English)"),
+    ("af_jessica", "Jessica (US English)"),
+    ("af_kore", "Kore (US English)"),
     ("af_nicole", "Nicole (US English)"),
+    ("af_nova", "Nova (US English)"),
+    ("af_river", "River (US English)"),
+    ("af_sarah", "Sarah (US English)"),
+    ("af_sky", "Sky (US English)"),
+    ("am_adam", "Adam (US English)"),
+    ("am_echo", "Echo (US English)"),
+    ("am_eric", "Eric (US English)"),
+    ("am_fenrir", "Fenrir (US English)"),
+    ("am_liam", "Liam (US English)"),
     ("am_michael", "Michael (US English)"),
+    ("am_onyx", "Onyx (US English)"),
+    ("am_puck", "Puck (US English)"),
+    ("am_santa", "Santa (US English)"),
+    # British English
+    ("bf_alice", "Alice (British English)"),
     ("bf_emma", "Emma (British English)"),
+    ("bf_isabella", "Isabella (British English)"),
+    ("bf_lily", "Lily (British English)"),
+    ("bm_daniel", "Daniel (British English)"),
+    ("bm_fable", "Fable (British English)"),
     ("bm_george", "George (British English)"),
+    ("bm_lewis", "Lewis (British English)"),
+    # Spanish
     ("ef_dora", "Dora (Spanish)"),
+    ("em_alex", "Alex (Spanish)"),
+    ("em_santa", "Santa (Spanish)"),
+    # French
     ("ff_siwis", "Siwis (French)"),
+    # Hindi
+    ("hf_alpha", "Alpha (Hindi)"),
+    ("hf_beta", "Beta (Hindi)"),
+    ("hm_omega", "Omega (Hindi)"),
+    ("hm_psi", "Psi (Hindi)"),
+    # Italian
     ("if_sara", "Sara (Italian)"),
+    ("im_nicola", "Nicola (Italian)"),
+    # Brazilian Portuguese
     ("pf_dora", "Dora (Portuguese)"),
+    ("pm_alex", "Alex (Portuguese)"),
+    ("pm_santa", "Santa (Portuguese)"),
 ]
 SAFE = re.compile(r"[^a-zA-Z0-9._-]+")
 VOICES.mkdir(parents=True, exist_ok=True)
@@ -181,13 +219,20 @@ def speak_pocket(text: str, voice: Optional[str], out: Path) -> float:
     return write_audio(np.asarray(audio), int(sample_rate), out)
 
 
-def kokoro_language(language: str) -> str:
+def kokoro_language(language: str, voice: Optional[str] = None) -> str:
+    prefixes = {"af": "a", "am": "a", "bf": "b", "bm": "b", "ef": "e", "em": "e", "ff": "f", "hf": "h", "hm": "h", "if": "i", "im": "i", "pf": "p", "pm": "p"}
+    if voice:
+        prefix = voice.split("_", 1)[0]
+        if prefix in prefixes:
+            return prefixes[prefix]
     if language.startswith("en"):
         return "a"
     if language.startswith("es"):
         return "e"
     if language.startswith("fr"):
         return "f"
+    if language.startswith("hi"):
+        return "h"
     if language.startswith("it"):
         return "i"
     if language.startswith("pt"):
@@ -195,10 +240,10 @@ def kokoro_language(language: str) -> str:
     return "a"
 
 
-def load_kokoro(language: str):
+def load_kokoro(language: str, voice: Optional[str] = None):
     from kokoro import KPipeline
 
-    key = kokoro_language(language)
+    key = kokoro_language(language, voice)
     with _kokoro_lock:
         if key not in _kokoro:
             _kokoro[key] = KPipeline(lang_code=key)
@@ -207,7 +252,7 @@ def load_kokoro(language: str):
 
 def speak_kokoro(text: str, voice: Optional[str], out: Path, language: str) -> float:
     selected = voice if voice and voice in {v for v, _ in KOKORO_VOICES} else "af_heart"
-    pipe = load_kokoro(language)
+    pipe = load_kokoro(language, voice)
     with _kokoro_lock:
         chunks = []
         for _, _, audio in pipe(text, voice=selected):
@@ -290,7 +335,7 @@ def voices(authorization: Optional[str] = Header(default=None)) -> dict:
             {
                 "id": "kokoro",
                 "name": "Kokoro",
-                "description": "English and several other languages · no Indonesian",
+                "description": "English, Spanish, French, Hindi, Italian and Portuguese · no Indonesian",
                 "voices": [{"id": v, "name": n, "custom": False} for v, n in KOKORO_VOICES],
             },
         ],

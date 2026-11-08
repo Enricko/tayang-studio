@@ -80,12 +80,19 @@ describe('Settings › Voice', () => {
     expect(ipc.ttsPreview).toHaveBeenCalledWith('pocket', 'pocket-id-1', 'id');
   });
 
+  it('shows the short script to read before recording a clone', async () => {
+    render(<VoiceTab />);
+    await screen.findByText('Indonesia 1');
+    expect(screen.getByText(/Halo, saya sedang merekam contoh suara/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Record now' })).toBeInTheDocument();
+  });
+
   it('marks Kokoro as English only', async () => {
     render(<VoiceTab />);
     await screen.findByText('Indonesia 1');
     await userEvent.click(screen.getByRole('tab', { name: 'Kokoro' }));
-    expect(screen.getByText('English only')).toBeInTheDocument();
-    expect(screen.getByText(/Kokoro does not speak Indonesian/)).toBeInTheDocument();
+    expect(screen.getByText('English · no Indonesian')).toBeInTheDocument();
+    expect(screen.getByText(/Kokoro supports English, Spanish/)).toBeInTheDocument();
   });
 
   it('deletes an uploaded voice after confirmation', async () => {

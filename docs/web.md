@@ -45,7 +45,7 @@ Tauri imports there are dynamic and only run on desktop; the web entry point loa
 | Renders, preview, frame seeking, thumbnails, download | Yes (HTTP Range) |
 | Scheduling, reminders, autopilots | Yes, server-side |
 | Agent asks to start/schedule a video from chat | Yes, via the local action endpoint |
-| Voice-over | Yes, local Pocket TTS (Indonesian, custom voice cloning) and Kokoro (built-in voices) |
+| Voice-over | Yes, local Pocket TTS (Indonesian, custom voice cloning) and Kokoro (41 built-in voices across six languages) |
 | Multi-tab access to the same account | Yes (SSE replay, idempotent start, resolved-card events) |
 | Tayang cloud billing / paid plans | Removed from the UI (`BILLING_ENABLED = false`) |
 | Tayang cloud sign-in, social posting, cloud AI images | No; explicit `unavailable` capability and UI notice |
@@ -159,9 +159,14 @@ Compose starts two services on the shared `tayang-data` volume:
   (CC BY 4.0), built on Kyutai's Pocket TTS.
 
 Choose the default engine/voice, or upload your own reference recording, in **Settings › Voice**.
-Every voice has a **Listen** button that renders a short sample, so you can compare the defaults
-before using one. Kokoro is marked **English only** here: it speaks English and several other
-languages, but not Indonesian; use Pocket TTS for Indonesian videos. The choice is stored in
+Kokoro lists 41 built-in voices across English (US/UK), Spanish, French, Hindi, Italian and
+Portuguese; Pocket TTS has four Indonesian voices plus unlimited cloned voices. Every voice has a
+**Listen** button that renders a short sample, so you can compare the defaults before using one.
+Kokoro is marked **no Indonesian** here; use Pocket TTS for Indonesian videos.
+
+For voice cloning, the page shows a short Indonesian script to read. You can record it directly in
+the browser (up to 30 seconds, converted to WAV before upload) or upload a WAV/MP3 recorded from the
+same script; the uploaded clip becomes the default Pocket reference voice. The choice is stored in
 `/data/voices/config.json`, is handed to new agent sessions as `TAYANG_TTS_ENGINE`/`TAYANG_TTS_VOICE`,
 and is read by the sidecar. Uploads are limited to 20 MB and WAV/MP3/FLAC/OGG/M4A. The server never
 exposes the internal TTS token to the browser.
@@ -381,6 +386,9 @@ Set `TAYANG_PUBLIC_URL=https://studio.example.com`, `TAYANG_COOKIE_SECURE=true`,
 - The browser cannot submit an arbitrary server path: assets and project files are canonicalized and
   must stay under the workspace root or the server's style/thumbnail folders. `..`, absolute paths
   and symlinks that escape are refused.
+- The microphone is available only to the same-origin settings page for the optional in-browser
+  voice-recording step; camera and geolocation stay disabled. Recordings can be deleted from the
+  voice list like any uploaded reference.
 - There is no shell endpoint. Agents run with the server user's OS permissions; use the container or
   a dedicated VM as the sandbox.
 - Provider credentials, the database and the workspace never appear in API responses or frontend
@@ -410,7 +418,7 @@ verification depends on one installed and authenticated CLI on the server; see a
 
 ## What was verified in this environment
 
-- `pnpm test`: 1,089 tests passed across shared, skills and desktop (71 Vitest files; plus the extra
+- `pnpm test`: 1,090 tests passed across shared, skills and desktop (71 Vitest files; plus the extra
   server-feature-focused browser smoke run).
 - `pnpm typecheck`: passed.
 - `cargo test -p tayang-core`: 171 tests passed (media tests included; ffmpeg/ffprobe from pnpm).
