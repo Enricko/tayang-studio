@@ -51,6 +51,7 @@ pnpm dev:web
 See [docs/web.md](docs/web.md) for production start, Docker volumes, agent installation and
 authentication on a headless server, reverse-proxy settings for SSE/uploads/video seeking, security
 boundaries, capabilities that require the private Tayang cloud API, and the verification report.
+Cloud billing/paid plans are disabled in this fork in both editions (`BILLING_ENABLED = false`).
 The desktop app is unchanged: `pnpm dev:desktop` still works.
 
 ## Run it from source
