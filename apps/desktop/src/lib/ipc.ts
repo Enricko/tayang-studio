@@ -29,7 +29,7 @@ import type {
   ToolStatus,
 } from '@tayang/shared';
 import { assetUrl, rpc, uploadFile } from './webRpc';
-import type { TtsVoice, TtsVoiceList } from './tts';
+import type { TtsPreview, TtsStatus, TtsVoice, TtsVoiceList } from './tts';
 
 export { assetUrl };
 
@@ -57,6 +57,10 @@ export const uploadVoice = async (file: File): Promise<TtsVoice> => {
   form.append('file', file, file.name);
   return uploadFile<TtsVoice>('/api/voices/upload', form);
 };
+export const ttsStatus = () => rpc<TtsStatus>('tts_status');
+export const ttsPrepare = (engine: string) => rpc<{ ok: boolean; engine: string; seconds: number }>('tts_prepare', { engine });
+export const ttsPreview = (engine: string, voice?: string | null, language?: string) =>
+  rpc<TtsPreview>('tts_preview', { engine, voice: voice ?? null, language: language ?? null });
 
 // ---- projects ----
 export const listProjects = () => rpc<Project[]>('list_projects');

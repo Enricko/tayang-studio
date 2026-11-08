@@ -1,5 +1,5 @@
 import { convertFileSrc, invoke } from '@tauri-apps/api/core';
-import type { TtsVoice, TtsVoiceList } from './tts';
+import type { TtsPreview, TtsStatus, TtsVoice, TtsVoiceList } from './tts';
 import type {
   AgentId,
   AgentInfo,
@@ -53,6 +53,15 @@ export const deleteVoice = async (_voice: string): Promise<{ ok: boolean }> => {
   throw new Error('Local voice is part of the self-hosted web edition');
 };
 export const uploadVoice = async (_file: File): Promise<TtsVoice> => {
+  throw new Error('Local voice is part of the self-hosted web edition');
+};
+export const ttsStatus = async (): Promise<TtsStatus> => {
+  throw new Error('Local voice is part of the self-hosted web edition');
+};
+export const ttsPrepare = async (_engine: string): Promise<{ ok: boolean; engine: string; seconds: number }> => {
+  throw new Error('Local voice is part of the self-hosted web edition');
+};
+export const ttsPreview = async (_engine: string, _voice?: string | null, _language?: string): Promise<TtsPreview> => {
   throw new Error('Local voice is part of the self-hosted web edition');
 };
 

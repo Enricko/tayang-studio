@@ -32,10 +32,74 @@ fn tts_url(state: &AppState) -> Result<&str, ApiError> {
 }
 
 fn client() -> Result<reqwest::Client, ApiError> {
+    client_for(20)
+}
+
+fn client_for(secs: u64) -> Result<reqwest::Client, ApiError> {
     reqwest::Client::builder()
-        .timeout(Duration::from_secs(20))
+        .timeout(Duration::from_secs(secs))
         .build()
         .map_err(|e| ApiError::internal(e.to_string()))
+}
+
+async fn call(state: &AppState, method: reqwest::Method, path: &str, body: Option<Value>, secs: u64) -> Result<Value, ApiError> {
+    let url = tts_url(state)?;
+    let mut req = client_for(secs)?
+        .request(method, format!("{}{}", url.trim_end_matches('/'), path))
+        .header(reqwest::header::ACCEPT, "application/json");
+    if let Some(body) = body {
+        req = req.json(&body);
+    }
+    if let Some(token) = state.config.tts_token.as_deref() {
+        req = req.bearer_auth(token);
+    }
+    let res = req.send().await.map_err(|e| {
+        ApiError::unavailable(format!("The local voice service isn't reachable: {e}"))
+    })?;
+    if !res.status().is_success() {
+        let status = res.status();
+        let body = res.text().await.unwrap_or_default();
+        return Err(ApiError::unavailable(format!(
+            "The local voice service answered {status}: {}",
+            body.chars().take(500).collect::<String>()
+        )));
+    }
+    res.json()
+        .await
+        .map_err(|e| ApiError::internal(format!("The local voice service sent invalid JSON: {e}")))
+}
+
+/// Whether each engine's model is already downloaded/loaded in the sidecar.
+pub async fn status(state: &AppState) -> Result<Json<Value>, ApiError> {
+    Ok(Json(call(state, reqwest::Method::GET, "/status", None, 20).await?))
+}
+
+/// One-click setup: download and load the model now instead of on the first narration.
+pub async fn prepare(state: &AppState, engine: &str) -> Result<Json<Value>, ApiError> {
+    if !matches!(engine, "pocket" | "kokoro") {
+        return Err(ApiError::bad("engine must be `pocket` or `kokoro`"));
+    }
+    Ok(Json(
+        call(state, reqwest::Method::POST, "/prepare", Some(json!({ "engine": engine })), 30 * 60).await?,
+    ))
+}
+
+/// A short sample of an engine/voice for Settings; the file lives under the served thumbs root.
+pub async fn preview(state: &AppState, engine: &str, voice: Option<&str>, language: Option<&str>) -> Result<Json<Value>, ApiError> {
+    if !matches!(engine, "pocket" | "kokoro") {
+        return Err(ApiError::bad("engine must be `pocket` or `kokoro`"));
+    }
+    if let Some(voice) = voice {
+        if !safe_voice_id(voice.trim()) {
+            return Err(ApiError::bad("voice contains characters that aren't allowed"));
+        }
+    }
+    let body = json!({
+        "engine": engine,
+        "voice": voice.map(str::trim).filter(|v| !v.is_empty()),
+        "language": language.unwrap_or(if engine == "pocket" { "id" } else { "en" }),
+    });
+    Ok(Json(call(state, reqwest::Method::POST, "/preview", Some(body), 10 * 60).await?))
 }
 
 /// List engines and voices from the sidecar, with the saved default.

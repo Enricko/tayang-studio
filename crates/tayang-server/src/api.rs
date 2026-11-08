@@ -258,6 +258,17 @@ pub async fn rpc(State(state): State<Arc<AppState>>, Json(body): Json<RpcBody>) 
             let voice: String = arg(&args, "voice")?;
             crate::voices::delete(&state, &voice)
         }
+        "tts_status" => crate::voices::status(&state).await,
+        "tts_prepare" => {
+            let engine: String = arg(&args, "engine")?;
+            crate::voices::prepare(&state, &engine).await
+        }
+        "tts_preview" => {
+            let engine: String = arg(&args, "engine")?;
+            let voice: Option<String> = opt(&args, "voice")?;
+            let language: Option<String> = opt(&args, "language")?;
+            crate::voices::preview(&state, &engine, voice.as_deref(), language.as_deref()).await
+        }
 
         // ---- projects ----
         "list_projects" => value(state.db.list_projects().map_err(err)?),

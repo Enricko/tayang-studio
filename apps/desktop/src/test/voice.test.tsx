@@ -8,6 +8,8 @@ vi.mock('@/lib/ipc', () => ({
   setDefaultVoice: vi.fn(),
   deleteVoice: vi.fn(),
   uploadVoice: vi.fn(),
+  ttsPreview: vi.fn(),
+  assetUrl: vi.fn((path: string, version?: string | null) => `/api/assets?path=${encodeURIComponent(path)}${version ? `&v=${encodeURIComponent(version)}` : ''}`),
 }));
 vi.mock('@/lib/platform', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/platform')>()),
@@ -46,6 +48,7 @@ beforeEach(() => {
   vi.mocked(ipc.setDefaultVoice).mockImplementation(async (engine, voice) => ({ engine, voice }));
   vi.mocked(ipc.deleteVoice).mockResolvedValue({ ok: true });
   vi.mocked(ipc.uploadVoice).mockResolvedValue({ id: 'new-voice.wav', name: 'new-voice', custom: true });
+  vi.mocked(ipc.ttsPreview).mockResolvedValue({ path: '/data/thumbs/voice-previews/pocket-p1.mp3', durationSec: 3, engine: 'pocket', voice: 'pocket-id-1' });
 });
 
 describe('Settings › Voice', () => {
@@ -55,7 +58,7 @@ describe('Settings › Voice', () => {
     expect(screen.getByText('my-voice')).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('tab', { name: 'Kokoro' }));
-    await userEvent.click(screen.getByRole('button', { name: /Heart/ }));
+    await userEvent.click(screen.getByRole('button', { name: 'Heart' }));
     expect(ipc.setDefaultVoice).toHaveBeenCalledWith('kokoro', 'af_heart');
     expect(await screen.findByText(/New agent messages use this voice/)).toBeInTheDocument();
   });
@@ -68,6 +71,21 @@ describe('Settings › Voice', () => {
     await waitFor(() => expect(ipc.uploadVoice).toHaveBeenCalled());
     expect(ipc.uploadVoice).toHaveBeenCalledWith(expect.objectContaining({ name: 'new-voice.wav' }));
     expect(ipc.setDefaultVoice).toHaveBeenCalledWith('pocket', 'new-voice.wav');
+  });
+
+  it('plays a short sample of a voice', async () => {
+    render(<VoiceTab />);
+    await screen.findByText('Indonesia 1');
+    await userEvent.click(screen.getByRole('button', { name: 'Preview voice Indonesia 1' }));
+    expect(ipc.ttsPreview).toHaveBeenCalledWith('pocket', 'pocket-id-1', 'id');
+  });
+
+  it('marks Kokoro as English only', async () => {
+    render(<VoiceTab />);
+    await screen.findByText('Indonesia 1');
+    await userEvent.click(screen.getByRole('tab', { name: 'Kokoro' }));
+    expect(screen.getByText('English only')).toBeInTheDocument();
+    expect(screen.getByText(/Kokoro does not speak Indonesian/)).toBeInTheDocument();
   });
 
   it('deletes an uploaded voice after confirmation', async () => {

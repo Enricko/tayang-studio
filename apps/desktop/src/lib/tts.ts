@@ -18,3 +18,14 @@ export interface TtsVoiceList {
   default: { engine: string; voice: string };
   engines: TtsEngine[];
 }
+
+export interface TtsStatus {
+  engines: Record<string, { prepared: boolean }>;
+}
+
+export interface TtsPreview {
+  path: string;
+  durationSec: number;
+  engine: string;
+  voice: string;
+}

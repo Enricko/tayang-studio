@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Check, RefreshCw, Trash2, Upload } from 'lucide-react';
+import { Check, Loader2, Pause, Play, RefreshCw, Trash2, Upload } from 'lucide-react';
 import { Button } from '@/components/Button';
-import { deleteVoice, listVoices, setDefaultVoice, uploadVoice } from '@/lib/ipc';
+import { assetUrl, deleteVoice, listVoices, setDefaultVoice, ttsPreview, uploadVoice } from '@/lib/ipc';
 import { pickUploadFiles } from '@/lib/platform';
 import type { TtsVoiceList } from '@/lib/tts';
 import { cn } from '@/lib/utils';
@@ -25,6 +25,9 @@ export function VoiceTab() {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [previewing, setPreviewing] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -44,7 +47,35 @@ export function VoiceTab() {
 
   useEffect(() => {
     void load();
+    return () => audioRef.current?.pause();
   }, [load]);
+
+  const preview = async (engineId: string, voiceId: string) => {
+    if (previewing === voiceId) {
+      audioRef.current?.pause();
+      setPreviewing(null);
+      return;
+    }
+    audioRef.current?.pause();
+    setPreviewLoading(voiceId);
+    setNotice(null);
+    try {
+      const sample = await ttsPreview(engineId, voiceId, engineId === 'pocket' ? 'id' : 'en');
+      const audio = new Audio(assetUrl(sample.path, String(Date.now())));
+      audioRef.current = audio;
+      audio.onended = () => setPreviewing((current) => (current === voiceId ? null : current));
+      audio.onerror = () => {
+        setPreviewing(null);
+        setError(t('settings.voicePreviewFailed'));
+      };
+      setPreviewing(voiceId);
+      await audio.play();
+    } catch (e) {
+      setError(t('settings.voicePreviewFailedWith', { message: message(e) }));
+    } finally {
+      setPreviewLoading(null);
+    }
+  };
 
   const choose = async (engineId: string, voiceId: string) => {
     setSaving(true);
@@ -123,8 +154,24 @@ export function VoiceTab() {
           <div className="rounded-xl border border-border bg-card">
             <div className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-3">
               <div className="mr-auto flex flex-col gap-1">
-                <span className="text-sm font-medium">{t('settings.voiceEngine')}</span>
-                <span className="text-xs text-text-3">{current.description}</span>
+                <span className="flex flex-wrap items-center gap-2 text-sm font-medium">
+                  {t('settings.voiceEngine')}
+                  {current.id === 'kokoro' && (
+                    <span className="rounded-full bg-raised px-2 py-0.5 text-[11px] font-normal text-text-3">
+                      {t('settings.kokoroBadge')}
+                    </span>
+                  )}
+                </span>
+                <span className="text-xs text-text-3">
+                  {current.id === 'pocket'
+                    ? t('settings.voicePocketDesc')
+                    : current.id === 'kokoro'
+                      ? t('settings.voiceKokoroDesc')
+                      : current.description}
+                </span>
+                {current.id === 'kokoro' && (
+                  <span className="text-xs leading-normal text-orange-light">{t('settings.kokoroLanguageNote')}</span>
+                )}
               </div>
               <div className="flex flex-wrap gap-1 rounded-md bg-background p-1" role="tablist" aria-label={t('settings.voiceEngine')}>
                 {data.engines.map((e) => (
@@ -176,6 +223,22 @@ export function VoiceTab() {
                         )}
                         {selected && (
                           <span className="ml-auto shrink-0 text-xs text-text-3">{t('settings.voiceDefault')}</span>
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!!previewLoading}
+                        aria-label={t('settings.voicePreview', { name: voice.name })}
+                        title={t('settings.voicePreview', { name: voice.name })}
+                        className="flex size-7 cursor-pointer items-center justify-center rounded text-text-3 hover:bg-raised hover:text-foreground disabled:cursor-default disabled:opacity-50"
+                        onClick={() => void preview(current.id, voice.id)}
+                      >
+                        {previewLoading === voice.id ? (
+                          <Loader2 size={14} strokeWidth={1.5} className="animate-spin" aria-hidden="true" />
+                        ) : previewing === voice.id ? (
+                          <Pause size={14} strokeWidth={1.5} aria-hidden="true" />
+                        ) : (
+                          <Play size={14} strokeWidth={1.5} aria-hidden="true" />
                         )}
                       </button>
                       {voice.custom && (

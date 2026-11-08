@@ -8,6 +8,7 @@ import { ArchiveSection } from '@/components/ArchiveSection';
 import { GiftCode } from '@/components/GiftCode';
 import { UsageTab } from '@/components/UsageTab';
 import { VoiceTab } from '@/components/VoiceTab';
+import { VoiceTools } from '@/components/VoiceTools';
 import { ClaudeAccountControl } from '@/components/ClaudeAccountControl';
 import { AgentLogo } from '@/components/AgentLogo';
 import { Button } from '@/components/Button';
@@ -577,8 +578,9 @@ export function Settings() {
                 {t('settings.checkAgain')}
               </Button>
             </div>
+            {capabilities.web && <VoiceTools />}
             <ul className="m-0 flex list-none flex-col overflow-hidden rounded-xl border border-border bg-card p-0">
-              {tools.map((t) => (
+              {tools.filter((tool) => !capabilities.web || tool.id !== 'elevenlabs-mcp').map((t) => (
                 <ToolRow
                   key={t.id}
                   tool={t}

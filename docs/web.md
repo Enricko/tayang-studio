@@ -159,15 +159,23 @@ Compose starts two services on the shared `tayang-data` volume:
   (CC BY 4.0), built on Kyutai's Pocket TTS.
 
 Choose the default engine/voice, or upload your own reference recording, in **Settings › Voice**.
-The choice is stored in `/data/voices/config.json`, is handed to new agent sessions as
-`TAYANG_TTS_ENGINE`/`TAYANG_TTS_VOICE`, and is read by the sidecar. Uploads are limited to 20 MB and
-WAV/MP3/FLAC/OGG/M4A. The server never exposes the internal TTS token to the browser.
+Every voice has a **Listen** button that renders a short sample, so you can compare the defaults
+before using one. Kokoro is marked **English only** here: it speaks English and several other
+languages, but not Indonesian; use Pocket TTS for Indonesian videos. The choice is stored in
+`/data/voices/config.json`, is handed to new agent sessions as `TAYANG_TTS_ENGINE`/`TAYANG_TTS_VOICE`,
+and is read by the sidecar. Uploads are limited to 20 MB and WAV/MP3/FLAC/OGG/M4A. The server never
+exposes the internal TTS token to the browser.
+
+**Settings › Tools** lists both engines with a one-click **Install**. It loads/downloads the model
+once and records the result in `/data/voices/engines.json`; after that the **Listen** buttons work
+without waiting for a download. The preview files live under `/data/thumbs/voice-previews/`.
 
 `TAYANG_HTTP_PORT` in `.env` is a Compose variable for the host port. If 8787 is already used, set
 another loopback port there and point the reverse proxy at it. The container always listens on 8787.
 
-The image includes Node 22, ffmpeg/ffprobe, git, the server, opencode 2.2.6 (free models work
-without an account), Claude Code 2.1.319 and Codex 0.167.0. It runs as UID/GID `10001`. The
+The image includes Node 22, ffmpeg/ffprobe, Chromium (with the system libraries Chrome-based
+renderers need), git, the server, opencode 2.2.6 (free models work without an account), Claude Code
+2.1.319 and Codex 0.167.0. It runs as UID/GID `10001`. The
 `tayang-data` volume keeps:
 
 - `/data/tayang.db` — database (same schema as desktop, plus web tables)
@@ -213,7 +221,7 @@ docker compose exec -u root tayang chown -R 10001:10001 /data/home
 
 # Optional for style studies, in the same environment as the server:
 docker compose exec -u root tayang apt-get update
-docker compose exec -u root tayang apt-get install -y yt-dlp chromium
+docker compose exec -u root tayang apt-get install -y yt-dlp
 ```
 
 Installing an agent inside a running container is convenient for a first test, but those binaries are
@@ -402,7 +410,7 @@ verification depends on one installed and authenticated CLI on the server; see a
 
 ## What was verified in this environment
 
-- `pnpm test`: 1,084 tests passed across shared, skills and desktop (70 Vitest files; plus the extra
+- `pnpm test`: 1,089 tests passed across shared, skills and desktop (71 Vitest files; plus the extra
   server-feature-focused browser smoke run).
 - `pnpm typecheck`: passed.
 - `cargo test -p tayang-core`: 171 tests passed (media tests included; ffmpeg/ffprobe from pnpm).
