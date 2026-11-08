@@ -490,6 +490,17 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
                           >
                             {p.postedAt ? t('calendar.notPosted') : t('calendar.markPosted')}
                           </Button>
+                          {/* Off the calendar; the video itself stays in Videos. */}
+                          <Button
+                            variant="ghost"
+                            className="h-8 justify-start px-2 text-[13px] text-orange-light hover:text-orange-light"
+                            onClick={() => {
+                              setOpenEntry(null);
+                              void update(setSchedule(p.id, null));
+                            }}
+                          >
+                            {t('calendar.unschedule')}
+                          </Button>
                         </PopoverContent>
                       </Popover>
                     );

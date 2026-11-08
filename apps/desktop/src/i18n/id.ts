@@ -866,6 +866,7 @@ export const id: Translations = {
     schedule: 'Jadwalkan…',
     approve: 'Setujui',
     markPosted: 'Tandai sudah diposting',
+    unschedule: 'Hapus dari kalender',
     notPosted: 'Tandai belum diposting',
     scheduleVideo: 'Jadwalkan video',
     cantUpdate: 'Video belum bisa diperbarui. Coba lagi',

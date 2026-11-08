@@ -1540,6 +1540,17 @@ describe('Calendar scheduling', () => {
     expect(screen.getByRole('button', { name: 'Not posted' })).toBeInTheDocument();
   });
 
+  it('Remove from calendar takes the video off the calendar in one click', async () => {
+    const p = project('a', 'Alpha', 'draft', at(9));
+    vi.mocked(ipc.listProjects).mockResolvedValue([p]);
+    vi.mocked(ipc.setSchedule).mockResolvedValue({ ...p, scheduledAt: null });
+    render(<Calendar today={today} />);
+    await userEvent.click(await screen.findByRole('button', { name: /^Alpha,/ }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Remove from calendar' }));
+    expect(ipc.setSchedule).toHaveBeenCalledWith('a', null);
+    await waitFor(() => expect(screen.queryByRole('button', { name: /^Alpha,/ })).not.toBeInTheDocument());
+  });
+
   it('Open video opens the project chat', async () => {
     const p = project('a', 'Alpha', 'rendered', at(9));
     vi.mocked(ipc.listProjects).mockResolvedValue([p]);

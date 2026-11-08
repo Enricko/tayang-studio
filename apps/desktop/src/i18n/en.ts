@@ -872,6 +872,7 @@ export const en = {
     schedule: 'Schedule…',
     approve: 'Approve',
     markPosted: 'Mark as posted',
+    unschedule: 'Remove from calendar',
     notPosted: 'Not posted',
     scheduleVideo: 'Schedule a video',
     cantUpdate: "Couldn't update the video. Try again",
