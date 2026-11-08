@@ -1334,6 +1334,23 @@ fn agent_key(agent: AgentId) -> String {
     serde_json::to_value(agent).ok().and_then(|v| v.as_str().map(str::to_string)).unwrap_or_default()
 }
 
+/// One agent's model choice without dropping the choices stored for the other agents.
+fn with_agent_model(
+    mut models: std::collections::BTreeMap<String, String>,
+    key: String,
+    model: Option<String>,
+) -> std::collections::BTreeMap<String, String> {
+    match model {
+        Some(value) => {
+            models.insert(key, value);
+        }
+        None => {
+            models.remove(&key);
+        }
+    }
+    models
+}
+
 /// The model the user picked for this agent, if any.
 fn picked_model(state: &AppState, agent: AgentId) -> Option<String> {
     state.db.get_settings(&state.home).agent_models.get(&agent_key(agent)).cloned()
@@ -1355,9 +1372,14 @@ pub async fn set_agent_model(
     model: Option<String>,
     chat_id: Option<String>,
 ) -> CmdResult<Settings> {
+    let models = with_agent_model(
+        state.db.get_settings(&state.home).agent_models,
+        agent_key(agent_id),
+        model.clone(),
+    );
     let settings = state
         .db
-        .update_settings(serde_json::json!({ "agentModels": { agent_key(agent_id): model } }))
+        .update_settings(serde_json::json!({ "agentModels": models }))
         .map_err(err)?;
     if let (Some(chat), Some(value)) = (chat_id.as_deref(), model.as_deref()) {
         // No session yet is fine: it starts on the picked model.
@@ -2697,6 +2719,18 @@ mod tests {
         assert_eq!(out[1], PromptPart::Text("Attached file: attachments/big.jpg (big.jpg, 5.0 MB)".into()));
         assert_eq!(out[2], PromptPart::Image { path: PathBuf::from("/w/c/attachments/edge.webp") });
         assert_eq!(out.len(), 4);
+    }
+
+    #[test]
+    fn choosing_one_agent_model_keeps_the_others() {
+        let mut models = std::collections::BTreeMap::new();
+        models.insert("codex".to_string(), "gpt-6.1-sol".to_string());
+        let models = with_agent_model(models, "opencode".to_string(), Some("opencode-go/deepseek-v4.1-flash".into()));
+        assert_eq!(models.get("codex").map(String::as_str), Some("gpt-6.1-sol"));
+        assert_eq!(models.get("opencode").map(String::as_str), Some("opencode-go/deepseek-v4.1-flash"));
+        let models = with_agent_model(models, "opencode".to_string(), None);
+        assert_eq!(models.get("codex").map(String::as_str), Some("gpt-6.1-sol"));
+        assert!(!models.contains_key("opencode"));
     }
 
     #[test]
