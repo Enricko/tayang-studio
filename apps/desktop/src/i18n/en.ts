@@ -388,6 +388,8 @@ export const en = {
   },
   kinds: { explainer: 'Explainer', promo: 'Promo', quote: 'Quote', news: 'News', tutorial: 'Tutorial', data: 'Data', event: 'Event' },
   chat: {
+    showAll: 'Show all {{count}}',
+    showLess: 'Show less',
     title: 'Chat',
     newChat: 'New chat',
     noVideo: 'No video attached',

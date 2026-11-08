@@ -114,7 +114,7 @@ export function scheduleList(items: PlannedItem[]): string {
   return [...items]
     .sort((a, b) => Date.parse(a.at) - Date.parse(b.at))
     .map((i) => `${slotTime(new Date(i.at))} — ${i.title}`)
-    .join(', ');
+    .join('\n');
 }
 
 /** Whether a stored part records a schedule card that was put on the calendar (its line shows Open calendar). */
@@ -173,7 +173,8 @@ export async function confirmSchedule(chatId: string, a: A2uiAction, items: Plan
   }
   useApp.getState().bumpProjects();
   notifyAutopilotChanged();
-  const list = scheduleList(items);
+  // One video a line, under the note's first line (see SystemNote).
+  const list = `\n${scheduleList(items)}`;
   await appendSystem(chatId, stored('schedule.agent.done', { list }), [record]);
   // The agent gets exact times with their offset, not the user's wording.
   const exact = [...items]

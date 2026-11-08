@@ -221,7 +221,12 @@ describe('a pressed schedule card', () => {
     render(<Chat chatId="c1" onA2uiAction={handler} />);
     await press();
     await userEvent.click(await screen.findByRole('button', { name: 'Schedule 2 videos' }));
-    await screen.findByText(/^Scheduled on the calendar: /);
+    await screen.findByText('Scheduled on the calendar:');
+    // One video a line, under the note.
+    expect(screen.getAllByRole('listitem').map((li) => li.textContent)).toEqual([
+      expect.stringMatching(/ — Jalur Rempah$/),
+      expect.stringMatching(/ — Kenapa rupiah melemah$/),
+    ]);
     expect(scheduleVideos).toHaveBeenCalledTimes(1);
     const [items] = vi.mocked(scheduleVideos).mock.calls[0]!;
     expect(items[0]).toEqual({ projectId: 'p1', at: existing });

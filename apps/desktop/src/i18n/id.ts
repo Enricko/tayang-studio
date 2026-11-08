@@ -389,6 +389,8 @@ export const id: Translations = {
   },
   kinds: { explainer: 'Edukasi', promo: 'Promo', quote: 'Kutipan', news: 'Berita', tutorial: 'Tutorial', data: 'Data', event: 'Acara' },
   chat: {
+    showAll: 'Tampilkan semua ({{count}})',
+    showLess: 'Tampilkan lebih sedikit',
     title: 'Chat',
     newChat: 'Chat baru',
     noVideo: 'Belum ada video terlampir',

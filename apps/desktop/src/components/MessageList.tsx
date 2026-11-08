@@ -443,16 +443,14 @@ export function MessageList({
         }
         if (m.role === 'system') {
           return (
-            <div key={messageKey(m)} className="flex items-center gap-3">
+            <div key={messageKey(m)} className="flex items-start gap-3">
               <Oyen mood="surprised" size={28} />
-              <p className="m-0 text-[14px] text-text-2">
-                {localized(m.parts.map((p) => (p.type === 'text' ? p.text : '')).join(''))}
-              </p>
+              <SystemNote text={localized(m.parts.map((p) => (p.type === 'text' ? p.text : '')).join(''))} />
               {m.parts.some(isScheduleRecord) && (
                 <button
                   type="button"
                   onClick={() => useApp.getState().navigate({ name: 'calendar' })}
-                  className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-sm text-[13px] font-medium text-orange-light hover:underline"
+                  className="mt-1 inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-sm text-[13px] font-medium text-orange-light hover:underline"
                 >
                   <CalendarDays size={14} strokeWidth={1.5} aria-hidden="true" />
                   {t('schedule.agent.openCalendar')}
@@ -503,3 +501,36 @@ export function MessageList({
   );
 }
 
+
+/** Lines a long system note shows before "Show all". */
+const NOTE_LINES = 5;
+
+/**
+ * A note from Tayang: its first line, and any further lines (one scheduled video each) as a list,
+ * the first few until the user asks for all of them.
+ */
+function SystemNote({ text }: { text: string }) {
+  const { t } = useTranslation();
+  const [all, setAll] = useState(false);
+  const [head, ...lines] = text.split('\n').map((l) => l.trim()).filter(Boolean);
+  const shown = all ? lines : lines.slice(0, NOTE_LINES);
+  return (
+    <div className="flex min-w-0 flex-col gap-1 pt-1">
+      <p className="m-0 text-[14px] text-text-2">{head}</p>
+      {lines.length > 0 && (
+        <ul className="m-0 flex list-none flex-col gap-0.5 p-0 text-[13px] text-text-3">
+          {shown.map((l, i) => (
+            <li key={i} className="tabular-nums">
+              {l}
+            </li>
+          ))}
+        </ul>
+      )}
+      {lines.length > NOTE_LINES && (
+        <button type="button" onClick={() => setAll(!all)} className="cursor-pointer self-start text-[13px] text-text-2 hover:text-foreground">
+          {all ? t('chat.showLess') : t('chat.showAll', { count: lines.length })}
+        </button>
+      )}
+    </div>
+  );
+}
