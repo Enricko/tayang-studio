@@ -704,6 +704,12 @@ export const en = {
     signOut: 'Sign out',
     failed: "Couldn't sign in: {{reason}}",
   },
+  upgradeCard: {
+    title: 'Get ElevenLabs voices & cheap AI images',
+    body: 'Natural voice-overs and AI pictures for your videos, from {{price}} a month.',
+    cta: 'See plans',
+    close: 'Hide for a week',
+  },
   usageTab: {
     tayang: 'Tayang plan',
     resets: 'resets {{date}}',

@@ -1,3 +1,4 @@
+import { UpgradeCard } from '@/components/UpgradeCard';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Archive, Calendar, LayoutPanelLeft, Share2, MessageCircle, Palette, Plane, Plus, Smartphone, SlidersHorizontal } from 'lucide-react';
@@ -267,6 +268,8 @@ export function Sidebar({ active, collapsed = false }: { active: SidebarKey; col
         )}
 
         <div className={cn('mt-auto flex shrink-0 flex-col gap-3 pt-3', rail && 'items-center')}>
+          {/* i18n-ignore: an analytics id, not copy */}
+          {!rail && <UpgradeCard where="sidebar" />}
           <NavItem
             rail={rail}
             active={active === 'settings'}

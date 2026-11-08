@@ -698,6 +698,12 @@ export const id: Translations = {
     signOut: 'Keluar',
     failed: 'Gagal masuk: {{reason}}',
   },
+  upgradeCard: {
+    title: 'Dapatkan suara ElevenLabs & gambar AI murah',
+    body: 'Voice-over natural dan gambar AI untuk videomu, mulai {{price}} sebulan.',
+    cta: 'Lihat paket',
+    close: 'Sembunyikan seminggu',
+  },
   usageTab: {
     tayang: 'Paket Tayang',
     resets: 'reset {{date}}',

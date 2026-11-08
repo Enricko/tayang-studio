@@ -1,3 +1,4 @@
+import { UpgradeCard } from '@/components/UpgradeCard';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
@@ -501,6 +502,8 @@ export function Calendar({ today: todayProp }: { today?: Date } = {}) {
       </div>
 
       <aside className="flex max-w-[300px] flex-[1_1_260px] flex-col gap-4">
+        {/* i18n-ignore: an analytics id, not copy */}
+        <UpgradeCard where="calendar" />
         <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4">
           <div className="flex flex-col gap-1">
             <span className="text-sm font-medium">{t('calendar.ideasTitle')}</span>
