@@ -12,6 +12,7 @@ import { useApp } from '@/state/app';
 import { useAuth } from '@/state/auth';
 import { useUsage } from '@/state/usage';
 import { useTayangUsage } from '@/state/tayangUsage';
+import { BILLING_ENABLED } from '@/lib/features';
 
 /**
  * Settings › Usage: the Tayang plan's AI credits and auto-posts this cycle, and each agent's own
@@ -43,6 +44,7 @@ export function UsageTab({ onAccount }: { onAccount(): void }) {
 
   return (
     <div className="flex flex-col gap-6">
+      {BILLING_ENABLED && (
       <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4">
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium">{t('usageTab.tayang')}</span>
@@ -114,6 +116,7 @@ export function UsageTab({ onAccount }: { onAccount(): void }) {
           </div>
         )}
       </div>
+      )}
 
       <div className="flex flex-col gap-4 rounded-xl border border-border bg-card p-4">
         <div className="flex items-center gap-2">

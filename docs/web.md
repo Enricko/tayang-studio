@@ -44,8 +44,10 @@ Tauri imports there are dynamic and only run on desktop; the web entry point loa
 | Image/file attachments, project file browser | Yes (browser upload / read-only file viewer) |
 | Renders, preview, frame seeking, thumbnails, download | Yes (HTTP Range) |
 | Scheduling, reminders, autopilots | Yes, server-side |
+| Agent asks to start/schedule a video from chat | Yes, via the local action endpoint; AI images/voice remain unavailable |
 | Multi-tab access to the same account | Yes (SSE replay, idempotent start, resolved-card events) |
-| Tayang cloud sign-in, paid plans, social posting, AI images/voice | No; explicit `unavailable` capability and UI notice |
+| Tayang cloud billing / paid plans | Removed from the UI (`BILLING_ENABLED = false`) |
+| Tayang cloud sign-in, social posting, AI images/voice | No; explicit `unavailable` capability and UI notice |
 | Desktop folder picker, background tray, autostart, in-app updates | No; server workspace and deployment updates |
 | Built-in style sync | Yes, through the public API; cached styles work offline |
 
@@ -263,6 +265,10 @@ or a VM as the real boundary; do not mount the Docker socket or unrelated secret
   cursor), so a refreshed tab rebuilds the stream and pending cards.
 - Permission and question requests are stored until answered. Answering one tab broadcasts a
   resolved event; other tabs remove the card instead of answering twice.
+- Every agent session gets `TAYANG_AI_URL` and a per-session `TAYANG_AI_TOKEN`. The loopback
+  endpoint accepts the bundled skill's `curl -d` JSON for `/video` and `/schedule`; image/voice calls
+  return an explicit cloud-unavailable answer. The action is delivered to the open chat tab, which
+  starts the project.
 - Autopilot slots are claimed with an atomic `planned → making` SQL update. A second engine pass or
   process cannot start the same slot twice. "Stop now" cancels the server's running turn and only
   marks a slot failed while it is still `making` (a late success cannot overwrite the stop).
@@ -375,7 +381,7 @@ verification depends on one installed and authenticated CLI on the server; see a
   server-feature-focused browser smoke run).
 - `pnpm typecheck`: passed.
 - `cargo test -p tayang-core`: 171 tests passed (media tests included; ffmpeg/ffprobe from pnpm).
-- `cargo test -p tayang-server`: 21 tests passed.
+- `cargo test -p tayang-server`: 22 tests passed.
 - `cargo test -p tayang-studio`: 114 unit tests and 47 ACP integration tests passed with
   WebKitGTK/GTK system libs installed.
 - `cargo clippy --all-targets -- -D warnings` for core, server and desktop: clean.

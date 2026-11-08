@@ -23,6 +23,7 @@ const TRAY_UNAVAILABLE = 'tray-unavailable';
 import { LANGUAGES, LANGUAGE_NAMES, uiLanguage } from '@/i18n';
 import { chooseLanguage } from '@/lib/language';
 import { sendTestNotification } from '@/lib/scheduler';
+import { BILLING_ENABLED } from '@/lib/features';
 import { clearEventCursor, disconnectEvents } from '@/lib/events';
 import { logout as webLogout } from '@/lib/webRpc';
 import { useApp } from '@/state/app';
@@ -587,7 +588,7 @@ export function Settings() {
           <section id="account" role="tabpanel" aria-labelledby="settings-tab-account" className="flex flex-col gap-3">
             <h2 className="m-0 text-base font-medium">{t('settings.sections.account')}</h2>
             {capabilities.tayangCloud ? <AccountSection /> : <p className="m-0 rounded-xl border border-border bg-card px-4 py-3 text-[13px] text-text-2">{t('settings.webNoticeCloud')}</p>}
-            {capabilities.tayangCloud && <GiftCode />}
+            {BILLING_ENABLED && capabilities.tayangCloud && <GiftCode />}
             {capabilities.tayangCloud && <SocialLink />}
             <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3">
               <div className="mr-auto flex flex-col gap-1">

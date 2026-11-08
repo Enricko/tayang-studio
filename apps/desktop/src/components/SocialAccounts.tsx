@@ -9,6 +9,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { cloudErrorCode, cloudUsage, platformName, socialAccounts, socialConnect, socialDisconnect, type CloudErrorCode } from '@/lib/cloud';
 import { useApp } from '@/state/app';
 import { useAuth } from '@/state/auth';
+import { BILLING_ENABLED } from '@/lib/features';
 import { track } from '@/lib/analytics';
 
 /** After "Connect", look for the new account this often, for this long (the user signs in in the browser). */
@@ -136,7 +137,7 @@ export function SocialAccounts() {
         </DropdownMenu>
       </div>
       {/* Connecting is free; posting needs a plan, so a free account learns that here, not on Post. */}
-      {noPosts && (
+      {BILLING_ENABLED && noPosts && (
         <div className="flex flex-wrap items-center gap-3">
           <span className="text-xs text-text-3">{t('cloud.needsPlan')}</span>
           <Button variant="ghost" className="h-7 px-2 text-[13px]" onClick={() => navigate({ name: 'plans', from: 'settings' })}>

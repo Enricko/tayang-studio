@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useCloudError } from '@/components/SocialAccounts';
+import { BILLING_ENABLED } from '@/lib/features';
 import { PlatformLogo } from '@/components/PlatformLogo';
 import { defaultSlot, localToIso } from '@/components/ScheduleDialog';
 import { cloudErrorCode, platformName, socialAccounts, socialPost, socialPostStatus, type CloudErrorCode } from '@/lib/cloud';
@@ -302,7 +303,7 @@ export function PostDialog({
         {error && (
           <div role="alert" className="flex flex-wrap items-center gap-3 text-xs text-orange-light">
             {explain(error)}
-            {(error === 'plan-required' || error === 'quota-exceeded') && (
+            {BILLING_ENABLED && (error === 'plan-required' || error === 'quota-exceeded') && (
               <Button
                 variant="secondary"
                 className="h-7 px-2 text-xs"

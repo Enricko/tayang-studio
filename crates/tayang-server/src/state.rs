@@ -66,6 +66,7 @@ pub struct AppState {
     pub claude_sign_in: Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
     pub autopilot_lock: tokio::sync::Mutex<()>,
     pub autopilot_current: Mutex<Option<Arc<AutopilotRun>>>,
+    pub action_proxy: Option<Arc<crate::action_proxy::ActionProxy>>,
     pub started_at: chrono::DateTime<chrono::Utc>,
 }
 

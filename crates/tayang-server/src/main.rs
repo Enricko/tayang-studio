@@ -1,3 +1,4 @@
+mod action_proxy;
 mod agent;
 mod api;
 mod assets;
@@ -137,6 +138,14 @@ async fn main() {
     web_db::mark_interrupted(&db, "Tayang server restarted while this was running");
     web_db::prune_events(&db, 7);
     let usage = tayang_core::usage::UsageCache::default();
+    let (action_tx, mut action_rx) = tokio::sync::mpsc::unbounded_channel();
+    let action_proxy = match action_proxy::ActionProxy::start(action_tx).await {
+        Ok(proxy) => Some(proxy),
+        Err(e) => {
+            tracing::error!("agent action endpoint couldn't start: {e}");
+            None
+        }
+    };
     let state = Arc::new(state::AppState {
         config: config.clone(),
         db,
@@ -153,11 +162,27 @@ async fn main() {
         claude_sign_in: Default::default(),
         autopilot_lock: tokio::sync::Mutex::new(()),
         autopilot_current: Default::default(),
+        action_proxy,
         started_at: chrono::Utc::now(),
     });
     if let Err(e) = prepare_workspace(&state) {
         tracing::error!("{e}");
         std::process::exit(2);
+    }
+    // Deliver the agent's /video and /schedule calls to the connected tabs. The agent keeps working
+    // if no tab is open; the action stays in this process and is emitted when a tab reconnects? It
+    // is a one-shot command, so log it instead of pretending a missing tab started a video.
+    {
+        let emitter = state.clone();
+        tokio::spawn(async move {
+            while let Some(action) = action_rx.recv().await {
+                emitter.events.emit(
+                    &emitter.db,
+                    "agent://action",
+                    serde_json::to_value(action).unwrap_or(serde_json::Value::Null),
+                );
+            }
+        });
     }
 
     let protected = Router::new()
@@ -320,6 +345,7 @@ pub mod test_support {
             claude_sign_in: Default::default(),
             autopilot_lock: tokio::sync::Mutex::new(()),
             autopilot_current: Default::default(),
+            action_proxy: None,
             started_at: chrono::Utc::now(),
         })
     }

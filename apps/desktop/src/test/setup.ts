@@ -2,6 +2,11 @@ import '@testing-library/jest-dom/vitest';
 import { cleanup } from '@testing-library/react';
 import { afterEach } from 'vitest';
 import { setUiLanguage } from '@/i18n';
+import { setBillingEnabledForTest } from '@/lib/features';
+
+// The fork hides cloud billing. Its own legacy UI tests still exercise the components behind the
+// flag; production builds keep the default off.
+setBillingEnabledForTest(true);
 
 // Existing tests assert English copy; tests that want Indonesian switch inside the test.
 setUiLanguage('en');

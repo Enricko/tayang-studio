@@ -11,6 +11,7 @@ import { useApp } from '@/state/app';
 import { useAuth, type SignInFlow } from '@/state/auth';
 import { useBilling } from '@/state/billing';
 import { PlanCard } from '@/components/Plan';
+import { BILLING_ENABLED } from '@/lib/features';
 
 /** The badge for a plan id from the API; anything unknown reads as free. */
 const planKey = (plan: string) => (['lite', 'creator', 'pro'].includes(plan) ? (plan as 'lite' | 'creator' | 'pro') : 'free');
@@ -183,7 +184,7 @@ export function AccountSection() {
           <div className="flex min-w-[220px] flex-1 flex-col gap-1">
             <div className="flex items-center gap-2">
               <span className="truncate text-sm font-medium">{account?.name || account?.email || t('account.yourAccount')}</span>
-              {account && (
+              {BILLING_ENABLED && account && (
                 <Badge variant={shownPlan === 'free' ? 'secondary' : 'default'}>{t(`account.plan.${shownPlan}`)}</Badge>
               )}
             </div>
@@ -196,14 +197,13 @@ export function AccountSection() {
         </div>
       ) : null}
       {status?.signedIn ? (
-        <PlanCard key={account?.id ?? 'account'} />
+        BILLING_ENABLED ? <PlanCard key={account?.id ?? 'account'} /> : null
       ) : (
         <div className="flex flex-wrap items-center gap-4 rounded-xl border border-border bg-card p-4">
           <Oyen mood="default" size={40} />
           <div className="flex min-w-[280px] flex-1 flex-col gap-1">
-            <span className="text-sm font-medium">{t('settings.freePlan')}</span>
-            <span className="text-[13px] leading-normal text-text-2">{t('settings.planText')}</span>
-            <span className="text-xs text-text-3">{t('billing.signInToUpgrade')}</span>
+            <span className="text-sm font-medium">{t('account.signInGoogle')}</span>
+            {BILLING_ENABLED && <span className="text-[13px] leading-normal text-text-2">{t('settings.planText')}</span>}
           </div>
           <Button variant="secondary" className="gap-2" disabled={flow.phase === 'starting'} onClick={() => void signIn()}>
             {flow.phase === 'starting' ? <Spinner /> : <GoogleMark />}

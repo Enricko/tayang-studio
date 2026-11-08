@@ -353,7 +353,7 @@ pub async fn start(state: Arc<AppState>, chat_id: String, agent_id: AgentId, aut
     if state.acp.is_running(&chat_id) {
         return Ok(false);
     }
-    let prepared = tayang_core::service::prepare_agent(
+    let mut prepared = tayang_core::service::prepare_agent(
         &state.db,
         &state.home,
         &chat_id,
@@ -364,6 +364,9 @@ pub async fn start(state: Arc<AppState>, chat_id: String, agent_id: AgentId, aut
     )?;
     if !crate::paths::in_workspace(&state, &prepared.cwd) {
         return Err("The chat's working folder is outside the server workspace".into());
+    }
+    if let Some(proxy) = &state.action_proxy {
+        prepared.options.env.extend(proxy.session_env(&chat_id));
     }
     let sink = Arc::new(ServerSink { state: Arc::downgrade(&state) });
     state

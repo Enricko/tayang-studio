@@ -11,6 +11,7 @@ import { calendarState } from '@/lib/calendarState';
 import { deleteAutopilot, listAutopilots, listProjects, listSlots, listStyles, setAutopilotStatus, updateSlot } from '@/lib/ipc';
 import { openProjectChat } from '@/lib/openProject';
 import { localized } from '@/lib/stored';
+import { BILLING_ENABLED } from '@/lib/features';
 import { inTime } from '@/lib/time';
 import { cn } from '@/lib/utils';
 import { PreviewImage, posterOf } from '@/screens/Style';
@@ -389,12 +390,14 @@ export function Autopilot({ id, now: fixedNow }: { id?: string; now?: Date } = {
         </div>
       )}
 
-      <p className="m-0 mt-auto border-t border-border pt-3 text-xs leading-[1.6] text-text-3">
-        {t('autopilot.plansLine')}{' '}
-        <button type="button" className="cursor-pointer border-0 bg-transparent p-0 text-xs text-orange-light underline" onClick={() => navigate({ name: 'plans', from: 'autopilot' })}>
-          {t('calendar.plans')}
-        </button>
-      </p>
+      {BILLING_ENABLED && (
+        <p className="m-0 mt-auto border-t border-border pt-3 text-xs leading-[1.6] text-text-3">
+          {t('autopilot.plansLine')}{' '}
+          <button type="button" className="cursor-pointer border-0 bg-transparent p-0 text-xs text-orange-light underline" onClick={() => navigate({ name: 'plans', from: 'autopilot' })}>
+            {t('calendar.plans')}
+          </button>
+        </p>
+      )}
     </div>
   );
 }

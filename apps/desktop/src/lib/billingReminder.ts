@@ -3,6 +3,7 @@ import { billingReminderDue } from '@/lib/billing';
 import { canNotify, show } from '@/lib/scheduler';
 import { useAuth } from '@/state/auth';
 import { useBilling } from '@/state/billing';
+import { BILLING_ENABLED } from '@/lib/features';
 
 /** The period end the plan-ends-soon notification was last shown for (one per period). */
 export const REMINDED_KEY = 'tayang.billing.remindedFor';
@@ -29,6 +30,7 @@ function stamp(end: string): boolean {
 
 /** Scheduler tick: "your plan ends in 3 days", once per period, while signed in. */
 export async function runBillingReminder(now: Date): Promise<void> {
+  if (!BILLING_ENABLED) return;
   await useAuth.getState().init();
   if (!useAuth.getState().status?.signedIn) return;
   const { status, loadedAt, refresh } = useBilling.getState();
